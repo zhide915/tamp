@@ -444,13 +444,7 @@ func (m *Manager) writeEnvironment(e *Environment, sync syncer.Effective) error 
 	if err := WriteGitignore(e.Dir); err != nil {
 		return err
 	}
-	if err := EnsureDBRootPassword(e.Dir); err != nil {
-		return err
-	}
-	if err := ensureAppsDir(e.Dir, sync); err != nil {
-		return err
-	}
-	return e.Generate(sync)
+	return m.regenerate(e, sync)
 }
 
 // rollback undoes what a failed provisioning put outside the environment

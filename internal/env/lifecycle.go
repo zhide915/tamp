@@ -200,13 +200,11 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return err
 	}
 
-	// Regeneration comes before the running check, not after it: tamp.toml is
-	// the source of truth on every start, not only on the ones that go on to
-	// touch a container. A hand-edited compose.yaml has to disappear whether
-	// or not the environment happens to be up.
-	// Settled before anything is written, because it decides what is written:
-	// a bind mount is a line in the compose file, and a machine that cannot
-	// get Mutagen falls back to one.
+	// The sync mode is settled before anything is written, because it decides
+	// what is written: a bind mount is a line in the compose file. And the
+	// regeneration below comes before the running check, not after it —
+	// tamp.toml is the source of truth on every start, so a hand-edited
+	// compose.yaml has to disappear whether or not the environment is up.
 	sync := m.syncMode(ctx, e.Config.Sync.Mode)
 
 	m.Out.Step(1, startSteps, "regenerating "+ComposeFile+" from "+ConfigFile)
