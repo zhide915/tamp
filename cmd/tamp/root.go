@@ -55,6 +55,12 @@ func newRootCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable coloured output")
 	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "print only results and errors")
 
+	root.AddCommand(newCreateCommand(p, eng))
+	root.AddCommand(newListCommand(p, eng))
+	root.AddCommand(newStartCommand(p, eng))
+	root.AddCommand(newStopCommand(p, eng))
+	root.AddCommand(newRestartCommand(p, eng))
+	root.AddCommand(newRemoveCommand(p, eng))
 	root.AddCommand(newDoctorCommand(p, eng))
 	root.AddCommand(newVersionCommand(p))
 

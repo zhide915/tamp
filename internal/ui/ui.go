@@ -85,6 +85,16 @@ func (p *Printer) Print(msg string) {
 	fmt.Fprintln(p.Out, msg)
 }
 
+// Stream is where a long operation's own output belongs — the compose runner's
+// progress, for one. It is stdout, or nowhere under --quiet, so that a command
+// which shells out still honours the flag without every caller checking it.
+func (p *Printer) Stream() io.Writer {
+	if p.Quiet {
+		return io.Discard
+	}
+	return p.Out
+}
+
 // Mark is the ✓/!/✗ prefix on a result line.
 type Mark int
 
