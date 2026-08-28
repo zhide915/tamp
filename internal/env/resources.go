@@ -71,11 +71,39 @@ func (r Resources) Project() string {
 // itself: there is exactly one per environment, so a suffix would say nothing.
 func (r Resources) Network() string { return r.Project() }
 
-// DataVolume is the storage layer holding every site's database. It is
-// the only volume an environment has until it has a bench.
-const DataVolume = "db"
+// The volumes one environment owns, split so that tamp can treat each of them
+// as it deserves: the source is never deleted, the databases and site files are
+// what a backup is for, and the virtualenv is thrown away and rebuilt.
+const (
+	// DataVolume holds every site's database.
+	DataVolume = "db"
+	// CodeVolume holds the bench, and with it the source layer under apps/.
+	CodeVolume = "code"
+	// DepsVolume holds the Python virtualenv.
+	DepsVolume = "deps"
+	// SitesVolume holds every site's files and the bench's shared config.
+	SitesVolume = "sites"
+)
 
 // Volume names one of the environment's storage layers.
 func (r Resources) Volume(layer string) string {
 	return r.Project() + "-" + layer
+}
+
+// The compose services an environment is made of. They double as hostnames:
+// inside the environment's network, each container answers to its service
+// name, which is how the bench is told where its database and its Redis are.
+const (
+	FrappeService     = "frappe"
+	MariaDBService    = "mariadb"
+	RedisCacheService = "redis-cache"
+	RedisQueueService = "redis-queue"
+	MailpitService    = "mailpit"
+)
+
+// Container names one of the environment's containers the way compose names
+// it: the project, the service, and the replica number — of which tamp's
+// services only ever have one.
+func (r Resources) Container(service string) string {
+	return r.Project() + "-" + service + "-1"
 }

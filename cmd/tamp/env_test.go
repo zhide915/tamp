@@ -407,13 +407,60 @@ func TestTwoEnvironmentsShareNoResources(t *testing.T) {
 	r.assertStdoutContains(t, "demo", "other", "version-15", "version-16", "10.11", "11.8")
 }
 
+// The exception to the rule above, and the reason a second create is fast: the
+// toolchain and the package caches are one set of volumes for the whole
+// machine. They are shared on purpose, so both environments must name the same
+// ones — and must declare them external, which is what stops either
+// environment's teardown from destroying what the other still needs.
+func TestEveryEnvironmentSharesTheMachinesToolchainAndCaches(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.create(t, "other", "--frappe", "version-16")
+
+	for _, dir := range []string{"demo", "other"} {
+		compose := c.read(t, dir, env.ComposeFile)
+		for _, volume := range env.SharedVolumes() {
+			if !strings.Contains(compose, "name: "+volume) {
+				t.Errorf("%s does not mount the shared %s volume", dir, volume)
+			}
+		}
+		if strings.Count(compose, "external: true") != len(env.SharedVolumes()) {
+			t.Errorf("%s does not declare every shared volume external:\n%s", dir, compose)
+		}
+	}
+
+	// Compose refuses to start a project whose external volumes are missing,
+	// so tamp has to have created them before it brought anything up.
+	created := map[string]bool{}
+	for _, volume := range c.engine.Volumes {
+		created[volume] = true
+	}
+	for _, volume := range env.SharedVolumes() {
+		if !created[volume] {
+			t.Errorf("tamp never created the shared %s volume", volume)
+		}
+	}
+}
+
 // sharedResources reports the resource-name and published-port lines two
 // generated compose files have in common — the declarations that must differ.
+//
+// The machine-wide volumes are excluded: they are the one thing two
+// environments are supposed to have in common, and the test above is where
+// that is checked.
 func sharedResources(a, b string) []string {
+	machineWide := map[string]bool{}
+	for _, volume := range env.SharedVolumes() {
+		machineWide["name: "+volume] = true
+	}
+
 	declared := func(s string) map[string]bool {
 		out := map[string]bool{}
 		for _, line := range strings.Split(s, "\n") {
 			line = strings.TrimSpace(line)
+			if machineWide[line] {
+				continue
+			}
 			if strings.HasPrefix(line, "name: tamp-") || strings.HasPrefix(line, "- \"127.0.0.1:") {
 				out[line] = true
 			}

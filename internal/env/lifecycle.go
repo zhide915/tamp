@@ -10,10 +10,13 @@ package env
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/toolchain"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -65,6 +68,44 @@ func (e *Environment) project() engine.ComposeProject {
 		File: ComposePath(e.Dir),
 		Dir:  e.Dir,
 	}
+}
+
+// bench addresses the environment's bench through its container.
+func (e *Environment) bench(eng engine.Engine, out io.Writer) *frappe.Bench {
+	return &frappe.Bench{
+		Engine:    eng,
+		Container: e.Resources.Container(FrappeService),
+		Branch:    string(e.Config.Frappe.Version),
+		Python:    e.Config.Toolchain.Python,
+		Node:      e.Config.Toolchain.Node,
+		// Every other container answers to its service name on the
+		// environment's own network, so these are what the bench is told.
+		DBHost:     MariaDBService,
+		RedisCache: RedisCacheService,
+		RedisQueue: RedisQueueService,
+		MailHost:   MailpitService,
+		Out:        out,
+	}
+}
+
+// SharedVolumes are the volumes every environment on this machine has in
+// common: the toolchain, and the two package caches.
+//
+// The generated compose file declares them external, which is what stops
+// `tamp rm --volumes` on one environment from emptying them for all the
+// others. External volumes are nobody's to create, so tamp creates them
+// before it brings anything up.
+func SharedVolumes() []string {
+	return []string{toolchain.Volume, frappe.PipCacheVolume, frappe.YarnCacheVolume}
+}
+
+func (m *Manager) ensureSharedVolumes(ctx context.Context) error {
+	for _, name := range SharedVolumes() {
+		if err := m.Engine.EnsureVolume(ctx, name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // State is what tamp reports an environment is doing.
@@ -138,6 +179,9 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	}
 
 	m.Out.Step(2, startSteps, "starting containers")
+	if err := m.ensureSharedVolumes(ctx); err != nil {
+		return err
+	}
 	if err := m.Engine.ComposeUp(ctx, e.project(), m.Out.Stream()); err != nil {
 		return err
 	}

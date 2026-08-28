@@ -33,6 +33,14 @@ func (d *Docker) ComposeStop(ctx context.Context, p ComposeProject, out io.Write
 	return d.compose(ctx, p, out, "stop")
 }
 
+// ComposeRestart restarts one service in place. The container keeps the
+// command it was created with, which is the point: tamp's bench container
+// decides at boot whether there is a bench to run, and restarting it is how
+// that decision gets taken again once tamp has made one.
+func (d *Docker) ComposeRestart(ctx context.Context, p ComposeProject, service string, out io.Writer) error {
+	return d.compose(ctx, p, out, "restart", service)
+}
+
 func (d *Docker) ComposeDown(ctx context.Context, p ComposeProject, removal Removal, out io.Writer) error {
 	// --remove-orphans clears containers left behind by an older generated
 	// file: tamp's compose file is rewritten on every start, and a service

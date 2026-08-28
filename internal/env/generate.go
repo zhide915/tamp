@@ -9,6 +9,8 @@ import (
 
 	"github.com/zhide915/tamp/assets"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/toolchain"
 )
 
 // ComposeFile is the compose file tamp generates. It is regenerated from
@@ -30,7 +32,6 @@ type composeData struct {
 	Name         Name
 	Project      string
 	Network      string
-	DBVolume     string
 	BenchImage   string
 	MariaDBImage string
 	RedisImage   string
@@ -38,6 +39,30 @@ type composeData struct {
 	DBPort       int
 	DBSecretName string
 	DBSecretFile string
+
+	// The environment's own storage layers.
+	DBVolume    string
+	CodeVolume  string
+	DepsVolume  string
+	SitesVolume string
+
+	// The volumes every environment on the machine shares, and where the bench
+	// container mounts them.
+	ToolchainVolume string
+	ToolchainDir    string
+	PipCacheVolume  string
+	PipCacheDir     string
+	YarnCacheVolume string
+	YarnCacheDir    string
+
+	// Where the bench lives inside the container, and the two files that
+	// decide what its container does when it boots.
+	WorkspaceDir string
+	BenchDir     string
+	EnvDir       string
+	SitesDir     string
+	ProcfilePath string
+	EnvScript    string
 }
 
 // Generate rewrites every file tamp generates from tamp.toml.
@@ -50,7 +75,6 @@ func (e *Environment) Generate() error {
 		Name:         e.Config.Name,
 		Project:      e.Resources.Project(),
 		Network:      e.Resources.Network(),
-		DBVolume:     e.Resources.Volume(DataVolume),
 		BenchImage:   BenchImage,
 		MariaDBImage: MariaDBImage(e.Config.Toolchain.MariaDB),
 		RedisImage:   RedisImage,
@@ -60,6 +84,25 @@ func (e *Environment) Generate() error {
 		// Compose resolves a relative secret path against the compose file's
 		// own directory, and accepts forward slashes on every platform.
 		DBSecretFile: "./" + StateDirName + "/" + SecretsDirName + "/" + DBRootPasswordFile,
+
+		DBVolume:    e.Resources.Volume(DataVolume),
+		CodeVolume:  e.Resources.Volume(CodeVolume),
+		DepsVolume:  e.Resources.Volume(DepsVolume),
+		SitesVolume: e.Resources.Volume(SitesVolume),
+
+		ToolchainVolume: toolchain.Volume,
+		ToolchainDir:    toolchain.Dir,
+		PipCacheVolume:  frappe.PipCacheVolume,
+		PipCacheDir:     frappe.PipCacheDir,
+		YarnCacheVolume: frappe.YarnCacheVolume,
+		YarnCacheDir:    frappe.YarnCacheDir,
+
+		WorkspaceDir: frappe.WorkspaceDir,
+		BenchDir:     frappe.BenchDir,
+		EnvDir:       frappe.EnvDir,
+		SitesDir:     frappe.SitesDir,
+		ProcfilePath: frappe.ProcfilePath,
+		EnvScript:    toolchain.EnvScript,
 	})
 }
 

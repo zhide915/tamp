@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/zhide915/tamp/internal/exitcode"
 )
@@ -28,6 +29,18 @@ func SecretsDir(dir string) string { return filepath.Join(StateDir(dir), Secrets
 // DBRootPasswordPath is the file holding the MariaDB root password.
 func DBRootPasswordPath(dir string) string {
 	return filepath.Join(SecretsDir(dir), DBRootPasswordFile)
+}
+
+// ReadDBRootPassword returns the environment's MariaDB root password.
+func ReadDBRootPassword(dir string) (string, error) {
+	path := DBRootPasswordPath(dir)
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("cannot read %s: %v", path, err),
+			"the environment's database credential is missing — recreate the environment")
+	}
+	return strings.TrimSpace(string(body)), nil
 }
 
 // EnsureDBRootPassword generates the environment's MariaDB root password if it

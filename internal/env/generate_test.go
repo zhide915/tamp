@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/zhide915/tamp/internal/engine/enginetest"
+	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/toolchain"
 )
 
 // generated builds an environment and returns its rendered compose.yaml.
@@ -131,9 +133,12 @@ func TestGeneratedComposeNamesTampsResources(t *testing.T) {
 	e, body := generated(t)
 
 	for what, name := range map[string]string{
-		"project": e.Resources.Project(),
-		"network": e.Resources.Network(),
-		"volume":  e.Resources.Volume(DataVolume),
+		"project":     e.Resources.Project(),
+		"network":     e.Resources.Network(),
+		"data volume": e.Resources.Volume(DataVolume),
+		"code volume": e.Resources.Volume(CodeVolume),
+		"deps volume": e.Resources.Volume(DepsVolume),
+		"site volume": e.Resources.Volume(SitesVolume),
 	} {
 		if !strings.Contains(body, name) {
 			t.Errorf("compose.yaml does not name the %s %q", what, name)
@@ -197,6 +202,48 @@ func TestGitignoreIsNotOverwritten(t *testing.T) {
 	}
 	if string(body) != "mine\n" {
 		t.Errorf(".gitignore = %q, want the user's file untouched", body)
+	}
+}
+
+// The bench container mounts the four layers tamp manages separately, plus
+// the volumes shared with every other environment on the machine. A layer that
+// is not its own volume cannot be cleaned, snapshotted or shared.
+func TestTheBenchContainerMountsEveryLayerAndTheSharedVolumes(t *testing.T) {
+	_, body := generated(t)
+
+	for _, mount := range []string{
+		"code:" + frappe.WorkspaceDir,
+		"deps:" + frappe.EnvDir,
+		"sites:" + frappe.SitesDir,
+		"toolchain:" + toolchain.Dir,
+		"pip-cache:" + frappe.PipCacheDir,
+		"yarn-cache:" + frappe.YarnCacheDir,
+	} {
+		if !strings.Contains(body, mount) {
+			t.Errorf("the bench container does not mount %s:\n%s", mount, body)
+		}
+	}
+}
+
+// The bench container decides at boot whether it has a bench to run, which is
+// what lets 'tamp start' revive an environment's processes with nothing tamp
+// has to remember about it.
+func TestTheBenchContainerRunsHonchoOnlyOnceThereIsABench(t *testing.T) {
+	_, body := generated(t)
+
+	command, _, ok := strings.Cut(body, "working_dir:")
+	if !ok {
+		t.Fatalf("the bench service has no command:\n%s", body)
+	}
+	for _, want := range []string{
+		"if [ -f " + frappe.ProcfilePath + " ]",
+		". " + toolchain.EnvScript,
+		"honcho start",
+		"sleep infinity",
+	} {
+		if !strings.Contains(command, want) {
+			t.Errorf("the bench command does not contain %q:\n%s", want, command)
+		}
 	}
 }
 

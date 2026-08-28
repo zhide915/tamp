@@ -22,7 +22,7 @@ const CreateLogFile = "create.log"
 
 // createSteps is how many numbered steps a create prints. It grows as tamp
 // learns to do more at create time — a bench, a toolchain, a router.
-const createSteps = 4
+const createSteps = 8
 
 // CreateRequest is what `tamp create` was asked for.
 type CreateRequest struct {
@@ -73,15 +73,73 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 		return err
 	}
 
-	log.step("starting containers")
-	if err := m.Engine.ComposeUp(ctx, e.project(), log.stream()); err != nil {
+	if err := m.build(ctx, e, log); err != nil {
 		m.rollback(ctx, e, log)
 		return err
 	}
 
 	m.Out.OK(fmt.Sprintf("%s ready — no sites yet", name))
+	m.announceDBPassword(e)
 	m.Out.Hint("next: tamp site new <host>")
 	return nil
+}
+
+// build turns a written-out environment into a running bench.
+//
+// Everything from here on happens inside containers, and every step of it is
+// undone by the rollback its one caller performs: an environment that got a
+// toolchain but no bench is not half-created, it is failed.
+func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) error {
+	log.step("starting containers")
+	if err := m.ensureSharedVolumes(ctx); err != nil {
+		return err
+	}
+	if err := m.Engine.ComposeUp(ctx, e.project(), log.stream()); err != nil {
+		return err
+	}
+
+	bench := e.bench(m.Engine, log.stream())
+
+	// Slow once per machine, near-instant every time after: the Python, the
+	// Node and the package caches all live in volumes shared by every
+	// environment, so this is where a second create stops being expensive.
+	log.step(fmt.Sprintf("provisioning python %s and node %s", bench.Python, bench.Node))
+	if err := bench.Provision(ctx); err != nil {
+		return err
+	}
+
+	log.step("initializing the bench")
+	if err := bench.Init(ctx); err != nil {
+		return err
+	}
+
+	log.step("configuring the bench")
+	if err := bench.Configure(ctx); err != nil {
+		return err
+	}
+
+	// The container decides at boot whether it has a bench to run. It did not
+	// when it first started, and it does now, so it is asked again.
+	log.step("starting the bench processes")
+	if err := m.Engine.ComposeRestart(ctx, e.project(), FrappeService, log.stream()); err != nil {
+		return err
+	}
+	return bench.WaitForWeb(ctx)
+}
+
+// announceDBPassword prints the environment's generated MariaDB credential.
+//
+// Once, here, and nowhere else: it is on disk in the environment's own secrets
+// directory, and reprinting it on every start would scatter it through
+// terminal scrollback nobody asked to keep it in.
+func (m *Manager) announceDBPassword(e *Environment) {
+	password, err := ReadDBRootPassword(e.Dir)
+	if err != nil {
+		m.Out.Warn(err.Error())
+		return
+	}
+	m.Out.Note("database root password: " + password)
+	m.Out.Note("kept in " + DBRootPasswordPath(e.Dir) + " — tamp prints it this once")
 }
 
 // createDir settles where the environment goes and refuses to build on top of
