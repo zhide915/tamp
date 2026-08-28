@@ -75,6 +75,55 @@ func TestCreateRecordsTheNameTheAppDeclaresNotTheRepositorys(t *testing.T) {
 	}
 }
 
+// Whatever must fail should fail before anything is built: a spec the
+// credential bridge can never serve dies at the command line, with nothing
+// claimed and nothing asked of the engine.
+func TestCreateRefusesAnSSHAppSourceBeforeAnythingIsMade(t *testing.T) {
+	c := sandbox(t)
+
+	r := c.run(t, "create", "demo", "--frappe", "version-15",
+		"--apps", "git@github.com:myorg/private.git:version-15")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	// The echo is redacted — the spec reappears as host:path, plus the
+	// https rewrite.
+	r.assertStderrContains(t,
+		"github.com:myorg/private.git",
+		"https://github.com/myorg/private.git")
+	if c.exists("demo") {
+		t.Error("a refused spec still left a directory behind")
+	}
+	if len(c.engine.Calls) != 0 {
+		t.Errorf("a refused spec still touched the engine: %v", c.engine.Calls)
+	}
+	if c.registeredPath(t, "demo") != "" {
+		t.Error("a refused spec still claimed the name in the registry")
+	}
+}
+
+func TestCreateRefusesATokenInTheAppURLAndNeverEchoesIt(t *testing.T) {
+	c := sandbox(t)
+	const token = "x-token-9Qrs"
+
+	r := c.run(t, "create", "demo", "--frappe", "version-15",
+		"--apps", "https://"+token+"@github.com/myorg/private.git:version-15")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertStderrContains(t, "drop the token")
+	if strings.Contains(r.stdout+r.stderr, token) {
+		t.Errorf("the token appears in the output:\nstdout: %s\nstderr: %s", r.stdout, r.stderr)
+	}
+	if c.exists("demo") {
+		t.Error("a refused spec still left a directory behind")
+	}
+	if len(c.engine.Calls) != 0 {
+		t.Errorf("a refused spec still touched the engine: %v", c.engine.Calls)
+	}
+	if c.registeredPath(t, "demo") != "" {
+		t.Error("a refused spec still claimed the name in the registry")
+	}
+}
+
 func TestSiteNewInstallsTheAppsTheBenchAlreadyHas(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--apps", "erpnext:version-15")

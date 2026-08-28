@@ -2,6 +2,7 @@ package env
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -44,6 +45,31 @@ func ParseApp(spec string) (App, error) {
 		return App{}, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%q names no app", spec),
 			"write an app as 'erpnext:version-15', or as a git URL with a branch after it")
+	}
+
+	// Sources the credential bridge can never serve fail here, before tamp
+	// claims a name or writes anything; every echo is redacted — the spec
+	// may embed a secret.
+	if https, ssh := httpsFormOfSSH(repo); ssh {
+		return App{}, exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("%s is an ssh source, and tamp can only bridge git credentials into https fetches", redactedURL(repo)),
+			fmt.Sprintf("use the https URL: %s", https))
+	}
+	if strings.Contains(repo, "://") {
+		u, err := url.Parse(repo)
+		if err != nil {
+			// Refuse rather than let through: an unparseable URL cannot be
+			// proven free of an embedded secret.
+			return App{}, exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("tamp cannot read %s as a URL", redactedURL(repo)),
+				"check the URL — and if it embeds a token, drop it: tamp asks the host's git credential system instead")
+		}
+		if u.User != nil {
+			u.User = nil
+			return App{}, exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("the URL for %s embeds a credential, and tamp never stores a secret", u.String()),
+				"drop the token — tamp asks the host's git credential system when the repository needs one")
+		}
 	}
 
 	source := repo
@@ -97,6 +123,47 @@ func splitBranch(spec string) (repo, branch string) {
 
 func isRepoURL(repo string) bool {
 	return strings.Contains(repo, "://") || strings.Contains(repo, "@")
+}
+
+// httpsFormOfSSH reports whether repo is an ssh source — an ssh:// URL or the
+// scp form git@host:path — and translates it to the https URL the refusal
+// suggests. The ssh port is dropped: it would be wrong for https.
+func httpsFormOfSSH(repo string) (https string, ssh bool) {
+	for _, scheme := range []string{"ssh://", "git+ssh://", "ssh+git://"} {
+		if rest, ok := strings.CutPrefix(repo, scheme); ok {
+			if at := strings.Index(rest, "@"); at >= 0 {
+				rest = rest[at+1:]
+			}
+			if slash := strings.Index(rest, "/"); slash >= 0 {
+				if colon := strings.Index(rest[:slash], ":"); colon >= 0 {
+					rest = rest[:colon] + rest[slash:]
+				}
+			}
+			return "https://" + rest, true
+		}
+	}
+	if !strings.Contains(repo, "://") && strings.Contains(repo, "@") {
+		rest := repo[strings.Index(repo, "@")+1:]
+		return "https://" + strings.Replace(rest, ":", "/", 1), true
+	}
+	return "", false
+}
+
+// redactedURL strips everything before the authority's last "@" textually —
+// parsing may have failed, so only host and path may be echoed.
+func redactedURL(repo string) string {
+	scheme, rest := "", repo
+	if i := strings.Index(repo, "://"); i >= 0 {
+		scheme, rest = repo[:i+3], repo[i+3:]
+	}
+	authority, tail := rest, ""
+	if slash := strings.Index(rest, "/"); slash >= 0 {
+		authority, tail = rest[:slash], rest[slash:]
+	}
+	if at := strings.LastIndex(authority, "@"); at >= 0 {
+		authority = authority[at+1:]
+	}
+	return scheme + authority + tail
 }
 
 // appNameFromURL takes the last URL segment — the directory bench itself

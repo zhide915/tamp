@@ -1,6 +1,7 @@
 package env_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/zhide915/tamp/internal/env"
@@ -29,12 +30,6 @@ func TestAnAppSpecSaysWhichBranch(t *testing.T) {
 		},
 		"https://git.example.com:8443/team/shop:main": {
 			Name: "shop", Source: "https://git.example.com:8443/team/shop", Branch: "main",
-		},
-		"git@github.com:frappe/hrms.git": {
-			Name: "hrms", Source: "git@github.com:frappe/hrms.git",
-		},
-		"git@github.com:frappe/hrms.git:develop": {
-			Name: "hrms", Source: "git@github.com:frappe/hrms.git", Branch: "develop",
 		},
 		// The branch colon is the one after the repository, so a branch may
 		// itself contain a slash.
@@ -65,6 +60,61 @@ func TestAnAppSpecTampRefuses(t *testing.T) {
 		} else if exitcode.Of(err) != exitcode.CodeFailed {
 			t.Errorf("ParseApp(%q) exit code = %d, want %d", spec, exitcode.Of(err), exitcode.CodeFailed)
 		}
+	}
+}
+
+// An ssh source cannot go through the credential bridge, and the https form
+// can; the error must hand the user that form.
+func TestAnSSHAppSpecIsRefusedWithItsHTTPSForm(t *testing.T) {
+	cases := map[string]string{
+		"git@github.com:frappe/hrms.git":         "https://github.com/frappe/hrms.git",
+		"git@github.com:frappe/hrms.git:develop": "https://github.com/frappe/hrms.git",
+		"ssh://git@github.com/frappe/hrms.git":   "https://github.com/frappe/hrms.git",
+		// The ssh port must not survive into the https suggestion.
+		"ssh://git@git.example.com:2222/team/app.git": "https://git.example.com/team/app.git",
+	}
+	for spec, https := range cases {
+		t.Run(spec, func(t *testing.T) {
+			_, err := env.ParseApp(spec)
+			if err == nil {
+				t.Fatalf("ParseApp(%q) = nil, want a refusal", spec)
+			}
+			if exitcode.Of(err) != exitcode.CodeFailed {
+				t.Errorf("exit code = %d, want %d", exitcode.Of(err), exitcode.CodeFailed)
+			}
+			if !strings.Contains(err.Error(), https) {
+				t.Errorf("the error does not suggest %s:\n%v", https, err)
+			}
+		})
+	}
+}
+
+// tamp never records a secret: a token pasted into the URL must be refused,
+// and the refusal itself must not repeat it.
+func TestATokenInAnAppURLIsRefusedWithoutEchoingTheToken(t *testing.T) {
+	const token = "x-token-4Xyz"
+	for _, spec := range []string{
+		"https://" + token + "@github.com/myorg/private.git",
+		"https://" + token + "@github.com/myorg/private.git:version-15",
+		// Unparseable (the %zz escape): the refusal must fail closed, and
+		// still without echoing what came before the @.
+		"https://" + token + "%zz@github.com/myorg/private.git",
+		// An ssh source with userinfo takes the ssh refusal; that echo must
+		// be redacted too.
+		"ssh://user:" + token + "@github.com/myorg/private.git",
+	} {
+		t.Run(spec, func(t *testing.T) {
+			_, err := env.ParseApp(spec)
+			if err == nil {
+				t.Fatalf("ParseApp(%q) = nil, want a refusal", spec)
+			}
+			if exitcode.Of(err) != exitcode.CodeFailed {
+				t.Errorf("exit code = %d, want %d", exitcode.Of(err), exitcode.CodeFailed)
+			}
+			if strings.Contains(err.Error(), token) {
+				t.Errorf("the refusal repeats the token:\n%v", err)
+			}
+		})
 	}
 }
 
