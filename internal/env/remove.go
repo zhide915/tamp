@@ -12,7 +12,7 @@ import (
 // RemoveRequest is what `tamp rm` was asked for.
 type RemoveRequest struct {
 	Name string
-	// Volumes destroys the storage layers too; without it they survive for
+	// Volumes destroys the environment's volumes too; without it they survive for
 	// `tamp init` to re-adopt.
 	Volumes bool
 	// Yes replaces a prompt — agents run these commands, so confirmation is a
@@ -57,8 +57,8 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 	if req.Volumes && e.sourceInVolume() {
 		// One volume at a time: compose down --volumes cannot spare the code
 		// volume, which holds the only copy of the source when sync is off.
-		for _, layer := range e.disposableLayers() {
-			if err := m.Engine.RemoveVolume(ctx, e.Resources.Volume(layer)); err != nil {
+		for _, name := range e.disposableVolumes() {
+			if err := m.Engine.RemoveVolume(ctx, e.Resources.Volume(name)); err != nil {
 				return err
 			}
 		}
@@ -86,17 +86,17 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 // source — true with sync off, where nothing mirrors it to the host.
 func (e *Environment) sourceInVolume() bool { return e.Config.Sync.Mode == syncer.ModeOff }
 
-// disposableLayers are the volumes --volumes destroys. The code volume is
+// disposableVolumes are the volumes --volumes destroys. The code volume is
 // spared when it is the source: tamp never deletes source.
-func (e *Environment) disposableLayers() []string {
+func (e *Environment) disposableVolumes() []string {
 	if e.sourceInVolume() {
 		return []string{DataVolume, DepsVolume, SitesVolume}
 	}
 	return []string{DataVolume, CodeVolume, DepsVolume, SitesVolume}
 }
 
-func volumeNote(layer string) string {
-	switch layer {
+func volumeNote(name string) string {
+	switch name {
 	case DataVolume:
 		return "  (every site's database)"
 	case SitesVolume:
@@ -113,8 +113,8 @@ func (m *Manager) previewRemoval(e *Environment, volumes bool) {
 	m.Out.Print("  network     " + e.Resources.Network())
 	m.Out.Print("  registry    the entry naming " + string(e.Name()))
 	if volumes {
-		for _, layer := range e.disposableLayers() {
-			m.Out.Print("  volume      " + e.Resources.Volume(layer) + volumeNote(layer))
+		for _, name := range e.disposableVolumes() {
+			m.Out.Print("  volume      " + e.Resources.Volume(name) + volumeNote(name))
 		}
 	}
 

@@ -13,7 +13,7 @@ fail() {
 }
 
 dump() {
-  say "e2e failed â€” engine state"
+  say "e2e failed — engine state"
   docker ps -a || true
   echo
   docker logs tamp-router-caddy-1 --tail 50 2>&1 || true
@@ -42,7 +42,7 @@ expect() {
   fail "wanted 200 for Host: $host at $path, last answer was $code"
 }
 
-say "create fifteen â€” version-15, with erpnext pinned to its branch"
+say "create fifteen — version-15, with erpnext pinned to its branch"
 "$TAMP" create fifteen --frappe version-15 --apps erpnext:version-15 --dir "$WORK"
 
 say "site on fifteen"
@@ -52,14 +52,14 @@ say "fifteen serves through the router"
 expect fifteen.localhost /api/method/ping
 expect mail.fifteen.localhost /
 
-say "create sixteen â€” version-16, alongside fifteen, under Mutagen"
+say "create sixteen — version-16, alongside fifteen, under Mutagen"
 # fifteen keeps bind, the Linux default; Mutagen here puts its pin under
 # the scheduled drift run.
 "$TAMP" create sixteen --frappe version-16 --sync mutagen --dir "$WORK"
 # A blocked Mutagen falls back to a bind mount with exit 0; only the
 # compose file records the mode.
 if grep -q '\./apps:' "$WORK/sixteen/compose.yaml"; then
-  fail "sixteen fell back to a bind mount â€” the Mutagen pin was never exercised"
+  fail "sixteen fell back to a bind mount — the Mutagen pin was never exercised"
 fi
 "$TAMP" site new sixteen sixteen.localhost --admin-password admin
 
@@ -103,6 +103,36 @@ echo "warm create took ${warm_seconds}s"
 say "the warm environment serves, so the template is a working bench"
 "$TAMP" site new warm warm.localhost --admin-password admin
 expect warm.localhost /api/method/ping
+
+say "clean --deps then rebuild leaves the site serving with its data"
+# list-apps reads the site's database, so it says more than a route does: an
+# empty site would answer /api/method/ping just as well.
+installed() { "$TAMP" exec warm -- bench --site warm.localhost list-apps | awk '{print $1}' | sort; }
+before=$(installed)
+"$TAMP" clean warm --deps
+# The deps clean stops the bench processes, so nothing answers until the
+# rebuild puts them back.
+"$TAMP" rebuild warm
+expect warm.localhost /api/method/ping
+[ "$(installed)" = "$before" ] || fail "the site lost its data across clean --deps and rebuild"
+
+say "clean --assets then rebuild restores the built assets"
+"$TAMP" clean warm --assets
+"$TAMP" exec warm -- test ! -d sites/assets || fail "clean --assets left the built assets behind"
+"$TAMP" rebuild warm
+"$TAMP" exec warm -- test -d sites/assets || fail "rebuild did not restore sites/assets"
+expect warm.localhost /api/method/ping
+
+say "clean --data needs --yes, and takes every site when it gets one"
+if "$TAMP" clean warm --data; then
+  fail "clean --data destroyed the data layer without --yes"
+fi
+"$TAMP" clean warm --data --yes
+[ -z "$("$TAMP" site list warm 2>/dev/null | grep warm.localhost || true)" ]   || fail "clean --data left warm.localhost on the bench"
+if grep -q "http://warm.localhost" "$HOME/.tamp/router/Caddyfile"; then
+  fail "the router still routes a site clean --data destroyed"
+fi
+[ -d "$WORK/warm/apps/frappe" ] || fail "clean --data deleted the source tree"
 
 "$TAMP" rm warm --volumes --yes
 

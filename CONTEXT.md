@@ -15,8 +15,9 @@ The Frappe-side workspace an environment contains (apps, sites, Procfile). Only 
 A Frappe site on a bench, named exactly as its hostname. One site = one database inside the environment's MariaDB.
 
 **Layer**:
-One of the three independently managed storage areas of an environment: source (the bench's apps, wherever they live — the host `apps/` folder in synced and bind modes, the code volume when sync is off), deps, and data (every site's database and files, built assets included). tamp never deletes source.
-_Avoid_: assets (as a layer)
+One of the four storage areas of an environment, and what `tamp clean` wipes one at a time: **source** (the bench's apps, wherever they live — the host `apps/` folder in synced and bind modes, the code volume when sync is off), **deps** (the virtualenv, `node_modules`, `__pycache__`), **assets** (the built JS and CSS), and **data** (every site's database, files and config). tamp never deletes source. `tamp rebuild` restores deps and assets; `tamp site new` or a snapshot restores data.
+The environment's four Docker volumes (`db`, `code`, `deps`, `sites`) are a different split: assets live inside `sites`, and `code` carries source.
+_Avoid_: layer (for a Docker volume)
 
 **Router**:
 The single global Caddy container routing all sites and mail UIs by Host header. There is exactly one per machine.

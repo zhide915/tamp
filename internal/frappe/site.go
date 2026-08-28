@@ -18,7 +18,7 @@ func SiteDir(host string) string { return SitesDir + "/" + host }
 
 // ArchivedSitesDir is where bench drop-site parks a dropped site's files and
 // final backup; the database is gone, the files are not.
-const ArchivedSitesDir = BenchDir + "/archived/sites"
+const ArchivedSitesDir = ArchivedDir + "/sites"
 
 // NewSiteRequest describes a site to create on the bench.
 type NewSiteRequest struct {

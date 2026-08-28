@@ -142,6 +142,10 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 		for _, app := range b.siteApps[siteArg(exec.Cmd, "--site")] {
 			fmt.Fprintln(stdout, app)
 		}
+	// The container reads the Procfile at boot to decide whether it has a
+	// bench to run, so its coming and going is state, not just a command.
+	case strings.Contains(exec.Line(), "rm -f") && scriptArg(exec.Cmd, 0) == frappe.ProcfilePath:
+		s.drop(frappe.ProcfilePath)
 	case strings.Contains(exec.Line(), "cd "+frappe.AppsDir):
 		for _, app := range b.appsSorted() {
 			fmt.Fprintln(stdout, app)

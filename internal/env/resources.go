@@ -60,8 +60,8 @@ func (r Resources) Project() string {
 // suffix would say nothing.
 func (r Resources) Network() string { return r.Project() }
 
-// The storage layers, split so each can be treated as it deserves: source is
-// never deleted, data is what backups are for, deps are disposable.
+// The per-environment volumes, split so each can be treated as it deserves:
+// source is never deleted, data is what backups are for, deps are disposable.
 const (
 	// DataVolume holds every site's database.
 	DataVolume = "db"
@@ -73,8 +73,8 @@ const (
 	SitesVolume = "sites"
 )
 
-func (r Resources) Volume(layer string) string {
-	return r.Project() + "-" + layer
+func (r Resources) Volume(name string) string {
+	return r.Project() + "-" + name
 }
 
 // The compose services. Each container answers to its service name on the

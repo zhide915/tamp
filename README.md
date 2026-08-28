@@ -136,10 +136,36 @@ tamp logs erp15 web -f       # follow one service: web, socketio, watch,
                              # schedule, worker, mariadb, redis-*, mailpit, router
 tamp db erp15                # host, port, and credentials for a database GUI
 tamp exec erp15 -- bench --version   # run anything inside the bench
+tamp clean erp15             # explain the storage layers; destroy nothing
+tamp rebuild erp15           # reinstall dependencies and rebuild assets
 ```
 
 `tamp.toml` is the source of truth: `start` regenerates the generated files
 from it, so hand-edits to `compose.yaml` don't survive.
+
+## Storage layers
+
+An environment stores four things, and tamp wipes them one at a time. Run
+`tamp clean` with no flag to print this table in your terminal:
+
+| Layer    | Holds                                       | Wiped by                  | Restored by             |
+| -------- | ------------------------------------------- | ------------------------- | ----------------------- |
+| `source` | `apps/` — your code                         | nothing tamp does         | it is yours             |
+| `deps`   | the virtualenv, `node_modules`, `__pycache__` | `tamp clean --deps`     | `tamp rebuild`          |
+| `assets` | the built JS and CSS                        | `tamp clean --assets`     | `tamp rebuild`          |
+| `data`   | every site's database, files and config     | `tamp clean --data --yes` | `tamp site new <host>`  |
+
+```sh
+tamp clean erp15 --deps      # wipe broken dependencies
+tamp rebuild erp15           # reinstall from the shared caches, rebuild assets
+tamp clean erp15 --data      # print what would die, exit 5
+tamp clean erp15 --all --yes # wipe every layer but source
+```
+
+`--deps` and `--assets` need no confirmation. `--data` destroys every site's
+database and files, so it exits 5 without `--yes`, printing what it would
+take. Both commands need the environment running, and neither deletes code
+you wrote.
 
 ## Machine settings
 

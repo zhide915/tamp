@@ -211,17 +211,37 @@ bench setup requirements
 // Configure writes the two tamp-owned files: the Procfile and the common
 // site config.
 func (b *Bench) Configure(ctx context.Context) error {
-	if err := b.Engine.WriteFile(ctx, b.Container, engine.FileSpec{
+	if err := b.WriteProcfile(ctx); err != nil {
+		return err
+	}
+	return b.writeCommonSiteConfig(ctx)
+}
+
+// WriteProcfile puts the process list in place. The container reads it at
+// boot to decide whether it has a bench to run, so writing it and restarting
+// is how the bench's processes are started.
+func (b *Bench) WriteProcfile(ctx context.Context) error {
+	return b.Engine.WriteFile(ctx, b.Container, engine.FileSpec{
 		Path: ProcfilePath,
 		Data: []byte(Procfile()),
 		Mode: 0o644,
 		UID:  toolchain.UID,
 		GID:  toolchain.GID,
-	}); err != nil {
-		return err
-	}
-	return b.writeCommonSiteConfig(ctx)
+	})
 }
+
+// RemoveProcfile takes the process list away, so the next boot idles instead
+// of starting honcho. It is the only way to keep the container up while the
+// virtualenv its processes run from is being replaced: honcho exits when its
+// processes die, and the container exits with it.
+func (b *Bench) RemoveProcfile(ctx context.Context) error {
+	return b.run(ctx, removeProcfileScript, ProcfilePath)
+}
+
+const removeProcfileScript = `
+set -eo pipefail
+rm -f "$1"
+`
 
 // Procfile differs from bench's template on purpose: no redis lines (Redis
 // runs in containers of its own) and no log redirection (everything goes to
