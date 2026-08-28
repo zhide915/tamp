@@ -119,7 +119,11 @@ func (m *Manager) reportSurvivors(e *Environment, volumes bool) {
 	if !volumes {
 		volume := e.Resources.Volume(DataVolume)
 		m.Out.Note("the data volume " + volume + " survives, with every site's database in it")
-		m.Out.Hint("remove it too: docker volume rm " + volume)
+		// The other half of what was just done: the volumes and the directory
+		// were kept so that this environment can be brought back, and the
+		// command that does it is worth saying while it is still true.
+		m.Out.Hint("bring it back with its data: run 'tamp init' in " + e.Dir)
+		m.Out.Hint("remove it for good: docker volume rm " + volume)
 	}
 	m.Out.Note(e.Dir + " was not touched — tamp never deletes your source code")
 	m.Out.Hint("delete it yourself when you are done with it")

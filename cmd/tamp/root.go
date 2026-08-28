@@ -58,6 +58,7 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "print only results and errors")
 
 	root.AddCommand(newCreateCommand(p, eng, sync))
+	root.AddCommand(newInitCommand(p, eng, sync))
 	root.AddCommand(newListCommand(p, eng, sync))
 	root.AddCommand(newStartCommand(p, eng, sync))
 	root.AddCommand(newStopCommand(p, eng, sync))

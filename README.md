@@ -28,6 +28,34 @@ for you, for the same reason — it would have to invent the branch.
 tamp exec erp15 -- bench get-app hrms --branch version-15
 ```
 
+## Removing an environment, and bringing it back
+
+`tamp rm` removes the containers, the network, the routes and the registry
+entry. It keeps the volumes, and it never deletes the directory — tamp does
+not destroy source code.
+
+That is what makes it reversible. Run `tamp init` in what is left and tamp
+re-adopts it: same name, same path, so the same volumes attach and every site
+comes back with its data.
+
+```sh
+tamp rm erp15 --yes          # containers gone, data and source kept
+cd erp15 && tamp init        # the environment is back
+```
+
+`tamp init` also converts an empty directory into a new environment — create's
+sibling, named after the folder unless `--name` says otherwise. In a directory
+being re-adopted, `tamp.toml` decides what the environment is and the flags do
+not apply: the surviving volumes were built for the version and apps it records.
+
+To delete an environment completely, take the volumes too and then remove the
+folder yourself:
+
+```sh
+tamp rm erp15 --volumes --yes
+rm -rf erp15
+```
+
 ## Where the source lives
 
 Every environment keeps its apps in `<envdir>/apps/`, and that is where you and

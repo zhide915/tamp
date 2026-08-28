@@ -32,7 +32,7 @@ func bench(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 func initialized(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	t.Helper()
 	b, fake := bench(t)
-	if err := b.Init(t.Context()); err != nil {
+	if _, err := b.Materialize(t.Context()); err != nil {
 		t.Fatalf("Init = %v", err)
 	}
 	return b, fake
@@ -205,7 +205,7 @@ func siteConfig(t *testing.T, fake *enginetest.Fake) map[string]any {
 func TestInitLeavesRedisAndTheProcessFileToTamp(t *testing.T) {
 	b, fake := bench(t)
 
-	if err := b.Init(t.Context()); err != nil {
+	if _, err := b.Materialize(t.Context()); err != nil {
 		t.Fatalf("Init = %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestInitLeavesRedisAndTheProcessFileToTamp(t *testing.T) {
 func TestInitIsToldTheBenchDirectoryAlreadyExists(t *testing.T) {
 	b, fake := bench(t)
 
-	if err := b.Init(t.Context()); err != nil {
+	if _, err := b.Materialize(t.Context()); err != nil {
 		t.Fatalf("Init = %v", err)
 	}
 
@@ -295,4 +295,49 @@ func lastExec(t *testing.T, fake *enginetest.Fake) enginetest.Exec {
 		t.Fatal("tamp ran nothing in the container")
 	}
 	return fake.Execs[len(fake.Execs)-1]
+}
+
+// --- handing git to the host -----------------------------------------------
+
+// A repository cloned in the container and read on Windows is misread three
+// ways, all of them tamp's doing. Each setting answers one, and the three of
+// them together are the difference between a clean host-side git status and a
+// tree that looks modified everywhere it is not.
+func TestGitIsSettledForAHostThatCannotDescribeWhatLinuxWrote(t *testing.T) {
+	b, fake := bench(t)
+
+	if err := b.HandGitToHost(t.Context()); err != nil {
+		t.Fatalf("HandGitToHost = %v", err)
+	}
+
+	settings := map[string]string{
+		// NTFS cannot store the executable bit, so comparing it calls every
+		// such file modified with nothing changed in it.
+		"core.fileMode false": "the executable bit",
+		// Git for Windows rewrites line endings on checkout, which would put
+		// CRLF into files the Linux container is about to execute.
+		"core.autocrlf false": "line endings",
+		// Frappe's own paths go past the 260 characters Windows allows, and
+		// git reports what it cannot read as changed.
+		"core.longpaths true": "long paths",
+	}
+	for setting, what := range settings {
+		if !fake.Ran(setting) {
+			t.Errorf("tamp left %s for the host's git to misread — expected %q", what, setting)
+		}
+	}
+}
+
+// It runs over the apps directory rather than one named app, because tamp
+// does not know which repositories are there: one arrived with bench init and
+// the rest were fetched, some of them through the exec bridge.
+func TestGitIsSettledForEveryAppOnTheBench(t *testing.T) {
+	b, fake := bench(t)
+
+	if err := b.HandGitToHost(t.Context()); err != nil {
+		t.Fatalf("HandGitToHost = %v", err)
+	}
+	if !fake.Ran(frappe.AppsDir) {
+		t.Error("tamp settled git somewhere other than the bench's apps directory")
+	}
 }

@@ -68,6 +68,38 @@ done
 exit 0
 `
 
+// HandGitToHost settles the three git settings an app needs once it is cloned
+// on Linux and read on a filesystem that cannot describe what Linux wrote.
+//
+// All three are tamp's mess to clean up. The clone happens in the container,
+// so git records filemode = true; the host then compares an executable bit
+// NTFS cannot store and calls every such file modified with nothing changed in
+// it. Git for Windows converts line endings on checkout by default, which
+// would put CRLF into files the Linux container is about to execute. And
+// Frappe's own paths are long enough that an app a few directories down runs
+// past the 260 characters Windows allows by default — which git reports the
+// same way, as files it could not read and so assumes have changed.
+//
+// They are set in the container because that is where the repository is made
+// and where git already is, and because .git syncs — so the host reads a
+// config that is right for it before it ever runs a git command of its own.
+func (b *Bench) HandGitToHost(ctx context.Context) error {
+	return b.run(ctx, handGitToHostScript)
+}
+
+const handGitToHostScript = `
+set -eo pipefail
+cd ` + AppsDir + ` 2>/dev/null || exit 0
+for entry in */; do
+  app="${entry%/}"
+  if [ -d "$app/.git" ]; then
+    git -C "$app" config core.fileMode false
+    git -C "$app" config core.autocrlf false
+    git -C "$app" config core.longpaths true
+  fi
+done
+`
+
 // InstallApp installs one of the bench's apps onto one site.
 func (b *Bench) InstallApp(ctx context.Context, host, app string) error {
 	return b.run(ctx, installAppScript, host, app)

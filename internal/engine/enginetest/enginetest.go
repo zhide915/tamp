@@ -159,6 +159,11 @@ type Fake struct {
 	// they are running — so that up, stop, down and Containers tell one
 	// consistent story to the code under test.
 	running map[string]bool
+
+	// projectVolumes tracks which projects have volumes on the fake's
+	// machine. Up creates them, down removes them only when asked — the
+	// survival rule the rm/init cycle is built on.
+	projectVolumes map[string]bool
 }
 
 // Running is an engine that is up: a plausible Docker found by probing, and a
@@ -231,6 +236,10 @@ func (f *Fake) ComposeUp(_ context.Context, p engine.ComposeProject, out io.Writ
 	// environment's network after its project, which is what lets the fake
 	// know it without being told.
 	f.ensureNetwork(p.Name)
+	if f.projectVolumes == nil {
+		f.projectVolumes = map[string]bool{}
+	}
+	f.projectVolumes[p.Name] = true
 	return nil
 }
 
@@ -256,6 +265,17 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 	}
 	delete(f.running, p.Name)
 	delete(f.networks, p.Name)
+	if removal == engine.RemoveVolumes {
+		delete(f.projectVolumes, p.Name)
+		// Everything the fake's bench holds lives in the volumes that just
+		// went: the sites, the apps, and every file tamp wrote into them.
+		// A fake that remembered them would let "the data is gone" pass
+		// without being true.
+		f.sites = nil
+		f.apps = nil
+		f.siteApps = nil
+		f.Files = map[string]string{}
+	}
 	return nil
 }
 
@@ -342,6 +362,14 @@ func (f *Fake) EnsureVolume(_ context.Context, name string) error {
 	return nil
 }
 
+func (f *Fake) HasVolumes(_ context.Context, project string) (bool, error) {
+	f.Calls = append(f.Calls, "HasVolumes")
+	if f.PingErr != nil {
+		return false, f.PingErr
+	}
+	return f.projectVolumes[project], nil
+}
+
 func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 	f.Calls = append(f.Calls, "Exec")
 	exec := Exec{
@@ -365,6 +393,18 @@ func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 	}
 	if strings.Contains(exec.Line(), "bench init") {
 		f.put(frappe.CommonSiteConfigPath, BenchInitConfig)
+		// bench init clones frappe, which is what makes a second run of it
+		// against the same bench a different code path.
+		f.AddApp(frappe.FrappeApp)
+	}
+	// The probe tamp uses to decide whether a bench already has a source
+	// tree. It has to answer no for a bench the fake has never initialized,
+	// or every create would take the rebuild path.
+	if strings.Contains(exec.Line(), `test -d "`+frappe.AppsDir) {
+		if !f.apps[scriptArg(exec.Cmd, 0)] {
+			return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 1}
+		}
+		return nil
 	}
 	return f.answerSiteCommand(exec, req.Stdout)
 }

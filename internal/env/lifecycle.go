@@ -240,6 +240,12 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err := m.startSync(ctx, e, sync, m.Out.Stream()); err != nil {
 		return err
 	}
+	// Silently, and on every start: an app added through the exec bridge since
+	// the last one has a repository the host's git still misreads, and this is
+	// the same reconciliation the regenerated compose file is.
+	if err := m.handGitToHost(ctx, e, sync); err != nil {
+		return err
+	}
 
 	m.Out.Step(4, startSteps, "routing "+router.MailHost(string(e.Name())))
 	status, err := m.applyRoutes(ctx, m.Out.Stream())

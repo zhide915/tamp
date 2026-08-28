@@ -13,7 +13,7 @@ import (
 )
 
 func newCreateCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
-	var frappe, apps, sync_, dir string
+	var frappe, apps, syncMode, dir string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -36,7 +36,7 @@ func newCreateCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *co
 				Parent: dir,
 				Frappe: frappe,
 				Apps:   apps,
-				Sync:   sync_,
+				Sync:   syncMode,
 			})
 		},
 	}
@@ -45,7 +45,7 @@ func newCreateCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *co
 		"Frappe version: version-15, version-16 or develop")
 	cmd.Flags().StringVar(&apps, "apps", "",
 		"apps to fetch onto the bench, comma-separated: erpnext:version-15, or a git URL")
-	cmd.Flags().StringVar(&sync_, "sync", string(syncer.ModeAuto),
+	cmd.Flags().StringVar(&syncMode, "sync", string(syncer.ModeAuto),
 		"how source reaches the container: "+strings.Join(syncer.ModeNames(), ", "))
 	cmd.Flags().StringVar(&dir, "dir", "",
 		"create the environment under this directory instead of the current one")

@@ -23,8 +23,9 @@ func TestCreateFetchesEachAppOntoTheBenchAtTheBranchAsked(t *testing.T) {
 	if !slices.Contains(fetched.Cmd, "version-15") {
 		t.Errorf("tamp fetched erpnext without the branch asked for: %v", fetched.Cmd)
 	}
-	if got := c.engine.Apps(); !slices.Equal(got, []string{"erpnext", "hrms"}) {
-		t.Errorf("bench apps = %v, want [erpnext hrms]", got)
+	// frappe comes from bench init; the other two are what tamp fetched.
+	if got := c.engine.Apps(); !slices.Equal(got, []string{"erpnext", "frappe", "hrms"}) {
+		t.Errorf("bench apps = %v, want [erpnext frappe hrms]", got)
 	}
 
 	// The environment records where each app came from, so a later tamp can
@@ -49,6 +50,37 @@ func TestCreateWarnsThatAnUnpinnedAppTakesTheRepositoryDefaultBranch(t *testing.
 	r.assertStderrContains(t, "default branch of erpnext", "erpnext:version-15")
 	if c.benchRan(t, "bench get-app").Line() == "" {
 		t.Error("tamp did not fetch the app it warned about")
+	}
+}
+
+// The pin hint for a URL-sourced app has to repeat the URL: following a
+// bare-name hint would fetch from the frappe organisation, not the user's
+// repository.
+func TestThePinHintForAURLAppRepeatsTheURL(t *testing.T) {
+	c := sandbox(t)
+
+	r := c.run(t, "create", "demo", "--frappe", "version-15",
+		"--apps", "https://github.com/myorg/custom_app")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStderrContains(t, "https://github.com/myorg/custom_app:version-15")
+}
+
+// A repository's name and the app it declares can differ — frappe/health
+// clones as healthcare. The bench is the authority, and tamp.toml has to
+// record the name the bench will answer with, or re-adoption re-fetches an
+// app that is already there and fails on it.
+func TestCreateRecordsTheNameTheAppDeclaresNotTheRepositorys(t *testing.T) {
+	c := sandbox(t)
+	c.engine.AppAliases = map[string]string{"health": "healthcare"}
+
+	r := c.run(t, "create", "demo", "--frappe", "version-15",
+		"--apps", "https://github.com/frappe/health:version-15")
+
+	r.assertCode(t, exitcode.CodeOK)
+	config := c.read(t, "demo", "tamp.toml")
+	if !strings.Contains(config, `name = "healthcare"`) {
+		t.Errorf("tamp.toml records the repository's name, not the app's:\n%s", config)
 	}
 }
 

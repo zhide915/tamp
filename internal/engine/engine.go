@@ -192,6 +192,9 @@ type Engine interface {
 	// because compose refuses to start a project whose external volumes are
 	// missing, and will not create one itself.
 	EnsureVolume(ctx context.Context, name string) error
+	// HasVolumes reports whether any of a compose project's volumes still
+	// exist — the data an earlier environment may have left behind.
+	HasVolumes(ctx context.Context, project string) (bool, error)
 
 	// Exec runs a command inside a container and waits for it. A non-zero exit
 	// is an error; what the command said is on the request's streams.

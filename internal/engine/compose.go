@@ -94,6 +94,22 @@ func composeError(args []string, err error) error {
 		"the compose output above says why")
 }
 
+func (d *Docker) HasVolumes(ctx context.Context, project string) (bool, error) {
+	_, api, err := d.connect()
+	if err != nil {
+		return false, err
+	}
+	res, err := api.VolumeList(ctx, client.VolumeListOptions{
+		Filters: make(client.Filters).Add("label", composeProjectLabel+"="+project),
+	})
+	if err != nil {
+		return false, exitcode.New(exitcode.CodeEngineUnavailable,
+			fmt.Sprintf("cannot list Docker volumes: %v", rootCause(err)),
+			"start Docker and try again")
+	}
+	return len(res.Items) > 0, nil
+}
+
 func (d *Docker) Containers(ctx context.Context, project string) ([]Container, error) {
 	_, api, err := d.connect()
 	if err != nil {

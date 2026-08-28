@@ -63,10 +63,16 @@ func ModeNames() []string {
 // with auto already decided.
 type Effective Mode
 
+// There is no UseAuto: auto is a question, and these are the three answers.
+// Every one of them is a working environment, which is why nothing downstream
+// may treat two of them as failures of the first.
 const (
+	// UseMutagen mirrors the source; there is a session to manage.
 	UseMutagen = Effective(ModeMutagen)
-	UseBind    = Effective(ModeBind)
-	UseOff     = Effective(ModeOff)
+	// UseBind mounts the host's source; there is nothing to manage.
+	UseBind = Effective(ModeBind)
+	// UseOff leaves the source in the container; there is no host side.
+	UseOff = Effective(ModeOff)
 )
 
 func (e Effective) String() string { return string(e) }

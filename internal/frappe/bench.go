@@ -10,6 +10,7 @@ package frappe
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -139,11 +140,85 @@ func (b *Bench) prepareDirs(ctx context.Context) error {
 	})
 }
 
-// Init materializes the bench itself: the virtualenv, the frappe app, and the
+// Materialize makes the bench real: the virtualenv, the frappe app, and the
 // directory layout every later command assumes.
-func (b *Bench) Init(ctx context.Context) error {
+//
+// There are two ways to get there and which one applies is not a preference.
+// bench init clones frappe, and refuses — interactively, which in a container
+// tamp is driving means it aborts — when apps/frappe is already there. That
+// happens whenever an environment is re-adopted around a source tree that
+// outlived its volumes, and the source is the one thing tamp will not
+// overwrite to make a command simpler.
+func (b *Bench) Materialize(ctx context.Context) (initialized bool, err error) {
+	present, err := b.HasApp(ctx, FrappeApp)
+	if err != nil {
+		return false, err
+	}
+	if present {
+		return false, b.Rebuild(ctx)
+	}
+	return true, b.init(ctx)
+}
+
+// FrappeApp is the app every bench has: bench init clones it, and its presence
+// is what tells tamp a bench already has a source tree.
+const FrappeApp = "frappe"
+
+// HasApp reports whether an app is already in the bench's apps directory.
+func (b *Bench) HasApp(ctx context.Context, name string) (bool, error) {
+	err := b.Engine.Exec(ctx, engine.ExecRequest{
+		Container: b.Container,
+		Cmd:       engine.Script(`test -d "`+AppsDir+`/$1"`, name),
+		WorkDir:   BenchDir,
+	})
+	if err == nil {
+		return true, nil
+	}
+	// Only the command answering "no" means no. A probe tamp could not run at
+	// all is the failure it is, rather than an empty bench tamp then rebuilds.
+	var refused *engine.ExitError
+	if errors.As(err, &refused) {
+		return false, nil
+	}
+	return false, err
+}
+
+func (b *Bench) init(ctx context.Context) error {
 	return b.run(ctx, initScript, b.Branch, b.Python)
 }
+
+// rebuild puts a bench back around apps that are already on disk.
+//
+// It is the same bench init would have produced, minus the one step that would
+// have destroyed the source: the layout, the virtualenv, and every app's
+// requirements installed into it. The apps file is written here because bench
+// writes it as it clones each app, and nothing is being cloned.
+func (b *Bench) Rebuild(ctx context.Context) error {
+	return b.run(ctx, rebuildScript, b.Python, FrappeApp)
+}
+
+const rebuildScript = `
+set -eo pipefail
+. ` + toolchain.EnvScript + `
+cd ` + BenchDir + `
+mkdir -p sites logs config
+
+# frappe first, because that is the order bench itself writes and the order
+# Frappe loads hooks in.
+{
+  printf '%s\n' "$2"
+  for entry in apps/*/; do
+    name="${entry#apps/}"
+    name="${name%/}"
+    if [ -d "$entry" ] && [ "$name" != "$2" ]; then
+      printf '%s\n' "$name"
+    fi
+  done
+} > sites/apps.txt
+
+bench setup env --python "$(uv python find "$1")"
+bench setup requirements
+`
 
 // initScript runs bench init against the toolchain tamp provisioned.
 //
@@ -209,16 +284,17 @@ worker: bench worker
 // workers to run — and replacing the file wholesale would silently discard
 // them.
 func (b *Bench) writeCommonSiteConfig(ctx context.Context) error {
-	existing, err := b.Engine.ReadFile(ctx, b.Container, CommonSiteConfigPath)
-	if err != nil {
-		return err
-	}
-
 	config := map[string]any{}
-	if err := json.Unmarshal(existing, &config); err != nil {
-		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("%s in %s is not valid JSON: %v", CommonSiteConfigPath, b.Container, err),
-			"remove the environment and create it again")
+
+	// A bench rebuilt around source that outlived its volumes has an empty
+	// sites directory and no shared config in it yet. There is then nothing to
+	// preserve, which is a fine answer rather than a missing file.
+	if existing, err := b.Engine.ReadFile(ctx, b.Container, CommonSiteConfigPath); err == nil {
+		if err := json.Unmarshal(existing, &config); err != nil {
+			return exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("%s in %s is not valid JSON: %v", CommonSiteConfigPath, b.Container, err),
+				"remove the environment and create it again")
+		}
 	}
 	for key, value := range b.siteConfig() {
 		config[key] = value

@@ -209,7 +209,7 @@ func (b *Bench) SiteDatabase(ctx context.Context, host string) (string, error) {
 	if err := json.Unmarshal(body, &config); err != nil {
 		return "", exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s is not valid JSON: %v", SiteConfigPath(host), err),
-			"the site's own configuration is damaged — restore it from a snapshot")
+			"the site's own configuration is damaged — repair it with 'tamp exec <env> -- cat "+SiteConfigPath(host)+"'")
 	}
 	return config.DBName, nil
 }

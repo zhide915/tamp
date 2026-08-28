@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
+	"slices"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -23,10 +25,14 @@ import (
 // tamp got and what the engine said.
 const CreateLogFile = "create.log"
 
-// createSteps is how many numbered steps a create prints before the apps are
-// counted in — one step each. It grows as tamp learns to do more at create
-// time — a bench, a toolchain, a sync session, a router.
-const createSteps = 10
+// buildSteps is how many numbered steps turning a written-out environment into
+// a running bench prints, before its apps are counted in — one step each. It
+// grows as tamp learns to do more at create time — a bench, a toolchain, a
+// sync session, a router.
+const buildSteps = 7
+
+// createSteps is buildSteps plus the three a create does first.
+const createSteps = 3 + buildSteps
 
 // CreateRequest is what `tamp create` was asked for.
 type CreateRequest struct {
@@ -51,26 +57,70 @@ type CreateRequest struct {
 // itself is left with tamp.toml and create.log, because the one thing tamp
 // must never destroy is a directory the user might have put something in.
 func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
-	name, err := ParseName(req.Name)
+	plan, err := m.newPlan(req.Name, req.Frappe, req.Apps, req.Sync)
 	if err != nil {
 		return err
 	}
-	version, toolchain, err := ParseFrappeVersion(req.Frappe)
+	dir, err := m.createDir(req, plan.Name)
 	if err != nil {
 		return err
 	}
-	apps, err := ParseApps(req.Apps)
-	if err != nil {
+
+	if err := m.raise(ctx, dir, plan); err != nil {
+		m.Out.Note("delete " + dir + " to try again")
 		return err
 	}
-	syncMode, err := syncer.ParseMode(req.Sync)
+	return nil
+}
+
+// plan is a new environment as its flags describe it, with every one of them
+// already validated. It is what create and init have in common: two ways of
+// saying where the directory is, and one way of filling it.
+type plan struct {
+	Name      Name
+	Version   FrappeVersion
+	Toolchain Toolchain
+	Apps      []App
+	Sync      syncer.Mode
+}
+
+// newPlan validates the flags create and init share.
+//
+// All of them, before anything is made: a misspelled Frappe version has to
+// fail before tamp has claimed a name, made a directory or pulled an image.
+func (m *Manager) newPlan(name, version, apps, sync string) (plan, error) {
+	parsedName, err := ParseName(name)
 	if err != nil {
-		return err
+		return plan{}, err
 	}
-	dir, err := m.createDir(req, name)
+	parsedVersion, toolchain, err := ParseFrappeVersion(version)
 	if err != nil {
-		return err
+		return plan{}, err
 	}
+	parsedApps, err := ParseApps(apps)
+	if err != nil {
+		return plan{}, err
+	}
+	parsedSync, err := syncer.ParseMode(sync)
+	if err != nil {
+		return plan{}, err
+	}
+	return plan{
+		Name:      parsedName,
+		Version:   parsedVersion,
+		Toolchain: toolchain,
+		Apps:      parsedApps,
+		Sync:      parsedSync,
+	}, nil
+}
+
+// raise writes a new environment into a directory and brings it up.
+//
+// It is the whole of create, and the whole of init in a directory that holds
+// nothing yet. A failure at any step undoes everything tamp made outside the
+// directory — including the volumes, which is safe here and only here: this
+// environment has never held anything.
+func (m *Manager) raise(ctx context.Context, dir string, p plan) error {
 	// Warnings, not refusals: where the environment goes is the user's call,
 	// and both of these describe a setup that works until it does not.
 	for _, warning := range syncer.PathWarnings(dir) {
@@ -80,7 +130,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	// One numbered step per app: fetching one is minutes of cloning and
 	// pip-installing, and a create that spent them under a single line would
 	// look stuck.
-	log := &createLog{out: m.Out, total: createSteps + len(apps)}
+	log := &createLog{out: m.Out, total: createSteps + len(p.Apps)}
 	defer log.save(dir)
 
 	log.step("checking Docker")
@@ -88,36 +138,59 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 		return err
 	}
 
-	log.step(fmt.Sprintf("resolving the Frappe %s toolchain", version))
+	log.step(fmt.Sprintf("resolving the Frappe %s toolchain", p.Version))
 	log.note(fmt.Sprintf("python %s · node %s · mariadb %s",
-		toolchain.Python, toolchain.Node, toolchain.MariaDB))
+		p.Toolchain.Python, p.Toolchain.Node, p.Toolchain.MariaDB))
 
 	// Settled before the environment is written, because it decides what is
 	// written: a bind mount is a line in the compose file, and a machine that
 	// cannot get Mutagen falls back to one.
-	sync := m.syncMode(ctx, syncMode)
+	sync := m.syncMode(ctx, p.Sync)
 
 	log.step("writing the environment")
-	e, err := m.provision(dir, name, version, apps, toolchain, syncMode)
+	e, err := m.provision(dir, p)
 	if err != nil {
 		return err
 	}
+	if err := m.requireFreshVolumes(ctx, e); err != nil {
+		m.unregister(p.Name)
+		return err
+	}
 	if err := m.writeEnvironment(e, sync); err != nil {
-		m.unregister(name)
+		m.unregister(p.Name)
 		return err
 	}
 
 	status, err := m.build(ctx, e, sync, log)
 	if err != nil {
-		m.rollback(ctx, e, log)
+		m.rollback(ctx, e, engine.RemoveVolumes, log)
 		return err
 	}
 
-	m.Out.OK(fmt.Sprintf("%s ready — no sites yet", name))
+	m.Out.OK(fmt.Sprintf("%s ready — no sites yet", p.Name))
 	m.announceRoutes(e, status)
 	m.announceDBPassword(e)
 	m.Out.Hint("next: tamp site new <host>")
 	return nil
+}
+
+// requireFreshVolumes refuses to raise a new environment on top of data
+// volumes an earlier one left behind. Reattaching them silently would hand
+// this environment a database it knows nothing about — initialized under a
+// root password it does not hold — and the rollback a failed build performs
+// would then destroy data the earlier `tamp rm` deliberately kept.
+func (m *Manager) requireFreshVolumes(ctx context.Context, e *Environment) error {
+	held, err := m.Engine.HasVolumes(ctx, e.Resources.Project())
+	if err != nil {
+		return err
+	}
+	if !held {
+		return nil
+	}
+	return exitcode.New(exitcode.CodeFailed,
+		fmt.Sprintf("volumes from an earlier environment named %q still exist for this directory", e.Name()),
+		fmt.Sprintf("adopt them by restoring its %s and apps tree and running 'tamp init' — or delete them first: docker volume rm $(docker volume ls -q --filter label=com.docker.compose.project=%s)",
+			ConfigFile, e.Resources.Project()))
 }
 
 // build turns a written-out environment into a running bench.
@@ -126,6 +199,11 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 // undone by the rollback its one caller performs: an environment that got a
 // toolchain but no bench is not half-created, it is failed.
 func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effective, log *createLog) (router.Status, error) {
+	// Whether the host held source before anything ran: the mark of an
+	// adoption, read now because a Mutagen session below will mirror the
+	// container's tree out and make it true for fresh creates too.
+	adopted := hasSource(e.Dir)
+
 	log.step("starting containers")
 	if err := m.ensureSharedVolumes(ctx); err != nil {
 		return router.Status{}, err
@@ -145,12 +223,39 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 	}
 
 	log.step("initializing the bench")
-	if err := bench.Init(ctx); err != nil {
+	initialized, err := bench.Materialize(ctx)
+	if err != nil {
 		return router.Status{}, err
+	}
+
+	// Before the apps, not after. A session started here mirrors whatever the
+	// host already holds into the bench first, so an environment being
+	// re-adopted round its own source finds those apps present and skips
+	// re-cloning them — and a fresh create syncs out an app as it arrives.
+	log.step("starting the sync session")
+	if err := m.startSync(ctx, e, sync, log.stream()); err != nil {
+		return router.Status{}, err
+	}
+
+	// The one path where bench init and the host's source both exist: fresh
+	// volumes under Mutagen. bench initialized empty, the session has now
+	// mirrored the host's apps in, and bench knows nothing about them —
+	// without this they stay off apps.txt, requirements uninstalled.
+	if initialized && adopted && sync == syncer.UseMutagen {
+		log.note("registering the apps the sync session brought back")
+		if err := bench.Rebuild(ctx); err != nil {
+			return router.Status{}, err
+		}
 	}
 
 	if err := m.fetchApps(ctx, e, bench, log); err != nil {
 		return router.Status{}, err
+	}
+	if err := m.handGitToHost(ctx, e, sync); err != nil {
+		return router.Status{}, err
+	}
+	if sync == syncer.UseMutagen && runtime.GOOS == "windows" {
+		log.note("git in " + syncer.AppsDir(e.Dir) + " ignores file modes and line endings — this host stores neither the way Linux wrote them")
 	}
 
 	log.step("configuring the bench")
@@ -168,13 +273,6 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 		return router.Status{}, err
 	}
 
-	// After the bench exists, because what a session mirrors out is the apps
-	// tree the steps above put there.
-	log.step("starting the sync session")
-	if err := m.startSync(ctx, e, sync, log.stream()); err != nil {
-		return router.Status{}, err
-	}
-
 	// Last, because the router can only join a network that exists, and the
 	// environment's network is made by the compose up above.
 	log.step("routing " + router.MailHost(string(e.Name())))
@@ -187,21 +285,90 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 // site, so a create that installed them everywhere would be deciding something
 // 'tamp site new --apps' exists to let the user decide.
 func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.Bench, log *createLog) error {
-	for _, app := range e.Config.Frappe.Apps {
+	onBench, err := bench.Apps(ctx)
+	if err != nil {
+		return err
+	}
+
+	renamed := false
+	for i := range e.Config.Frappe.Apps {
+		app := &e.Config.Frappe.Apps[i]
+		// Re-adopting an environment runs this against a bench that already
+		// holds its apps, and bench get-app on one of those fails rather than
+		// quietly doing nothing.
+		if slices.Contains(onBench, app.Name) {
+			log.step(app.Name + " is already on the bench")
+			continue
+		}
+
 		log.step("fetching " + app.Name)
 		if app.Branch == "" {
 			// The one predictable way this goes wrong: most Frappe apps
 			// default to develop, which does not run on a pinned bench. tamp
 			// says so rather than picking a branch, because plenty of apps
 			// have no version-15 branch to pick.
+			pin := app.Name
+			if app.Source != defaultAppOwner+app.Name {
+				// The hint has to repeat a URL-sourced app's URL: the bare
+				// name would resolve to the frappe organisation instead.
+				pin = app.Source
+			}
 			m.Out.Warn(fmt.Sprintf("fetching default branch of %s — pin with %s:%s if you meant a release branch",
-				app.Name, app.Name, e.Config.Frappe.Version))
+				app.Name, pin, e.Config.Frappe.Version))
 		}
 		if err := bench.GetApp(ctx, frappe.GetAppRequest{Source: app.Source, Branch: app.Branch}); err != nil {
 			return err
 		}
+
+		// The recorded name came from the URL, but the app a repository
+		// declares can differ from the repository's name — frappe/health
+		// clones as healthcare. The bench is the authority: whatever just
+		// appeared on it is what this app is called everywhere tamp needs
+		// the name again, the already-on-the-bench check above included.
+		// Renaming is safe only when the fetch produced exactly one new app;
+		// more than one and tamp cannot tell which is which, so the record
+		// stands and the bench remains the authority at install time.
+		now, err := bench.Apps(ctx)
+		if err != nil {
+			return err
+		}
+		if fresh := newApps(now, onBench); !slices.Contains(now, app.Name) && len(fresh) == 1 {
+			log.note(app.Name + " calls itself " + fresh[0])
+			app.Name = fresh[0]
+			renamed = true
+		}
+		onBench = now
+	}
+
+	if renamed {
+		return e.Config.Save(ConfigPath(e.Dir))
 	}
 	return nil
+}
+
+// newApps names the apps that appeared between two listings of the bench.
+func newApps(now, before []string) []string {
+	var fresh []string
+	for _, name := range now {
+		if !slices.Contains(before, name) {
+			fresh = append(fresh, name)
+		}
+	}
+	return fresh
+}
+
+// handGitToHost makes the apps' repositories usable by the host's git.
+//
+// Only where the host's filesystem cannot describe what Linux wrote. On Linux
+// the source is bind-mounted and every mode is real; on macOS the executable
+// bit stores fine and turning the check off would hide changes the user made
+// themselves. Windows can do neither, and the repositories are in that state
+// because tamp cloned them in a container — so tamp is the one to settle it.
+func (m *Manager) handGitToHost(ctx context.Context, e *Environment, sync syncer.Effective) error {
+	if sync != syncer.UseMutagen || runtime.GOOS != "windows" {
+		return nil
+	}
+	return e.bench(m.Engine, m.Out.Stream()).HandGitToHost(ctx)
 }
 
 // announceDBPassword prints the environment's generated MariaDB credential.
@@ -247,7 +414,8 @@ func (m *Manager) createDir(req CreateRequest, name Name) (string, error) {
 
 // provision claims the name, writes the environment's files, and returns it
 // ready to start. Everything here is undoable by rollback.
-func (m *Manager) provision(dir string, name Name, version FrappeVersion, apps []App, tc Toolchain, sync syncer.Mode) (*Environment, error) {
+func (m *Manager) provision(dir string, p plan) (*Environment, error) {
+	name := p.Name
 	res, err := NewResources(name, dir)
 	if err != nil {
 		return nil, err
@@ -284,8 +452,8 @@ func (m *Manager) provision(dir string, name Name, version FrappeVersion, apps [
 		return nil, err
 	}
 
-	cfg := NewConfig(name, version, apps, tc, port)
-	cfg.Sync.Mode = sync
+	cfg := NewConfig(name, p.Version, p.Apps, p.Toolchain, port)
+	cfg.Sync.Mode = p.Sync
 	return &Environment{Dir: dir, Config: cfg, Resources: res}, nil
 }
 
@@ -311,12 +479,18 @@ func (m *Manager) writeEnvironment(e *Environment, sync syncer.Effective) error 
 	return e.Generate(sync)
 }
 
-// rollback undoes what a failed create put outside the environment directory.
+// rollback undoes what a failed provisioning put outside the environment
+// directory.
+//
+// The removal is the caller's to decide, and it is the difference between a
+// tidy failure and a disaster: a new environment's volumes have never held
+// anything and go with it, while one being re-adopted is standing on volumes
+// that survived a previous life.
 //
 // Its own failures are reported and then dropped: the user is about to be
-// told why the create failed, and burying that under "and the cleanup failed
-// too" would replace the actionable error with a less useful one.
-func (m *Manager) rollback(ctx context.Context, e *Environment, log *createLog) {
+// told why the operation failed, and burying that under "and the cleanup
+// failed too" would replace the actionable error with a less useful one.
+func (m *Manager) rollback(ctx context.Context, e *Environment, removal engine.Removal, log *createLog) {
 	m.Out.Warn(fmt.Sprintf("create failed — rolling back %s", e.Name()))
 
 	// Before the containers, because the far end of the session is one of them.
@@ -327,9 +501,9 @@ func (m *Manager) rollback(ctx context.Context, e *Environment, log *createLog) 
 	if err := m.router().Detach(ctx, e.Resources.Network()); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not detach the router: %v", err))
 	}
-	if err := m.Engine.ComposeDown(ctx, e.project(), engine.RemoveVolumes, log.stream()); err != nil {
+	if err := m.Engine.ComposeDown(ctx, e.project(), removal, log.stream()); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not remove the containers: %v", err))
-		m.Out.Warn(fmt.Sprintf("remove them by hand with: docker compose -p %s down --volumes", e.Resources.Project()))
+		m.Out.Warn(fmt.Sprintf("remove them by hand with: docker compose -p %s down", e.Resources.Project()))
 	}
 	m.unregister(e.Name())
 	// The registry no longer names this environment, so nothing may still
@@ -340,7 +514,6 @@ func (m *Manager) rollback(ctx context.Context, e *Environment, log *createLog) 
 
 	m.Out.Note(fmt.Sprintf("%s was left in place, with %s and %s",
 		e.Dir, ConfigFile, filepath.Join(StateDirName, CreateLogFile)))
-	m.Out.Note("delete the directory to try again")
 }
 
 func (m *Manager) unregister(name Name) {
