@@ -10,7 +10,6 @@ package frappe
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -164,23 +163,15 @@ func (b *Bench) Materialize(ctx context.Context) (initialized bool, err error) {
 // is what tells tamp a bench already has a source tree.
 const FrappeApp = "frappe"
 
-// HasApp reports whether an app is already in the bench's apps directory.
+// HasApp reports whether an app is already in the bench's apps directory. An
+// unreachable probe is a failure, not an empty bench tamp then rebuilds —
+// engine.Probe draws that line.
 func (b *Bench) HasApp(ctx context.Context, name string) (bool, error) {
-	err := b.Engine.Exec(ctx, engine.ExecRequest{
+	return engine.Probe(ctx, b.Engine, engine.ExecRequest{
 		Container: b.Container,
 		Cmd:       engine.Script(`test -d "`+AppsDir+`/$1"`, name),
 		WorkDir:   BenchDir,
 	})
-	if err == nil {
-		return true, nil
-	}
-	// Only the command answering "no" means no. A probe tamp could not run at
-	// all is the failure it is, rather than an empty bench tamp then rebuilds.
-	var refused *engine.ExitError
-	if errors.As(err, &refused) {
-		return false, nil
-	}
-	return false, err
 }
 
 func (b *Bench) init(ctx context.Context) error {

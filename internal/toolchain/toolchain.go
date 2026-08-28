@@ -10,7 +10,6 @@ package toolchain
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -106,24 +105,14 @@ func installUV(ctx context.Context, eng engine.Engine, req Request) error {
 }
 
 // isInstalled reports whether an executable is already in the shared volume.
-//
-// Only the command answering "no" means no. A probe tamp could not run at all
-// — because the daemon stopped, or the container went away — is returned as
-// the failure it is, rather than read as an empty toolchain that tamp would
-// then try to fill in a container that is not there.
+// A probe tamp could not run at all must not read as an empty toolchain that
+// tamp would then try to fill in a container that is not there — which is
+// exactly the distinction engine.Probe draws.
 func isInstalled(ctx context.Context, eng engine.Engine, container, path string) (bool, error) {
-	err := eng.Exec(ctx, engine.ExecRequest{
+	return engine.Probe(ctx, eng, engine.ExecRequest{
 		Container: container,
 		Cmd:       engine.Script(`test -x "$1"`, path),
 	})
-	if err == nil {
-		return true, nil
-	}
-	var refused *engine.ExitError
-	if errors.As(err, &refused) {
-		return false, nil
-	}
-	return false, err
 }
 
 // containerArch asks the container what it is, because that — not the host —

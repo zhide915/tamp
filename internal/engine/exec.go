@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -122,6 +123,23 @@ func (e *ExitError) reason() *exitcode.Error {
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("%s exited %d in %s", commandLine(e.Cmd), e.Status, e.Container),
 		"the output above says why")
+}
+
+// Probe runs a command that answers a yes/no question: exit 0 is yes, any
+// other exit status is no. Only the command answering "no" means no — a probe
+// that could not run at all, because the daemon stopped or the container went
+// away, comes back as the failure it is, rather than as an empty answer the
+// caller would then act on.
+func Probe(ctx context.Context, eng Engine, req ExecRequest) (bool, error) {
+	err := eng.Exec(ctx, req)
+	if err == nil {
+		return true, nil
+	}
+	var refused *ExitError
+	if errors.As(err, &refused) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (d *Docker) ReadFile(ctx context.Context, container, filePath string) ([]byte, error) {
