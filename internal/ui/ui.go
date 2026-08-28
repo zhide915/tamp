@@ -69,26 +69,68 @@ func (p *Printer) Hint(msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, msg))
 }
 
+// Note writes a dim line belonging to the result above it.
+//
+// It looks like Hint and differs in the one way that matters: --quiet keeps
+// it. A hint is an aside tamp can afford to drop, while a note is part of the
+// answer — doctor's fix lines are worthless if the failures they explain print
+// without them.
+func (p *Printer) Note(msg string) {
+	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, msg))
+}
+
 // Print writes a plain result line to stdout: data the caller asked for, with
 // no prefix and no colour. --quiet never suppresses it.
 func (p *Printer) Print(msg string) {
 	fmt.Fprintln(p.Out, msg)
 }
 
+// Mark is the ✓/!/✗ prefix on a result line.
+type Mark int
+
+const (
+	MarkOK Mark = iota
+	MarkWarn
+	MarkFail
+)
+
+func (m Mark) render() (symbol, color string) {
+	switch m {
+	case MarkWarn:
+		return "!", ansiYellow
+	case MarkFail:
+		return "✗", ansiRed
+	}
+	return "✓", ansiGreen
+}
+
 // OK reports success on stdout — the thing the caller asked for.
 func (p *Printer) OK(msg string) {
-	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiGreen, "✓")+" "+msg)
+	p.Result(MarkOK, msg)
 }
 
 // Warn reports something the user should know but that did not stop the
 // operation. Diagnostics go to stderr so a piped stdout stays clean.
 func (p *Printer) Warn(msg string) {
-	fmt.Fprintln(p.Err, paint(p.ColorErr, ansiYellow, "!")+" "+msg)
+	p.mark(p.Err, p.ColorErr, MarkWarn, msg)
 }
 
 // Fail reports a step that did not succeed.
 func (p *Printer) Fail(msg string) {
-	fmt.Fprintln(p.Err, paint(p.ColorErr, ansiRed, "✗")+" "+msg)
+	p.mark(p.Err, p.ColorErr, MarkFail, msg)
+}
+
+// Result writes a marked line to stdout. It is for commands whose whole output
+// is a list of outcomes — doctor's report — where a ✗ is the answer the user
+// asked for rather than a diagnostic about the command, and so belongs on the
+// stream they would redirect to keep it.
+func (p *Printer) Result(m Mark, msg string) {
+	p.mark(p.Out, p.ColorOut, m, msg)
+}
+
+func (p *Printer) mark(w io.Writer, color bool, m Mark, msg string) {
+	symbol, attr := m.render()
+	fmt.Fprintln(w, paint(color, attr, symbol)+" "+msg)
 }
 
 // Error prints tamp's terminal error line: one line, "error:" prefix, and —

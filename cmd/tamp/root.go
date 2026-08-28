@@ -5,13 +5,14 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
 // newRootCommand assembles the tamp command tree. Every command in it shares
 // one Printer, so --quiet and --no-color are applied in exactly one place.
-func newRootCommand(p *ui.Printer) *cobra.Command {
+func newRootCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 	var noColor, quiet bool
 
 	root := &cobra.Command{
@@ -54,6 +55,7 @@ func newRootCommand(p *ui.Printer) *cobra.Command {
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable coloured output")
 	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "print only results and errors")
 
+	root.AddCommand(newDoctorCommand(p, eng))
 	root.AddCommand(newVersionCommand(p))
 
 	return root

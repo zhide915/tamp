@@ -27,12 +27,33 @@ type Error struct {
 	Code Code
 	Msg  string
 	Fix  string
+
+	// reported marks a failure the command already explained itself. It is
+	// unexported so that only Reported can make one.
+	reported bool
 }
 
 // New builds an Error. Pass an empty Fix only when there is genuinely no
 // action the caller could take.
 func New(code Code, msg, fix string) *Error {
 	return &Error{Code: code, Msg: msg, Fix: fix}
+}
+
+// Reported is a failure the command has already put into words of its own —
+// doctor's list of failing checks says more than one "error:" line could.
+//
+// It is the single exception to the rule that an Error carries a message and a
+// fix, and it is marked rather than merely left blank so that an ordinary
+// Error built with an empty message never disappears by accident.
+func Reported(code Code) *Error {
+	return &Error{Code: code, reported: true}
+}
+
+// Silent reports whether err was already explained by the command that
+// returned it, and so must not be printed a second time.
+func Silent(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && e.reported
 }
 
 // Usage is the shorthand for a malformed command line.

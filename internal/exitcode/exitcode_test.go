@@ -66,3 +66,32 @@ func TestOfClassifiesErrors(t *testing.T) {
 		}
 	}
 }
+
+// A reported failure still exits with its code, but tamp prints nothing more:
+// the command that returned it has already explained itself.
+func TestReportedCarriesTheCodeAndIsSilent(t *testing.T) {
+	err := exitcode.Reported(exitcode.CodeEngineUnavailable)
+
+	if got := exitcode.Of(err); got != exitcode.CodeEngineUnavailable {
+		t.Errorf("Of() = %d, want %d", got, exitcode.CodeEngineUnavailable)
+	}
+	if !exitcode.Silent(err) {
+		t.Error("Silent() = false, want true")
+	}
+}
+
+// Silence is a deliberate mark, not the absence of a message. An ordinary
+// Error that happens to carry no text must still be printed, or a future
+// caller's failure would vanish without a word.
+func TestOnlyReportedErrorsAreSilent(t *testing.T) {
+	for _, err := range []error{
+		exitcode.New(exitcode.CodeFailed, "", ""),
+		exitcode.New(exitcode.CodeFailed, "something broke", "retry"),
+		errors.New("boom"),
+		nil,
+	} {
+		if exitcode.Silent(err) {
+			t.Errorf("Silent(%v) = true, want false", err)
+		}
+	}
+}

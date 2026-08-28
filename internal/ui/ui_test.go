@@ -173,3 +173,71 @@ func TestPrintIsPlainAndSurvivesQuiet(t *testing.T) {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}
 }
+
+// doctor's ✗ lines are the answer to the question the user asked, not a
+// diagnostic about tamp failing, so they go to stdout — `tamp doctor >
+// report.txt` has to capture the failures, which is the whole point of it.
+func TestResultWritesMarkedLinesToStdout(t *testing.T) {
+	p, out, errOut := newPrinter()
+	p.Result(ui.MarkOK, "Docker         29.7.2")
+	p.Result(ui.MarkWarn, "Router         not running")
+	p.Result(ui.MarkFail, "Docker         not answering")
+
+	want := "✓ Docker         29.7.2\n! Router         not running\n✗ Docker         not answering\n"
+	if got := out.String(); got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", errOut.String())
+	}
+}
+
+// A report is a result, so --quiet must not swallow it; there is nothing left
+// to print if it does.
+func TestResultSurvivesQuiet(t *testing.T) {
+	p, out, _ := newPrinter()
+	p.Quiet = true
+	p.Result(ui.MarkFail, "Docker not answering")
+
+	if out.Len() == 0 {
+		t.Error("stdout is empty under --quiet, want the result line")
+	}
+}
+
+func TestResultIsColouredLikeItsStderrTwin(t *testing.T) {
+	p, out, _ := newPrinter()
+	p.ColorOut = true
+	p.Result(ui.MarkFail, "Docker not answering")
+
+	if got, want := out.String(), "\x1b[31m✗\x1b[0m Docker not answering\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+// Note and Hint look identical; the difference is that a note is part of the
+// answer. doctor's fix lines print under a failing check, and a --quiet that
+// swallowed them would leave the user with a failure and no remedy.
+func TestNoteIsDimOnStdoutAndSurvivesQuiet(t *testing.T) {
+	p, out, errOut := newPrinter()
+	p.ColorOut = true
+	p.Quiet = true
+	p.Note("fix: start Docker Desktop")
+
+	if got, want := out.String(), "\x1b[2mfix: start Docker Desktop\x1b[0m\n"; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+	if errOut.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", errOut.String())
+	}
+}
+
+// The distinction only means something if Hint really is the droppable one.
+func TestHintIsStillSuppressedByQuiet(t *testing.T) {
+	p, out, _ := newPrinter()
+	p.Quiet = true
+	p.Hint("next: tamp site new <host>")
+
+	if out.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", out.String())
+	}
+}
