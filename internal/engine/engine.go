@@ -100,6 +100,20 @@ type ExecRequest struct {
 // leaves the size to the daemon's default.
 type ConsoleSize struct{ Width, Height uint }
 
+// LogRequest is one container's log, as tamp asks for it.
+type LogRequest struct {
+	// Container is the container's name, as compose named it.
+	Container string
+	// Follow keeps the stream open, so new lines arrive as they are written.
+	// It ends when the caller's context is cancelled.
+	Follow bool
+	// Tail is how many lines from the end to start with. TailAll is the whole
+	// log.
+	Tail int
+	// Stdout and Stderr receive the container's two streams, demultiplexed.
+	Stdout, Stderr io.Writer
+}
+
 // Script builds the argv that runs a shell script with positional arguments.
 //
 // bash rather than sh: tamp's scripts source nvm, which is a bash script and
@@ -182,6 +196,9 @@ type Engine interface {
 	// Exec runs a command inside a container and waits for it. A non-zero exit
 	// is an error; what the command said is on the request's streams.
 	Exec(ctx context.Context, req ExecRequest) error
+	// Logs copies a container's log to the request's streams, optionally
+	// following it until the context is cancelled.
+	Logs(ctx context.Context, req LogRequest) error
 	// ReadFile returns the contents of a file inside a container.
 	ReadFile(ctx context.Context, container, path string) ([]byte, error)
 	// WriteFile puts a file inside a container, replacing any file already

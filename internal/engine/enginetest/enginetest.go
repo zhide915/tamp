@@ -124,6 +124,12 @@ type Fake struct {
 	Files map[string]string
 	// Volumes names each volume tamp asked to exist, in order.
 	Volumes []string
+	// Log is what every container's log says. One body for all of them is
+	// enough: what a test asks is which container tamp read and how it
+	// asked, not what Docker had stored.
+	Log string
+	// Logs records each log request tamp made, in order.
+	LogReqs []engine.LogRequest
 
 	// networks is the fake's set of Docker networks, each holding the names of
 	// the containers attached to it. Compose makes and removes an
@@ -377,7 +383,9 @@ func (f *Fake) answerSiteCommand(exec Exec, stdout io.Writer) error {
 	case strings.Contains(exec.Line(), "bench new-site"):
 		f.addSite(siteArg(exec.Cmd, "new-site"))
 	case strings.Contains(exec.Line(), "bench drop-site"):
-		delete(f.sites, siteArg(exec.Cmd, "drop-site"))
+		host := siteArg(exec.Cmd, "drop-site")
+		delete(f.sites, host)
+		delete(f.Files, frappe.SiteConfigPath(host))
 	// The listing script names a site by the config file every site has.
 	case strings.Contains(exec.Line(), "site_config.json"):
 		for _, host := range f.Sites() {
@@ -483,6 +491,21 @@ func (f *Fake) addSite(host string) {
 		f.sites = map[string]bool{}
 	}
 	f.sites[host] = true
+	// Creating a site writes its own config, which is where the database name
+	// Frappe invented is recorded — and the only place anything can read it.
+	f.put(frappe.SiteConfigPath(host), fmt.Sprintf(`{"db_name": %q}`, "_"+strings.ReplaceAll(host, ".", "_")))
+}
+
+func (f *Fake) Logs(_ context.Context, req engine.LogRequest) error {
+	f.Calls = append(f.Calls, "Logs")
+	f.LogReqs = append(f.LogReqs, req)
+	if f.ExecErr != nil {
+		return f.ExecErr
+	}
+	if req.Stdout != nil {
+		_, _ = io.WriteString(req.Stdout, f.Log)
+	}
+	return nil
 }
 
 func (f *Fake) ReadFile(_ context.Context, container, path string) ([]byte, error) {

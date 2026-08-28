@@ -28,6 +28,28 @@ for you, for the same reason — it would have to invent the branch.
 tamp exec erp15 -- bench get-app hrms --branch version-15
 ```
 
+## Watching an environment, and its database
+
+`tamp logs` shows one service at a time. The bench's five processes — `web`,
+`socketio`, `watch`, `schedule`, `worker` — share a container and a log, and
+tamp shows the lines belonging to the one you asked for. `mariadb`,
+`redis-cache`, `redis-queue` and `mailpit` have a container each. `router` is
+the machine's, so it answers from anywhere.
+
+```sh
+tamp logs erp15 web -f
+tamp logs router --tail 50
+```
+
+`tamp db` is the one place tamp gives out a port. A database GUI client
+speaks the MySQL protocol and has nowhere to put a Host header, so every
+environment publishes one MariaDB port on loopback, and `tamp db` prints it
+along with the credential tamp generated and the database behind each site.
+
+```sh
+tamp db erp15
+```
+
 ## Reaching an environment
 
 One Caddy container routes for the whole machine. It takes port 80 when it can,

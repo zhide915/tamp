@@ -6,8 +6,10 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
+	"os/signal"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -35,7 +37,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv fun
 	root := newRootCommand(p, eng, stdin)
 	root.SetArgs(args)
 
-	if err := root.Execute(); err != nil {
+	// Ctrl-C cancels the context instead of killing the process, so a
+	// followed log stops cleanly — buffered partial line flushed — and an
+	// interrupted create still reaches its rollback.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	if err := root.ExecuteContext(ctx); err != nil {
 		// A reported failure was already explained by the command that
 		// returned it, in more detail than one line could carry.
 		if !exitcode.Silent(err) {

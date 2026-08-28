@@ -3,9 +3,12 @@ package frappe
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/zhide915/tamp/internal/engine"
+	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
@@ -183,4 +186,30 @@ func lines(out string) []string {
 		}
 	}
 	return got
+}
+
+// SiteConfigPath is one site's own configuration, the file that says which
+// database on this bench's MariaDB the site is.
+func SiteConfigPath(host string) string { return SiteDir(host) + "/site_config.json" }
+
+// SiteDatabase names the database one site lives in.
+//
+// Frappe derives it at creation and never puts it anywhere a bench command
+// will print, so tamp reads the site's own config — which is where Frappe
+// itself looks it up on every request.
+func (b *Bench) SiteDatabase(ctx context.Context, host string) (string, error) {
+	body, err := b.Engine.ReadFile(ctx, b.Container, SiteConfigPath(host))
+	if err != nil {
+		return "", err
+	}
+
+	var config struct {
+		DBName string `json:"db_name"`
+	}
+	if err := json.Unmarshal(body, &config); err != nil {
+		return "", exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("%s is not valid JSON: %v", SiteConfigPath(host), err),
+			"the site's own configuration is damaged — restore it from a snapshot")
+	}
+	return config.DBName, nil
 }
