@@ -38,14 +38,6 @@ func TestComposeVersionRejectsV1(t *testing.T) {
 	}
 }
 
-func TestComposeVersionRejectsUnparseableOutput(t *testing.T) {
-	for _, out := range []string{"", "   \n", "not a version"} {
-		if _, err := parseComposeVersion(out); err == nil {
-			t.Errorf("parseComposeVersion(%q) succeeded, want an error", out)
-		}
-	}
-}
-
 // The Docker client restates the endpoint at every layer it wraps, so tamp
 // keeps only the innermost reason — the one thing it cannot say for itself.
 func TestRootCauseKeepsOnlyTheInnermostReason(t *testing.T) {

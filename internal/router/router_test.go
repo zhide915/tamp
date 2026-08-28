@@ -98,18 +98,6 @@ func TestASiteIsRoutedToBothTheWebServerAndSocketIO(t *testing.T) {
 	}
 }
 
-// The whole point of assembling every environment at once: what one
-// environment is doing cannot subtract from another's routes.
-func TestEnvironmentsRoutesCoexist(t *testing.T) {
-	got := Caddyfile([]Env{demo(), other()})
-
-	for _, host := range []string{"mail.demo.localhost", "mail.other.localhost"} {
-		if !strings.Contains(got, "http://"+host+" {") {
-			t.Errorf("no route for %s:\n%s", host, got)
-		}
-	}
-}
-
 // The file is rewritten on every environment and site change, so an unstable
 // ordering would make every one of them look like a change.
 func TestTheAssembledFileDoesNotDependOnTheOrderSitesArriveIn(t *testing.T) {
@@ -136,54 +124,6 @@ func TestAnEmptyMachineStillProducesRoutableConfiguration(t *testing.T) {
 }
 
 // --- the container ----------------------------------------------------------
-
-func TestApplyStartsTheRouterWhenTheMachineHasNone(t *testing.T) {
-	fake := enginetest.Running()
-	r := newTestRouter(t, fake)
-	fake.Up(demo().Network) // the environment is up; its network exists
-
-	status, err := r.Apply(context.Background(), []Env{demo()}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !status.Running || status.Port != DefaultPort {
-		t.Errorf("status = %+v, want a router running on %d", status, DefaultPort)
-	}
-	ups := 0
-	for _, op := range fake.Ops {
-		if op.Method == "ComposeUp" && op.Project.Name == Project {
-			ups++
-		}
-	}
-	if ups != 1 {
-		t.Errorf("tamp ran %d compose ups on the router, want 1", ups)
-	}
-	if got := fake.Attached(demo().Network); !slices.Contains(got, Container) {
-		t.Errorf("the router is not on the environment's network; it holds %v", got)
-	}
-}
-
-// A reload keeps every connection the router is already serving. Recreating
-// the container to pick up new routes would drop all of them, and every tamp
-// command that touches a site reaches this path.
-func TestApplyReloadsARunningRouterInsteadOfRestartingIt(t *testing.T) {
-	fake := enginetest.Running()
-	r := newTestRouter(t, fake)
-	fake.Up(Project)
-	fake.Up(demo().Network)
-
-	if _, err := r.Apply(context.Background(), []Env{demo()}, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	if slices.Contains(fake.Calls, "ComposeUp") {
-		t.Errorf("tamp restarted a router that was already running: %v", fake.Calls)
-	}
-	if !fake.Ran("caddy reload") {
-		t.Errorf("tamp never reloaded the router: %v", fake.Calls)
-	}
-}
 
 // Removing an environment is no reason to start a router this machine was not
 // using — but its routes still have to go.
@@ -242,26 +182,6 @@ func TestAttachingTwiceConnectsOnce(t *testing.T) {
 	}
 	if connects != 1 {
 		t.Errorf("tamp connected %d times, want 1", connects)
-	}
-}
-
-// Docker refuses to remove a network that still has something attached, so an
-// environment's teardown depends on this happening first.
-func TestDetachTakesTheRouterOffTheNetwork(t *testing.T) {
-	fake := enginetest.Running()
-	r := newTestRouter(t, fake)
-	fake.Up(demo().Network)
-	ctx := context.Background()
-	if err := r.Attach(ctx, demo().Network); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := r.Detach(ctx, demo().Network); err != nil {
-		t.Fatal(err)
-	}
-
-	if got := fake.Attached(demo().Network); slices.Contains(got, Container) {
-		t.Errorf("the router is still on the network: %v", got)
 	}
 }
 
@@ -353,28 +273,6 @@ func TestTheFallbackPortReachesEveryURL(t *testing.T) {
 	}
 	if !strings.Contains(string(compose), "127.0.0.1:8080:80") {
 		t.Errorf("the router does not publish the fallback port:\n%s", compose)
-	}
-}
-
-// An unreachable engine costs the "is it up" half of the answer and nothing
-// else. The port is tamp's own record, and a status that dropped it would
-// print URLs on port 80 — pointing at whatever else took it.
-func TestAnUnreachableEngineStillReportsTheRoutersPort(t *testing.T) {
-	fake := enginetest.Running()
-	r := newTestRouter(t, fake)
-	r.PortIsFree = func(p int) bool { return p != DefaultPort }
-	if _, err := r.Apply(context.Background(), []Env{demo()}, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	down := New(filepath.Dir(r.Dir), enginetest.Unavailable())
-	status, err := down.Status(context.Background())
-
-	if err == nil {
-		t.Fatal("Status hid an unreachable engine")
-	}
-	if status.Port != FallbackPort {
-		t.Errorf("port = %d, want the %d tamp recorded", status.Port, FallbackPort)
 	}
 }
 

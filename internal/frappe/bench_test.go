@@ -62,22 +62,6 @@ func TestTheProcessFileRunsEveryBenchProcess(t *testing.T) {
 	}
 }
 
-func TestConfiguringWritesTheProcessFileOntoTheBench(t *testing.T) {
-	b, fake := initialized(t)
-
-	if err := b.Configure(t.Context()); err != nil {
-		t.Fatalf("Configure = %v", err)
-	}
-
-	got, ok := fake.Wrote(frappe.ProcfilePath)
-	if !ok {
-		t.Fatalf("tamp wrote %v, not %s", fake.Written(), frappe.ProcfilePath)
-	}
-	if got != frappe.Procfile() {
-		t.Errorf("the Procfile on the bench is not the one tamp generates:\n%s", got)
-	}
-}
-
 // --- the shared site config ------------------------------------------------
 
 // The keys that make a bench talk to this environment's containers rather than

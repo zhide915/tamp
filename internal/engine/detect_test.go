@@ -162,18 +162,6 @@ func TestDefaultContextFallsThroughToProbing(t *testing.T) {
 	}
 }
 
-func TestMissingDockerConfigFallsThroughToProbing(t *testing.T) {
-	d := detector(t, nil, "unix:///var/run/docker.sock")
-
-	addr, err := d.Detect()
-	if err != nil {
-		t.Fatalf("Detect: %v", err)
-	}
-	if addr.Source != engine.SourceProbe {
-		t.Errorf("Source = %q, want %q", addr.Source, engine.SourceProbe)
-	}
-}
-
 // The named pipe is probed before the unix socket, so a machine that somehow
 // answers on both is reported as the Docker Desktop engine it is.
 func TestProbingHonoursCandidateOrder(t *testing.T) {

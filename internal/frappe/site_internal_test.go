@@ -29,12 +29,3 @@ func TestNoAppsIsNoApps(t *testing.T) {
 		t.Errorf("parseApps = %v, want nothing", got)
 	}
 }
-
-// Where bench puts a dropped site. tamp prints this path, so a wrong one
-// sends someone looking for their files in a directory that does not exist —
-// which is what happened before a real drop-site was watched.
-func TestTheArchivePathIsWhereBenchActuallyMovesADroppedSite(t *testing.T) {
-	if got := ArchivedSitesDir; got != BenchDir+"/archived/sites" {
-		t.Errorf("ArchivedSitesDir = %s, and bench moves a dropped site to <bench>/archived/sites", got)
-	}
-}

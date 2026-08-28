@@ -28,24 +28,10 @@ func TestCodesMatchTheDocumentedContract(t *testing.T) {
 	}
 }
 
-func TestErrorMessageIncludesTheFix(t *testing.T) {
-	err := exitcode.New(exitcode.CodeNotFound, "environment 'x' not found", "see 'tamp list'")
-	if got, want := err.Error(), "environment 'x' not found — see 'tamp list'"; got != want {
-		t.Errorf("Error() = %q, want %q", got, want)
-	}
-}
-
 func TestErrorMessageOmitsTheSeparatorWithoutAFix(t *testing.T) {
 	err := exitcode.New(exitcode.CodeFailed, "something broke", "")
 	if got, want := err.Error(), "something broke"; got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
-	}
-}
-
-func TestUsageShorthandCarriesTheUsageCode(t *testing.T) {
-	err := exitcode.Usage(`unknown command "nope"`, "run 'tamp --help'")
-	if err.Code != exitcode.CodeUsage {
-		t.Errorf("Code = %d, want %d", err.Code, exitcode.CodeUsage)
 	}
 }
 

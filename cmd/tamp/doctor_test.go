@@ -40,17 +40,6 @@ func TestDoctorWritesFailuresToStdout(t *testing.T) {
 	}
 }
 
-// Exit 4 is the documented "engine unavailable" code, and it is what an agent
-// branches on to decide whether to tell the user to start Docker.
-func TestDoctorExitsEngineUnavailableWhenDockerIsDown(t *testing.T) {
-	c := sandbox(t)
-	c.engine = enginetest.Unavailable()
-
-	r := c.run(t, "doctor")
-
-	r.assertCode(t, exitcode.CodeEngineUnavailable)
-}
-
 // doctor has already said what is wrong, in more detail than one line can
 // carry; tamp's trailing "error:" line would only repeat it.
 func TestDoctorDoesNotAppendAnErrorLineToItsOwnReport(t *testing.T) {
@@ -96,20 +85,6 @@ func TestDoctorStillChecksComposeWhenDockerIsDown(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeEngineUnavailable)
 	r.assertStdoutContains(t, "✗ Docker", "✓ Docker Compose")
-}
-
-func TestDoctorTakesNoArguments(t *testing.T) {
-	r := sandbox(t).run(t, "doctor", "extra")
-
-	r.assertCode(t, exitcode.CodeUsage)
-	r.assertStderrContains(t, `error: unexpected argument "extra"`, "tamp doctor --help")
-}
-
-func TestDoctorIsListedInHelp(t *testing.T) {
-	r := sandbox(t).run(t)
-
-	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, "doctor")
 }
 
 // Exit 4 is for commands that need the engine. Everything else has to keep

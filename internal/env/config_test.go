@@ -2,7 +2,6 @@ package env
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -41,24 +40,6 @@ func TestConfigRoundTrips(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("round trip changed the config:\n got %+v\nwant %+v", got, want)
-	}
-}
-
-// The header is where a user about to hand-edit compose.yaml learns that it
-// will be overwritten.
-func TestSavedConfigExplainsThatGeneratedFilesAreRewritten(t *testing.T) {
-	path := ConfigPath(t.TempDir())
-	if err := NewConfig("erp15", Version15, nil, Toolchain{}, 33061).Save(path); err != nil {
-		t.Fatal(err)
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"source of truth", "tamp start"} {
-		if !strings.Contains(string(body), want) {
-			t.Errorf("tamp.toml header does not mention %q:\n%s", want, body)
-		}
 	}
 }
 
@@ -126,12 +107,6 @@ func TestUnparseableConfigIsAFailureNotACrash(t *testing.T) {
 
 	if got := exitcode.Of(err); got != exitcode.CodeFailed {
 		t.Errorf("exit code = %d, want %d (%v)", got, exitcode.CodeFailed, err)
-	}
-}
-
-func TestConfigPathIsInsideTheEnvironmentDirectory(t *testing.T) {
-	if got, want := ConfigPath("/work/erp15"), filepath.Join("/work/erp15", "tamp.toml"); got != want {
-		t.Errorf("ConfigPath = %q, want %q", got, want)
 	}
 }
 

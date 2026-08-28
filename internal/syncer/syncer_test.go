@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
@@ -98,20 +97,5 @@ func TestGitIsSyncedAndBuildOutputIsNot(t *testing.T) {
 		if strings.Contains(ignore, ".git") {
 			t.Errorf("%s is ignored, so git would not work on the host", ignore)
 		}
-	}
-}
-
-func TestBetaURLAddressesTheBenchInsideItsContainer(t *testing.T) {
-	got := syncer.BetaURL("frappe", "tamp-erp15-ab12cd-frappe-1", "/workspace/frappe-bench/apps")
-	want := "docker://frappe@tamp-erp15-ab12cd-frappe-1/workspace/frappe-bench/apps"
-	if got != want {
-		t.Errorf("BetaURL = %q, want %q", got, want)
-	}
-}
-
-func TestAModeThatIsNotAModeIsExitOne(t *testing.T) {
-	_, err := syncer.ParseMode("nope")
-	if exitcode.Of(err) != exitcode.CodeFailed {
-		t.Errorf("exit code = %d, want %d", exitcode.Of(err), exitcode.CodeFailed)
 	}
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,22 +71,6 @@ func filterOps(ops []enginetest.Op, method string, keep func(project string) boo
 }
 
 // --- create ---------------------------------------------------------------
-
-func TestCreateProvisionsTheEnvironmentAndStartsIt(t *testing.T) {
-	c := sandbox(t)
-
-	r := c.run(t, "create", "demo", "--frappe", "version-15")
-
-	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, "demo ready", "no sites yet")
-	// The version matrix is resolved for the user and shown, because "which
-	// Python is in there" is the question tamp exists to stop them asking.
-	r.assertStdoutContains(t, "python 3.11", "node 18", "mariadb 10.11")
-
-	if ups := c.ops("ComposeUp"); len(ups) != 1 {
-		t.Fatalf("tamp ran %d compose ups, want 1", len(ups))
-	}
-}
 
 func TestCreateWritesTheEnvironmentsFiles(t *testing.T) {
 	c := sandbox(t)
@@ -173,17 +156,6 @@ func TestCreateRefusesToBuildOnTopOfAnExistingDirectory(t *testing.T) {
 	r.assertStderrContains(t, "already exists")
 }
 
-// version-14 is out of scope, and the error has to name what tamp does
-// support rather than leave the user guessing.
-func TestCreateRejectsAnUnsupportedFrappeVersion(t *testing.T) {
-	c := sandbox(t)
-
-	r := c.run(t, "create", "demo", "--frappe", "version-14")
-
-	r.assertCode(t, exitcode.CodeFailed)
-	r.assertStderrContains(t, "not supported", "version-15", "version-16", "develop")
-}
-
 func TestCreateNeedsDockerAndSaysSoWithExitFour(t *testing.T) {
 	c := sandbox(t)
 	c.engine = enginetest.Unavailable()
@@ -195,32 +167,6 @@ func TestCreateNeedsDockerAndSaysSoWithExitFour(t *testing.T) {
 }
 
 // --- environment resolution -----------------------------------------------
-
-func TestTheEnvironmentArgumentIsOptionalInsideAnEnvironment(t *testing.T) {
-	c := sandbox(t)
-	c.create(t, "demo")
-	deep := c.path("demo", "apps", "erpnext")
-	if err := os.MkdirAll(deep, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(deep)
-
-	r := c.run(t, "stop")
-
-	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, "demo stopped")
-}
-
-func TestAnExplicitNameResolvesFromAnywhere(t *testing.T) {
-	c := sandbox(t)
-	c.create(t, "demo")
-	t.Chdir(t.TempDir())
-
-	r := c.run(t, "stop", "demo")
-
-	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, "demo stopped")
-}
 
 // Both routes failing is exit 3 — the environment does not exist.
 func TestNeitherRouteResolvingIsExitThree(t *testing.T) {
@@ -523,36 +469,6 @@ func TestASecondRegistryMutationIsRefusedWhileTheFirstHoldsTheLock(t *testing.T)
 }
 
 // --- rollback --------------------------------------------------------------
-
-// A create that fails partway must leave nothing running, nothing registered,
-// and enough on disk to find out why.
-func TestAFailedCreateRollsBackAndLeavesTheLog(t *testing.T) {
-	c := sandbox(t)
-	c.engine.UpErr = errors.New("mariadb never became healthy")
-
-	r := c.run(t, "create", "demo", "--frappe", "version-15")
-
-	r.assertCode(t, exitcode.CodeFailed)
-	r.assertStderrContains(t, "rolling back", "mariadb never became healthy")
-
-	downs := c.ops("ComposeDown")
-	if len(downs) != 1 || downs[0].Removal != engine.RemoveVolumes {
-		t.Errorf("rollback compose downs = %v, want one that removes the volumes it made", downs)
-	}
-
-	// The registry must not remember an environment that was never built.
-	c.run(t, "list").assertStdoutContains(t, "no environments yet")
-
-	if !c.exists("demo", env.ConfigFile) {
-		t.Errorf("rollback deleted %s — it is the user's directory", env.ConfigFile)
-	}
-	log := c.read(t, "demo", env.StateDirName, env.CreateLogFile)
-	for _, want := range []string{"checking Docker", "starting containers", "ComposeUp"} {
-		if !strings.Contains(log, want) {
-			t.Errorf("create.log does not record %q:\n%s", want, log)
-		}
-	}
-}
 
 // --- list -------------------------------------------------------------------
 

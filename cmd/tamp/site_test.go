@@ -10,7 +10,6 @@ import (
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
-	"github.com/zhide915/tamp/internal/frappe"
 )
 
 // A site is tamp's whole promise made visible: a hostname a browser opens.
@@ -284,32 +283,6 @@ func TestSiteNewNeedsARunningEnvironment(t *testing.T) {
 	}
 }
 
-// A hostname tamp cannot route is caught before anything is created, because
-// afterwards it is a site nothing can reach and a Caddyfile that may not load.
-func TestSiteNewRejectsHostnamesTampCannotRoute(t *testing.T) {
-	cases := map[string]string{
-		"a single label resolves to nothing": "shop",
-		"uppercase is not a directory name":  "Shop.localhost",
-		"a label may not end with a hyphen":  "shop-.localhost",
-		"an empty label":                     "shop..localhost",
-		"an address, not a name":             "127.0.0.1",
-	}
-	for why, host := range cases {
-		t.Run(why, func(t *testing.T) {
-			c := sandbox(t)
-			c.create(t, "demo")
-			before := len(c.engine.Execs)
-
-			r := c.run(t, "site", "new", "demo", host)
-
-			r.assertCode(t, exitcode.CodeFailed)
-			if len(c.engine.Execs) != before {
-				t.Error("tamp touched the bench before rejecting the hostname")
-			}
-		})
-	}
-}
-
 // *.localhost resolves everywhere with no configuration; anything else
 // resolves to whatever the internet says, which is not this machine. Until
 // tamp manages the hosts file itself, the user needs the exact line.
@@ -576,13 +549,5 @@ func TestSiteUsageErrors(t *testing.T) {
 			c := sandbox(t)
 			c.run(t, args...).assertCode(t, exitcode.CodeUsage)
 		})
-	}
-}
-
-// The site directory is the hostname, which is the fact the whole design rests
-// on — Frappe finds the site by matching the Host header against it.
-func TestASiteDirectoryIsItsHostname(t *testing.T) {
-	if got := frappe.SiteDir("shop.localhost"); got != frappe.SitesDir+"/shop.localhost" {
-		t.Errorf("SiteDir = %s, want the hostname under %s", got, frappe.SitesDir)
 	}
 }

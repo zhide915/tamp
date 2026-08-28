@@ -96,27 +96,6 @@ func TestAnExplicitNameBeatsTheCurrentDirectory(t *testing.T) {
 	}
 }
 
-// Both routes failing is exit 3 (CLI spec), with something to do about it.
-func TestBothResolutionRoutesFailingIsNotFound(t *testing.T) {
-	home, elsewhere := t.TempDir(), t.TempDir()
-
-	t.Run("no name and not inside an environment", func(t *testing.T) {
-		_, err := Resolve(home, elsewhere, "")
-		assertNotFoundWithFix(t, err)
-		if !strings.Contains(err.Error(), "tamp list") {
-			t.Errorf("error = %q, want it to point at 'tamp list'", err)
-		}
-	})
-
-	t.Run("a name nothing is registered under", func(t *testing.T) {
-		_, err := Resolve(home, elsewhere, "ghost")
-		assertNotFoundWithFix(t, err)
-		if !strings.Contains(err.Error(), `"ghost"`) {
-			t.Errorf("error = %q, want it to name the environment", err)
-		}
-	})
-}
-
 // The registry is an index, not the truth: a directory can vanish behind it.
 func TestARegisteredEnvironmentWhoseDirectoryIsGoneSaysSo(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()

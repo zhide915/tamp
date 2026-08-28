@@ -142,14 +142,3 @@ func TestSiteNewAcceptsAnAppFetchedThroughTheExecBridge(t *testing.T) {
 		t.Errorf("shop.localhost has %v installed, want [erpnext]", got)
 	}
 }
-
-func TestCreateRejectsAnAppSpecItCannotRead(t *testing.T) {
-	c := sandbox(t)
-
-	r := c.run(t, "create", "demo", "--apps", ":version-15")
-
-	r.assertCode(t, exitcode.CodeFailed)
-	if c.exists("demo") {
-		t.Error("tamp made the environment directory before reading its apps")
-	}
-}

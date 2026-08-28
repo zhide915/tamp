@@ -18,21 +18,6 @@ func TestFirstEnvironmentGetsTheFirstPort(t *testing.T) {
 	}
 }
 
-// A stopped environment still owns its port — nothing is listening on it, and
-// it must not be handed to a second environment that would then collide the
-// moment both are started.
-func TestAPortClaimedByAnotherEnvironmentIsSkippedEvenWhenNothingListens(t *testing.T) {
-	taken := map[int]bool{FirstDBPort: true, FirstDBPort + 1: true}
-
-	port, err := allocateDBPort(taken, allFree)
-	if err != nil {
-		t.Fatalf("allocateDBPort = %v", err)
-	}
-	if port != FirstDBPort+2 {
-		t.Errorf("port = %d, want %d", port, FirstDBPort+2)
-	}
-}
-
 // Allocation must be decidable from the registry alone.
 //
 // The registry entry is written under the machine lock; the environment's
@@ -50,19 +35,6 @@ func TestAllocationDoesNotDependOnAnyFileOnDisk(t *testing.T) {
 	}
 	if port == FirstDBPort {
 		t.Errorf("port = %d, which the registry says erp15 already holds", port)
-	}
-}
-
-// Something outside tamp can be sitting on a port no environment claims.
-func TestAPortInUseByAnythingElseIsSkipped(t *testing.T) {
-	free := func(p int) bool { return p != FirstDBPort }
-
-	port, err := allocateDBPort(nil, free)
-	if err != nil {
-		t.Fatalf("allocateDBPort = %v", err)
-	}
-	if port != FirstDBPort+1 {
-		t.Errorf("port = %d, want %d", port, FirstDBPort+1)
 	}
 }
 

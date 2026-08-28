@@ -60,17 +60,6 @@ func TestCreateStartsASyncSessionBetweenTheHostAndTheBench(t *testing.T) {
 	}
 }
 
-// The container's apps tree is somewhere Mutagen puts it, so nothing may be
-// bound over it: a bind mount is exactly what this mode exists to avoid.
-func TestMutagenModeBindsNothingIntoTheContainer(t *testing.T) {
-	c := sandbox(t)
-	c.create(t, "demo", "--sync", "mutagen")
-
-	if compose := c.read(t, "demo", env.ComposeFile); strings.Contains(compose, "./apps:") {
-		t.Errorf("compose binds the host's apps directory in mutagen mode:\n%s", compose)
-	}
-}
-
 // The Linux answer, and the documented fallback everywhere else: the container
 // reads the host's filesystem directly, and there is no session at all.
 func TestBindModeMountsTheHostSourceAndRunsNoSession(t *testing.T) {

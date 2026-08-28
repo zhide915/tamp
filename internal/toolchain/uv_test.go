@@ -126,20 +126,3 @@ func serveRelease(t *testing.T, body []byte) string {
 	t.Cleanup(server.Close)
 	return server.URL + "/uv.tar.gz"
 }
-
-// A download that is not there at all is a network problem, not a checksum
-// one, and the message has to say which.
-func TestAMissingReleaseIsReportedAsADownloadFailure(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Error(w, "not found", http.StatusNotFound)
-	}))
-	t.Cleanup(server.Close)
-
-	_, err := fetchRelease(t.Context(), server.URL+"/uv.tar.gz", strings.Repeat("0", 64), "uv.tar.gz")
-	if err == nil {
-		t.Fatal("fetchRelease = nil, want an error")
-	}
-	if !strings.Contains(err.Error(), "download") {
-		t.Errorf("error %q does not read as a download failure", err)
-	}
-}

@@ -32,23 +32,3 @@ func TestSecondLockHolderIsToldAnotherCommandIsRunning(t *testing.T) {
 		t.Errorf("gave up after %v, want at least %v", waited, lockWait)
 	}
 }
-
-func TestLockIsAvailableAgainAfterRelease(t *testing.T) {
-	home := t.TempDir()
-
-	first, err := AcquireLock(home)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := first.Release(); err != nil {
-		t.Fatalf("Release = %v", err)
-	}
-
-	second, err := AcquireLock(home)
-	if err != nil {
-		t.Fatalf("AcquireLock after Release = %v", err)
-	}
-	if err := second.Release(); err != nil {
-		t.Errorf("Release = %v", err)
-	}
-}

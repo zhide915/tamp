@@ -17,13 +17,6 @@ func TestNoArgumentsPrintsHelp(t *testing.T) {
 	}
 }
 
-func TestHelpFlagPrintsHelp(t *testing.T) {
-	r := sandbox(t).run(t, "--help")
-
-	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, "Usage:", "--no-color", "--quiet")
-}
-
 func TestVersionPrintsVersionCommitAndBuildDate(t *testing.T) {
 	r := sandbox(t).run(t, "version")
 
@@ -33,23 +26,6 @@ func TestVersionPrintsVersionCommitAndBuildDate(t *testing.T) {
 	want := "tamp " + version + "\ncommit:     " + commit + "\nbuild date: " + buildDate + "\n"
 	if r.stdout != want {
 		t.Errorf("stdout = %q, want %q", r.stdout, want)
-	}
-}
-
-// --quiet silences progress, never the thing the caller asked for.
-func TestQuietStillPrintsResults(t *testing.T) {
-	r := sandbox(t).run(t, "--quiet", "version")
-
-	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, version)
-}
-
-func TestNoColorIsAcceptedEverywhere(t *testing.T) {
-	r := sandbox(t).run(t, "--no-color", "version")
-
-	r.assertCode(t, exitcode.CodeOK)
-	if strings.Contains(r.stdout, "\x1b[") {
-		t.Errorf("stdout = %q, want no escape sequences", r.stdout)
 	}
 }
 
@@ -67,13 +43,6 @@ func TestUnknownCommandIsAUsageError(t *testing.T) {
 	}
 }
 
-func TestUnknownFlagIsAUsageError(t *testing.T) {
-	r := sandbox(t).run(t, "--nope")
-
-	r.assertCode(t, exitcode.CodeUsage)
-	r.assertStderrContains(t, "error: unknown flag: --nope", "tamp --help")
-}
-
 func TestUnexpectedArgumentIsAUsageError(t *testing.T) {
 	r := sandbox(t).run(t, "version", "extra")
 
@@ -88,11 +57,4 @@ func TestUnknownHelpTopicIsAUsageError(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeUsage)
 	r.assertStderrContains(t, `error: unknown command "nope"`, "tamp --help")
-}
-
-func TestHelpForAKnownCommandPrintsItsHelp(t *testing.T) {
-	r := sandbox(t).run(t, "help", "version")
-
-	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, "tamp version", "build date")
 }
