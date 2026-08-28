@@ -103,7 +103,7 @@ func (b *Bench) Provision(ctx context.Context) error {
 func (b *Bench) prepareDirs(ctx context.Context) error {
 	dirs := []string{
 		WorkspaceDir, BenchDir, EnvDir, SitesDir, AppsDir,
-		toolchain.Dir, PipCacheDir, YarnCacheDir,
+		toolchain.Dir, PipCacheDir, YarnCacheDir, TemplateDir,
 	}
 	script := fmt.Sprintf("set -e; mkdir -p %[1]s; chown %[2]s:%[2]s %[1]s",
 		strings.Join(dirs, " "), toolchain.User)
@@ -114,21 +114,6 @@ func (b *Bench) prepareDirs(ctx context.Context) error {
 		Stdout:    b.Out,
 		Stderr:    b.Out,
 	})
-}
-
-// Materialize builds the bench — virtualenv, frappe app, layout — and reports
-// whether bench init ran, the caller's cue that the bench started empty.
-// bench init aborts when apps/frappe already exists (the re-adoption case),
-// so an existing source tree goes through Rebuild instead.
-func (b *Bench) Materialize(ctx context.Context) (initialized bool, err error) {
-	present, err := b.HasApp(ctx, FrappeApp)
-	if err != nil {
-		return false, err
-	}
-	if present {
-		return false, b.Rebuild(ctx)
-	}
-	return true, b.init(ctx)
 }
 
 // FrappeApp is on every bench; its presence marks an existing source tree.
@@ -144,7 +129,11 @@ func (b *Bench) HasApp(ctx context.Context, name string) (bool, error) {
 	})
 }
 
-func (b *Bench) init(ctx context.Context) error {
+// Init clones Frappe and builds the bench around it — virtualenv, layout,
+// apps.txt. It aborts when apps/frappe already exists, so a surviving source
+// tree goes through Rebuild instead; which of the two a bench needs is the
+// caller's to decide, because only the caller knows about the template store.
+func (b *Bench) Init(ctx context.Context) error {
 	return b.run(ctx, initScript, b.Branch, b.Python)
 }
 
@@ -194,6 +183,23 @@ bench init \
   --frappe-branch "$1" \
   --python "$(uv python find "$2")" \
   ` + BenchDir + `
+`
+
+// SetupRequirements reinstalls the apps' Python and Node dependencies, from
+// the machine-wide pip and yarn caches. It recreates the virtualenv first
+// when there is none — after a deps clean there is not.
+func (b *Bench) SetupRequirements(ctx context.Context) error {
+	return b.run(ctx, setupRequirementsScript, b.Python)
+}
+
+const setupRequirementsScript = `
+set -eo pipefail
+. ` + toolchain.EnvScript + `
+cd ` + BenchDir + `
+if [ ! -x env/bin/python ]; then
+  bench setup env --python "$(uv python find "$1")"
+fi
+bench setup requirements
 `
 
 // Configure writes the two tamp-owned files: the Procfile and the common

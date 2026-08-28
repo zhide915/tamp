@@ -57,7 +57,11 @@ func (m *Manager) Init(ctx context.Context, req InitRequest) error {
 				"name the environment yourself: tamp init --name <name>")
 		}
 	}
-	plan, err := m.newPlan(name, req.Frappe, req.Apps, req.Sync)
+	template, err := m.cachePolicy(useCache)
+	if err != nil {
+		return err
+	}
+	plan, err := m.newPlan(name, req.Frappe, req.Apps, req.Sync, template)
 	if err != nil {
 		return err
 	}
@@ -197,7 +201,11 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 		return err
 	}
 
-	if _, err := m.build(ctx, e, sync, log); err != nil {
+	template, err := m.cachePolicy(useCache)
+	if err != nil {
+		return err
+	}
+	if _, err := m.build(ctx, e, sync, template, log); err != nil {
 		// Volumes kept — they are the data this command exists to bring back.
 		m.rollback(ctx, e, engine.KeepVolumes, log)
 		m.Out.Note("your source and your data are untouched — run 'tamp init' again once this is fixed")

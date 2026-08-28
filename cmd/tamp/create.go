@@ -12,6 +12,7 @@ import (
 
 func newCreateCommand(d deps) *cobra.Command {
 	var frappe, apps, syncMode, dir string
+	var noCache bool
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -22,7 +23,9 @@ func newCreateCommand(d deps) *cobra.Command {
 			"No site is created — sites are always explicit.\n\n" +
 			"Apps are fetched onto the bench, not installed to any site. Pin the\n" +
 			"branch you mean — erpnext:version-15 — because an app given without\n" +
-			"one is fetched at its repository's default branch, usually develop.",
+			"one is fetched at its repository's default branch, usually develop.\n\n" +
+			"The first create of a Frappe version caches its initialized bench;\n" +
+			"later ones unpack it in seconds. --no-cache skips the store.",
 		Args: exactlyOneName,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := d.manager()
@@ -30,11 +33,12 @@ func newCreateCommand(d deps) *cobra.Command {
 				return err
 			}
 			return m.Create(cmd.Context(), env.CreateRequest{
-				Name:   args[0],
-				Parent: dir,
-				Frappe: frappe,
-				Apps:   apps,
-				Sync:   syncMode,
+				Name:    args[0],
+				Parent:  dir,
+				Frappe:  frappe,
+				Apps:    apps,
+				Sync:    syncMode,
+				NoCache: noCache,
 			})
 		},
 	}
@@ -47,6 +51,8 @@ func newCreateCommand(d deps) *cobra.Command {
 		"how source reaches the container: "+strings.Join(syncer.ModeNames(), ", "))
 	cmd.Flags().StringVar(&dir, "dir", "",
 		"create the environment under this directory instead of the current one")
+	cmd.Flags().BoolVar(&noCache, "no-cache", false,
+		"initialize a fresh bench instead of unpacking the cached template")
 	return cmd
 }
 

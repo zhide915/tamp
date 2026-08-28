@@ -48,6 +48,19 @@ Supported Frappe versions:
 | `version-16` | 3.14   | 24   | 11.8    |
 | `develop`    | latest supported set |||
 
+The first environment of a Frappe version pays for `bench init` in full. tamp
+caches that initialized bench machine-wide, so later creates of the same
+version unpack it in seconds. Templates expire after 14 days, because release
+branches move. Use `--no-cache` to build a fresh bench and leave the stored
+template alone.
+
+Emptying the cache is safe. It costs the next create its full price and
+nothing else:
+
+```sh
+docker run --rm -v tamp-templates:/store alpine sh -c 'rm -f /store/*'
+```
+
 Always pin an app's branch (`erpnext:version-15`). A bare name fetches the
 repository's default branch — usually `develop`, which doesn't run on a
 release bench — and tamp tells you it did rather than guessing a branch for
@@ -127,6 +140,17 @@ tamp exec erp15 -- bench --version   # run anything inside the bench
 
 `tamp.toml` is the source of truth: `start` regenerates the generated files
 from it, so hand-edits to `compose.yaml` don't survive.
+
+## Machine settings
+
+`~/.tamp/config.toml` is optional, and tamp never writes it. It holds one
+setting today:
+
+```toml
+[cache]
+# How long a cached bench template is trusted. 0 turns the cache off.
+template_ttl_days = 14
+```
 
 ## Remove an environment
 

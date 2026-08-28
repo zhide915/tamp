@@ -11,13 +11,15 @@ import (
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// benchSim models the Frappe bench behind the fake: apps, sites, per-site
-// installs. Separate from the recorder because tamp writes to the bench and
+// benchSim models the benches behind the fake: apps, sites, per-site
+// installs. Separate from the recorder because tamp writes to a bench and
 // then reads it back — recording alone would let a broken round trip pass.
+//
+// One bench per container, because that is how tamp draws the line: each
+// environment's bench lives in its own volumes, so what one create leaves
+// behind must be invisible to the next.
 type benchSim struct {
-	sites    map[string]bool
-	apps     map[string]bool
-	siteApps map[string][]string
+	benches map[string]*benchState
 
 	// Hooks back into the Fake: the alias, private and missing tables are
 	// the test's to script, and site configs land in the shared container
@@ -27,11 +29,37 @@ type benchSim struct {
 	missing func() map[string]bool
 	put     func(path, body string)
 	drop    func(path string)
+	has     func(path string) bool
 }
 
-// reset models volume removal: everything the bench held lived there.
-func (s *benchSim) reset() {
-	s.sites, s.apps, s.siteApps = nil, nil, nil
+// benchState is one environment's bench.
+type benchState struct {
+	sites    map[string]bool
+	apps     map[string]bool
+	siteApps map[string][]string
+}
+
+// at is the bench inside a container, created on first mention.
+func (s *benchSim) at(container string) *benchState {
+	if s.benches == nil {
+		s.benches = map[string]*benchState{}
+	}
+	if b, ok := s.benches[container]; ok {
+		return b
+	}
+	b := &benchState{}
+	s.benches[container] = b
+	return b
+}
+
+// reset models one project's volumes going: everything its bench held lived
+// there, and no other environment's did.
+func (s *benchSim) reset(project string) {
+	for container := range s.benches {
+		if strings.HasPrefix(container, project+"-") {
+			delete(s.benches, container)
+		}
+	}
 }
 
 // answer updates the model for the command just run and replies to the ones
@@ -40,6 +68,7 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 	if stderr == nil {
 		stderr = io.Discard
 	}
+	b := s.at(exec.Container)
 
 	// The preflight probe: reachable answers, missing and locked refuse the
 	// way real git does, writing why to stderr.
@@ -48,17 +77,32 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 	}
 
 	if strings.Contains(exec.Line(), "bench init") {
-		s.put(frappe.CommonSiteConfigPath, BenchInitConfig)
-		// bench init clones frappe; a second run against the same bench is a
-		// different code path.
-		s.addApp(frappe.FrappeApp)
+		s.initialize(b)
+		return nil
+	}
+
+	// The template store, modelled as the files it is: a save puts the
+	// tarball there, a restore unpacks the bench a save was taken from, and
+	// the probe answers from what is actually in the store.
+	if strings.Contains(exec.Line(), "gzip -1") {
+		s.put(scriptArg(exec.Cmd, 0), "a tarred bench")
+		return nil
+	}
+	if strings.Contains(exec.Line(), "-xzf") {
+		s.initialize(b)
+		return nil
+	}
+	if strings.Contains(exec.Line(), `test -f "$1"`) {
+		if !s.has(scriptArg(exec.Cmd, 0)) {
+			return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 1}
+		}
 		return nil
 	}
 
 	// The source-tree probe must answer no for a never-initialized bench, or
 	// every create would take the rebuild path.
 	if strings.Contains(exec.Line(), `test -d "`+frappe.AppsDir) {
-		if !s.apps[scriptArg(exec.Cmd, 0)] {
+		if !b.apps[scriptArg(exec.Cmd, 0)] {
 			return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 1}
 		}
 		return nil
@@ -66,14 +110,14 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 
 	switch {
 	case strings.Contains(exec.Line(), "bench new-site"):
-		s.addSite(siteArg(exec.Cmd, "new-site"))
+		s.addSite(b, siteArg(exec.Cmd, "new-site"))
 	case strings.Contains(exec.Line(), "bench drop-site"):
 		host := siteArg(exec.Cmd, "drop-site")
-		delete(s.sites, host)
+		delete(b.sites, host)
 		s.drop(frappe.SiteConfigPath(host))
 	// The listing script identifies sites by the config file every site has.
 	case strings.Contains(exec.Line(), "site_config.json"):
-		for _, host := range s.sitesSorted() {
+		for _, host := range b.sitesSorted() {
 			fmt.Fprintln(stdout, host)
 		}
 	case strings.Contains(exec.Line(), "bench get-app"):
@@ -85,21 +129,21 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 		if declared, ok := s.aliases()[name]; ok {
 			name = declared
 		}
-		s.addApp(name)
+		b.addApp(name)
 	case strings.Contains(exec.Line(), "install-app"):
 		host, app := scriptArg(exec.Cmd, 0), scriptArg(exec.Cmd, 1)
-		if s.siteApps == nil {
-			s.siteApps = map[string][]string{}
+		if b.siteApps == nil {
+			b.siteApps = map[string][]string{}
 		}
-		s.siteApps[host] = append(s.siteApps[host], app)
+		b.siteApps[host] = append(b.siteApps[host], app)
 	case strings.Contains(exec.Line(), "list-apps"):
 		// Every site has frappe; the rest arrived via install-app.
 		fmt.Fprintln(stdout, "frappe")
-		for _, app := range s.siteApps[siteArg(exec.Cmd, "--site")] {
+		for _, app := range b.siteApps[siteArg(exec.Cmd, "--site")] {
 			fmt.Fprintln(stdout, app)
 		}
 	case strings.Contains(exec.Line(), "cd "+frappe.AppsDir):
-		for _, app := range s.appsSorted() {
+		for _, app := range b.appsSorted() {
 			fmt.Fprintln(stdout, app)
 		}
 	}
@@ -121,31 +165,68 @@ func (s *benchSim) remoteRefusal(exec Exec, source string, stderr io.Writer) err
 	return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
 }
 
-func (s *benchSim) addApp(name string) {
+// initialize is what leaves a bench where there was none — bench init, or a
+// stored template unpacked in its place. Both put frappe in apps/ and leave
+// bench's own shared config behind.
+func (s *benchSim) initialize(b *benchState) {
+	s.put(frappe.CommonSiteConfigPath, BenchInitConfig)
+	b.addApp(frappe.FrappeApp)
+}
+
+func (b *benchState) addApp(name string) {
 	if name == "" {
 		return
 	}
-	if s.apps == nil {
-		s.apps = map[string]bool{}
+	if b.apps == nil {
+		b.apps = map[string]bool{}
 	}
-	s.apps[name] = true
+	b.apps[name] = true
 }
 
-func (s *benchSim) addSite(host string) {
+func (s *benchSim) addSite(b *benchState, host string) {
 	if host == "" {
 		return
 	}
-	if s.sites == nil {
-		s.sites = map[string]bool{}
+	if b.sites == nil {
+		b.sites = map[string]bool{}
 	}
-	s.sites[host] = true
+	b.sites[host] = true
 	// Site creation writes the site config — the only place the invented
 	// db_name can be read from.
 	s.put(frappe.SiteConfigPath(host), fmt.Sprintf(`{"db_name": %q}`, "_"+strings.ReplaceAll(host, ".", "_")))
 }
 
-func (s *benchSim) appsSorted() []string  { return slices.Sorted(maps.Keys(s.apps)) }
-func (s *benchSim) sitesSorted() []string { return slices.Sorted(maps.Keys(s.sites)) }
+func (b *benchState) appsSorted() []string  { return slices.Sorted(maps.Keys(b.apps)) }
+func (b *benchState) sitesSorted() []string { return slices.Sorted(maps.Keys(b.sites)) }
+
+// allApps and allSites collapse every bench into one answer, for the tests
+// that run a single environment and just want to know what is on it.
+func (s *benchSim) allApps() []string {
+	seen := map[string]bool{}
+	for _, b := range s.benches {
+		maps.Copy(seen, b.apps)
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+func (s *benchSim) allSites() []string {
+	seen := map[string]bool{}
+	for _, b := range s.benches {
+		maps.Copy(seen, b.sites)
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+// siteAppsOf finds the site wherever it is: hostnames are unique across the
+// machine, so at most one bench has it.
+func (s *benchSim) siteAppsOf(host string) []string {
+	for _, b := range s.benches {
+		if apps, ok := b.siteApps[host]; ok {
+			return apps
+		}
+	}
+	return nil
+}
 
 // Script args start after: bash -c <script> tamp.
 const firstScriptArg = 4

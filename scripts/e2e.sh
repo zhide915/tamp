@@ -86,6 +86,26 @@ if [ "$(printf '%s' "$mariadb" | grep -c .)" -ne 2 ]; then
   fail "expected two distinct MariaDB versions, saw: ${mariadb:-none}"
 fi
 
+say "a warm create of a version-15 bench comes from the template cache"
+# The first create above filled the store; this one must unpack it. Two
+# minutes is the promise, and it is measured with everything else the create
+# does still in it.
+start=$(date +%s)
+"$TAMP" create warm --frappe version-15 --dir "$WORK" > "$WORK/warm.log" 2>&1 || {
+  cat "$WORK/warm.log"
+  fail "the warm create failed"
+}
+warm_seconds=$(( $(date +%s) - start ))
+grep -q "template cache hit for version-15" "$WORK/warm.log"   || fail "the warm create did not use the stored template: $(grep -i template "$WORK/warm.log" || echo 'it said nothing about the cache')"
+echo "warm create took ${warm_seconds}s"
+[ "$warm_seconds" -lt 120 ] || fail "the warm create took ${warm_seconds}s, and the promise is under 120"
+
+say "the warm environment serves, so the template is a working bench"
+"$TAMP" site new warm warm.localhost --admin-password admin
+expect warm.localhost /api/method/ping
+
+"$TAMP" rm warm --volumes --yes
+
 say "rm fifteen leaves the source tree intact"
 # Positive check first, so the survived-rm grep cannot silently match nothing.
 docker ps --format '{{.Names}}' | grep -q '^tamp-fifteen-' \

@@ -30,7 +30,7 @@ func bench(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 func initialized(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	t.Helper()
 	b, fake := bench(t)
-	if _, err := b.Materialize(t.Context()); err != nil {
+	if err := b.Init(t.Context()); err != nil {
 		t.Fatalf("Init = %v", err)
 	}
 	return b, fake
@@ -164,7 +164,7 @@ func siteConfig(t *testing.T, fake *enginetest.Fake) map[string]any {
 func TestInitLeavesRedisAndTheProcessFileToTamp(t *testing.T) {
 	b, fake := bench(t)
 
-	if _, err := b.Materialize(t.Context()); err != nil {
+	if err := b.Init(t.Context()); err != nil {
 		t.Fatalf("Init = %v", err)
 	}
 
@@ -188,7 +188,7 @@ func TestInitLeavesRedisAndTheProcessFileToTamp(t *testing.T) {
 func TestInitIsToldTheBenchDirectoryAlreadyExists(t *testing.T) {
 	b, fake := bench(t)
 
-	if _, err := b.Materialize(t.Context()); err != nil {
+	if err := b.Init(t.Context()); err != nil {
 		t.Fatalf("Init = %v", err)
 	}
 
@@ -210,7 +210,9 @@ func TestProvisioningMakesTheVolumeMountPointsWritableFirst(t *testing.T) {
 	if first.User != "root" {
 		t.Fatalf("tamp's first command in the container ran as %q, want root:\n%s", first.User, first.Line())
 	}
-	for _, dir := range []string{frappe.BenchDir, frappe.EnvDir, frappe.SitesDir, frappe.PipCacheDir} {
+	for _, dir := range []string{
+		frappe.BenchDir, frappe.EnvDir, frappe.SitesDir, frappe.PipCacheDir, frappe.TemplateDir,
+	} {
 		if !strings.Contains(first.Line(), dir) {
 			t.Errorf("%s was left owned by root:\n%s", dir, first.Line())
 		}

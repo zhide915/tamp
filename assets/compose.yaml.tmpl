@@ -37,7 +37,7 @@ services:
       redis-queue:
         condition: service_healthy
     volumes:
-      # The bench, split into the layers tamp manages separately: source in
+      # The bench, split into the volumes tamp manages separately: source in
       # the workspace, the virtualenv, and every site's files.
       - code:{{ .WorkspaceDir }}
 {{- if .AppsBind }}
@@ -53,6 +53,7 @@ services:
       - toolchain:{{ .ToolchainDir }}
       - pip-cache:{{ .PipCacheDir }}
       - yarn-cache:{{ .YarnCacheDir }}
+      - templates:{{ .TemplateDir }}
 
   # One MariaDB per environment, at the version this Frappe release wants.
   # The character-set flags are not optional: without them site creation fails
@@ -125,7 +126,7 @@ volumes:
 
   # Shared by every environment on this machine. They are declared external so
   # that they are nobody's to destroy: 'tamp rm --volumes' on one environment
-  # takes its own layers and leaves the machine's Pythons, Nodes and package
+  # takes its own volumes and leaves the machine's Pythons, Nodes and package
   # caches for the others. tamp creates them before it brings anything up.
   toolchain:
     name: {{ .ToolchainVolume }}
@@ -135,6 +136,11 @@ volumes:
     external: true
   yarn-cache:
     name: {{ .YarnCacheVolume }}
+    external: true
+  # The bench template store: one tarball per Frappe version, so the first
+  # 'bench init' on this machine is the only slow one.
+  templates:
+    name: {{ .TemplateVolume }}
     external: true
 
 networks:

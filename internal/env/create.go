@@ -40,13 +40,21 @@ type CreateRequest struct {
 	// Apps is a comma-separated list of app specs.
 	Apps string
 	Sync string
+	// NoCache forces a fresh bench init, leaving the stored template alone.
+	NoCache bool
 }
 
 // Create provisions a new environment and brings it up. On failure everything
 // outside the directory is undone; the directory keeps tamp.toml and
 // create.log — tamp never destroys a directory the user may have touched.
 func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
-	plan, err := m.newPlan(req.Name, req.Frappe, req.Apps, req.Sync)
+	// A misspelled machine setting must fail here too: the user would
+	// otherwise believe it took effect.
+	template, err := m.cachePolicy(!req.NoCache)
+	if err != nil {
+		return err
+	}
+	plan, err := m.newPlan(req.Name, req.Frappe, req.Apps, req.Sync, template)
 	if err != nil {
 		return err
 	}
@@ -70,11 +78,12 @@ type plan struct {
 	Toolchain Toolchain
 	Apps      []App
 	Sync      syncer.Mode
+	Template  templatePolicy
 }
 
 // newPlan validates everything up front: a misspelled flag must fail before
 // tamp has claimed a name, made a directory or pulled an image.
-func (m *Manager) newPlan(name, version, apps, sync string) (plan, error) {
+func (m *Manager) newPlan(name, version, apps, sync string, template templatePolicy) (plan, error) {
 	parsedName, err := ParseName(name)
 	if err != nil {
 		return plan{}, err
@@ -97,6 +106,7 @@ func (m *Manager) newPlan(name, version, apps, sync string) (plan, error) {
 		Toolchain: toolchain,
 		Apps:      parsedApps,
 		Sync:      parsedSync,
+		Template:  template,
 	}, nil
 }
 
@@ -142,7 +152,7 @@ func (m *Manager) raise(ctx context.Context, dir string, p plan) error {
 		return err
 	}
 
-	status, err := m.build(ctx, e, sync, log)
+	status, err := m.build(ctx, e, sync, p.Template, log)
 	if err != nil {
 		m.rollback(ctx, e, engine.RemoveVolumes, log)
 		return err
@@ -177,7 +187,7 @@ func (m *Manager) requireFreshVolumes(ctx context.Context, e *Environment) error
 // entirely inside containers, and its one caller's rollback undoes every
 // step: an environment with a toolchain but no bench is failed, not
 // half-created.
-func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effective, log *createLog) (router.Status, error) {
+func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effective, template templatePolicy, log *createLog) (router.Status, error) {
 	// Read before the sync session runs: a Mutagen session below mirrors the
 	// container's tree out and would make this true for fresh creates too.
 	adopted := hasSource(e.Dir)
@@ -208,7 +218,7 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 	}
 
 	log.step("initializing the bench")
-	initialized, err := bench.Materialize(ctx)
+	initialized, err := m.materialize(ctx, e, bench, template, log)
 	if err != nil {
 		return router.Status{}, err
 	}

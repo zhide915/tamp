@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
@@ -168,7 +169,7 @@ func TestSiteNewRefusesAPinnedAppBecauseInstallingFetchesNothing(t *testing.T) {
 func TestSiteNewAcceptsAnAppFetchedThroughTheExecBridge(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
-	c.engine.AddApp("erpnext")
+	c.engine.AddApp(c.container(t, "demo", env.FrappeService), "erpnext")
 
 	r := c.run(t, "site", "new", "demo", "shop.localhost", "--apps", "erpnext")
 

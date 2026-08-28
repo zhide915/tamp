@@ -15,6 +15,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
 )
 
 // DefaultServices are the compose services of a tamp environment. A test in
@@ -242,10 +243,16 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 	delete(f.networks, p.Name)
 	if removal == engine.RemoveVolumes {
 		delete(f.projectVolumes, p.Name)
-		// Everything the bench holds lives in the volumes just removed; a
+		// Everything this bench holds lives in the volumes just removed; a
 		// fake that remembered it would let "the data is gone" pass untrue.
-		f.bench().reset()
-		f.Files = map[string]string{}
+		// Only the bench tree: the shared volumes beside it — toolchain,
+		// package caches, template store — are nobody's to destroy.
+		f.bench().reset(p.Name)
+		for path := range f.Files {
+			if strings.HasPrefix(path, frappe.WorkspaceDir+"/") {
+				delete(f.Files, path)
+			}
+		}
 	}
 	return nil
 }
@@ -379,23 +386,27 @@ func (f *Fake) bench() *benchSim {
 			missing: func() map[string]bool { return f.MissingRepos },
 			put:     f.put,
 			drop:    func(path string) { delete(f.Files, path) },
+			has: func(path string) bool {
+				_, ok := f.Files[path]
+				return ok
+			},
 		}
 	}
 	return f.sim
 }
 
-// Apps names the apps on the fake's bench, sorted.
-func (f *Fake) Apps() []string { return f.bench().appsSorted() }
+// Apps names the apps on every bench, sorted.
+func (f *Fake) Apps() []string { return f.bench().allApps() }
 
-// AddApp puts an app on the bench without a fetch, as backdrop for tests
-// about apps that are already there.
-func (f *Fake) AddApp(name string) { f.bench().addApp(name) }
+// AddApp puts an app on one container's bench without a fetch, as backdrop
+// for tests about apps that are already there.
+func (f *Fake) AddApp(container, name string) { f.bench().at(container).addApp(name) }
 
 // SiteApps names what a site had installed, in install order.
-func (f *Fake) SiteApps(host string) []string { return f.bench().siteApps[host] }
+func (f *Fake) SiteApps(host string) []string { return f.bench().siteAppsOf(host) }
 
-// Sites names the bench's sites, sorted.
-func (f *Fake) Sites() []string { return f.bench().sitesSorted() }
+// Sites names every bench's sites, sorted.
+func (f *Fake) Sites() []string { return f.bench().allSites() }
 
 func (f *Fake) Logs(_ context.Context, req engine.LogRequest) error {
 	f.Calls = append(f.Calls, "Logs")

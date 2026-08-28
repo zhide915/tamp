@@ -80,12 +80,12 @@ func (e *Environment) bench(eng engine.Engine, out io.Writer) *frappe.Bench {
 	}
 }
 
-// SharedVolumes are common to every environment: the toolchain and the two
-// package caches. The compose file declares them external so `tamp rm
-// --volumes` on one environment cannot empty them for the rest — which means
-// tamp must create them itself.
+// SharedVolumes are common to every environment: the toolchain, the two
+// package caches and the bench template store. The compose file declares them
+// external so `tamp rm --volumes` on one environment cannot empty them for the
+// rest — which means tamp must create them itself.
 func SharedVolumes() []string {
-	return []string{toolchain.Volume, frappe.PipCacheVolume, frappe.YarnCacheVolume}
+	return []string{toolchain.Volume, frappe.PipCacheVolume, frappe.YarnCacheVolume, frappe.TemplateVolume}
 }
 
 func (m *Manager) ensureSharedVolumes(ctx context.Context) error {

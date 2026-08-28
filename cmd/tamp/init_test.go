@@ -10,6 +10,7 @@ import (
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
@@ -207,8 +208,8 @@ func TestReadoptWithFreshVolumesRegistersTheAppsTheSyncBringsBack(t *testing.T) 
 
 	r.assertCode(t, exitcode.CodeOK)
 	adopted := c.engine.Execs[before:]
-	if !ranAny(adopted, "bench init") {
-		t.Fatal("fresh volumes should have taken the bench init path")
+	if !materializedFromNothing(adopted) {
+		t.Fatal("fresh volumes should have built a bench where there was none")
 	}
 	if !ranAny(adopted, "apps.txt") {
 		t.Error("the apps the sync mirrored back were never registered on the bench")
@@ -265,7 +266,7 @@ func (c *cli) leaveSource(t *testing.T, name string) {
 		t.Fatal(err)
 	}
 	// tamp probes the bench for the app, so the fake holds it too.
-	c.engine.AddApp("frappe")
+	c.engine.AddApp(c.container(t, name, env.FrappeService), "frappe")
 }
 
 func (c *cli) removedVolumes(t *testing.T) bool {
@@ -289,6 +290,12 @@ func (c *cli) registeredPath(t *testing.T, name string) string {
 		t.Fatalf("cannot read the registry: %v", err)
 	}
 	return reg[name].Path
+}
+
+// materializedFromNothing reports whether the bench was built where there was
+// none: a bench init, or the stored template that stands in for one.
+func materializedFromNothing(execs []enginetest.Exec) bool {
+	return ranAny(execs, "bench init") || ranAny(execs, frappe.TemplateDir)
 }
 
 func ranAny(execs []enginetest.Exec, fragment string) bool {
