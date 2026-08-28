@@ -223,6 +223,20 @@ func TestTheBenchContainerMountsEveryLayerAndTheSharedVolumes(t *testing.T) {
 	}
 }
 
+// The router reaches the bench across a Docker network, so a web server on
+// loopback answers nobody -- which is what Frappe's develop branch does
+// unless it is told otherwise.
+func TestTheBenchServesOnAnInterfaceTheRouterCanReach(t *testing.T) {
+	_, body := generated(t)
+
+	if !strings.Contains(body, "FRAPPE_BIND_ADDR="+frappe.BindAddr) {
+		t.Errorf("the bench container does not pin the web server's bind address:\n%s", body)
+	}
+	if frappe.BindAddr == "127.0.0.1" || frappe.BindAddr == "localhost" {
+		t.Errorf("the bench binds %s, which no other container can reach", frappe.BindAddr)
+	}
+}
+
 // The boot-time check is what lets 'tamp start' revive the processes with
 // nothing tamp has to remember.
 func TestTheBenchContainerRunsHonchoOnlyOnceThereIsABench(t *testing.T) {

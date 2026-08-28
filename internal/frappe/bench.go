@@ -52,6 +52,12 @@ const (
 	FileWatcherPort = 6787
 )
 
+// BindAddr is the interface the bench's web server must listen on: the
+// router reaches it across a Docker network, so loopback would answer nobody.
+// Frappe's develop branch defaults to loopback and reads this from
+// FRAPPE_BIND_ADDR; the release branches bind here anyway.
+const BindAddr = "0.0.0.0"
+
 // MailSMTPPort is Mailpit's SMTP listener.
 const MailSMTPPort = 1025
 

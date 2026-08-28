@@ -30,8 +30,9 @@ jobs:
   e2e:
     name: create → site → route → rm (ubuntu, real Docker)
     runs-on: ubuntu-latest
-    # Two bench builds from cold caches dominate the runtime.
-    timeout-minutes: 90
+    # Bench builds from cold caches dominate the runtime, and the scheduled
+    # run pays for a third.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
@@ -45,3 +46,8 @@ jobs:
 
       - name: End-to-end
         run: bash scripts/e2e.sh "$PWD/tamp"
+        env:
+          # develop is a third full bench build, and its point is catching a
+          # branch that moved — which is what the scheduled run is for. A
+          # hand-started run gets it too.
+          TAMP_E2E_DEVELOP: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}

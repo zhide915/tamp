@@ -18,6 +18,10 @@ services:
     #
     # DEV_SERVER is what tells Frappe to serve with the reloading Werkzeug
     # server rather than assume something in front of it.
+    #
+    # FRAPPE_BIND_ADDR is not optional: on Frappe's develop branch the dev
+    # server binds 127.0.0.1, which the router's container cannot reach. The
+    # release branches bind 0.0.0.0 already and ignore it.
     command:
       - bash
       - -c
@@ -25,7 +29,7 @@ services:
         if [ -f {{ .ProcfilePath }} ]; then
           cd {{ .BenchDir }}
           . {{ .EnvScript }}
-          exec env DEV_SERVER=1 honcho start
+          exec env DEV_SERVER=1 FRAPPE_BIND_ADDR={{ .BindAddr }} honcho start
         fi
         exec sleep infinity
     working_dir: {{ .BenchDir }}

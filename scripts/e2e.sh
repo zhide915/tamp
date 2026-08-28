@@ -13,7 +13,7 @@ fail() {
 }
 
 dump() {
-  say "e2e failed — engine state"
+  say "e2e failed â€” engine state"
   docker ps -a || true
   echo
   docker logs tamp-router-caddy-1 --tail 50 2>&1 || true
@@ -42,7 +42,7 @@ expect() {
   fail "wanted 200 for Host: $host at $path, last answer was $code"
 }
 
-say "create fifteen — version-15, with erpnext pinned to its branch"
+say "create fifteen â€” version-15, with erpnext pinned to its branch"
 "$TAMP" create fifteen --frappe version-15 --apps erpnext:version-15 --dir "$WORK"
 
 say "site on fifteen"
@@ -52,14 +52,14 @@ say "fifteen serves through the router"
 expect fifteen.localhost /api/method/ping
 expect mail.fifteen.localhost /
 
-say "create sixteen — version-16, alongside fifteen, under Mutagen"
+say "create sixteen â€” version-16, alongside fifteen, under Mutagen"
 # fifteen keeps bind, the Linux default; Mutagen here puts its pin under
 # the scheduled drift run.
 "$TAMP" create sixteen --frappe version-16 --sync mutagen --dir "$WORK"
 # A blocked Mutagen falls back to a bind mount with exit 0; only the
 # compose file records the mode.
 if grep -q '\./apps:' "$WORK/sixteen/compose.yaml"; then
-  fail "sixteen fell back to a bind mount — the Mutagen pin was never exercised"
+  fail "sixteen fell back to a bind mount â€” the Mutagen pin was never exercised"
 fi
 "$TAMP" site new sixteen sixteen.localhost --admin-password admin
 
@@ -105,6 +105,28 @@ say "the warm environment serves, so the template is a working bench"
 expect warm.localhost /api/method/ping
 
 "$TAMP" rm warm --volumes --yes
+
+# develop tracks a branch that moves, so it belongs to the run that exists to
+# notice that — a scheduled or hand-started one, not every pull request.
+if [ "${TAMP_E2E_DEVELOP:-0}" = 1 ]; then
+  say "create dev — the develop preset, beside the stable environments"
+  "$TAMP" create dev --frappe develop --dir "$WORK"
+  "$TAMP" site new dev dev.localhost --admin-password admin
+
+  say "the develop bench runs the develop toolchain"
+  in_bench() { "$TAMP" exec dev -- bash -c ". /home/frappe/.tamp-toolchain/env.sh; $1"; }
+  in_bench "python --version" | grep -q "3\.14" || fail "the develop bench is not on Python 3.14"
+  in_bench "node --version" | grep -q "^v24\." || fail "the develop bench is not on Node 24"
+  docker ps --format "{{.Names}} {{.Image}}" | grep "^tamp-dev-" | grep -q "mariadb:11.8" \
+    || fail "the develop environment is not on MariaDB 11.8"
+
+  say "develop and version-15 serve at the same time"
+  expect dev.localhost /api/method/ping
+  expect fifteen.localhost /api/method/ping
+  "$TAMP" list | grep -q develop || fail "tamp list does not show the develop environment"
+
+  "$TAMP" rm dev --volumes --yes
+fi
 
 say "rm fifteen leaves the source tree intact"
 # Positive check first, so the survived-rm grep cannot silently match nothing.

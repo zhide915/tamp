@@ -59,6 +59,8 @@ type composeData struct {
 	// AppsBind is the host path bound over the bench's apps directory, or
 	// empty when the source reaches the container another way.
 	AppsBind string
+	// BindAddr is the interface the bench's web server listens on.
+	BindAddr string
 }
 
 // Generate rewrites every generated file from tamp.toml. It runs at create
@@ -109,6 +111,7 @@ func (e *Environment) Generate(sync syncer.Effective) error {
 		ProcfilePath: frappe.ProcfilePath,
 		EnvScript:    toolchain.EnvScript,
 		AppsBind:     appsBind,
+		BindAddr:     frappe.BindAddr,
 	})
 }
 
