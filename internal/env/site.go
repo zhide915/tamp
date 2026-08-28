@@ -12,7 +12,6 @@ import (
 
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
-	"github.com/zhide915/tamp/internal/router"
 )
 
 // siteSteps is how many numbered steps creating a site prints before its apps
@@ -205,84 +204,22 @@ func hostsFile() string {
 	return "/etc/hosts"
 }
 
-// claimHost records the hostname against this environment, refusing one the
-// machine has already given out.
-//
-// The check is global rather than per-environment because the router is: it
-// matches one Host header against every environment's routes at once, so two
-// environments claiming a hostname would produce a configuration Caddy refuses
-// to load — taking every other site on the machine down with it.
+// claimHost records the hostname against this environment in the machine's
+// claims ledger, which refuses one already given out.
 func (m *Manager) claimHost(e *Environment, host Host) error {
-	return m.updateSites(e, func(reg Registry, sites []string) ([]string, error) {
-		if owner, what, claimed := hostClaimedBy(reg, "", host.String()); claimed {
-			return nil, exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("%s is already %s of the environment %q", host, what, owner),
-				"pick another hostname — 'tamp list' shows what every environment answers to")
-		}
-		return append(sites, host.String()), nil
-	})
+	return ClaimHost(m.Home, e.Name(), host.String())
 }
 
-// unclaimHost takes a hostname back out of the registry — because the site it
-// was claimed for could not be made, or because that site has just been
-// dropped.
+// unclaimHost takes a hostname back — because the site it was claimed for
+// could not be made, or because that site has just been dropped.
 //
 // Its own failure is a warning rather than an error: it runs at the end of an
 // operation whose outcome the user is already being told, and replacing that
 // with a bookkeeping failure would bury the more useful message.
 func (m *Manager) unclaimHost(e *Environment, host Host) {
-	err := m.updateSites(e, func(_ Registry, sites []string) ([]string, error) {
-		return slices.DeleteFunc(sites, func(s string) bool { return s == host.String() }), nil
-	})
-	if err != nil {
+	if err := ReleaseHost(m.Home, e.Name(), host.String()); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not take %s back out of the registry: %v", host, err))
 	}
-}
-
-// updateSites rewrites one environment's cached site list under the machine
-// lock, keeping it sorted.
-//
-// Every change to that list goes through here, because the list is what the
-// router's routes are assembled from: reading it, deciding, and writing it
-// back is a read-modify-write cycle, and doing it anywhere else is how a
-// concurrent tamp loses a route.
-func (m *Manager) updateSites(e *Environment, change func(Registry, []string) ([]string, error)) error {
-	return UpdateRegistry(m.Home, func(reg Registry) error {
-		name := e.Name().String()
-		entry := reg[name]
-		sites, err := change(reg, entry.Sites)
-		if err != nil {
-			return err
-		}
-		slices.Sort(sites)
-		entry.Sites = sites
-		reg[name] = entry
-		return nil
-	})
-}
-
-// hostClaimedBy reports what on this machine already answers to a hostname,
-// ignoring self's own sites.
-//
-// Both kinds of route count. An environment's mail UI is as much a claim on a
-// hostname as a site is, and a site created at mail.demo.localhost would be a
-// second block for an address the router already has — which is why a mail
-// hostname is a clash even for the environment that owns it.
-//
-// self is empty when nothing may hold the hostname yet, which is the question
-// a fresh claim asks. It names an environment when the question is instead
-// "may this environment go on holding it", as it is when tamp reconciles a
-// bench's own site list against the registry.
-func hostClaimedBy(reg Registry, self, host string) (owner, what string, claimed bool) {
-	for _, name := range reg.Names() {
-		if router.MailHost(name) == host {
-			return name, "the mail UI", true
-		}
-		if name != self && slices.Contains(reg[name].Sites, host) {
-			return name, "a site", true
-		}
-	}
-	return "", "", false
 }
 
 // SiteRemoveRequest is what `tamp site rm` was asked for.
@@ -457,25 +394,15 @@ func (m *Manager) knownSites(e *Environment) ([]string, error) {
 }
 
 // recordSites replaces an environment's cached site list with what its bench
-// actually holds.
+// actually holds, and says which sites the ledger refused to route and why.
 func (m *Manager) recordSites(e *Environment, hosts []string) error {
-	return m.updateSites(e, func(reg Registry, _ []string) ([]string, error) {
-		kept := make([]string, 0, len(hosts))
-		for _, host := range hosts {
-			// A bench can hold a hostname the machine has already given to
-			// something else — tamp did not create every site on it. Routing
-			// that one would put the address in the Caddyfile twice, so tamp
-			// leaves it unrouted and says which site is unreachable and why.
-			if owner, what, claimed := hostClaimedBy(reg, e.Name().String(), host); claimed {
-				m.Out.Warn(fmt.Sprintf(
-					"%s is on %s's bench but is already %s of %q, so tamp is not routing it",
-					host, e.Name(), what, owner))
-				continue
-			}
-			kept = append(kept, host)
-		}
-		return kept, nil
-	})
+	skipped, err := RecordSites(m.Home, e.Name(), hosts)
+	for _, c := range skipped {
+		m.Out.Warn(fmt.Sprintf(
+			"%s is on %s's bench but is already %s of %q, so tamp is not routing it",
+			c.Host, e.Name(), c.What, c.Owner))
+	}
+	return err
 }
 
 func (m *Manager) printSites(rows []siteRow) {

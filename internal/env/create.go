@@ -421,33 +421,7 @@ func (m *Manager) provision(dir string, p plan) (*Environment, error) {
 		return nil, err
 	}
 
-	// Claiming the name and allocating the port happen in one pass under the
-	// machine lock, and the port is recorded in the entry itself: both
-	// facts are then on disk together when the lock is released, so a second
-	// create cannot see the name free or reuse the port.
-	var port int
-	err = UpdateRegistry(m.Home, func(reg Registry) error {
-		if existing, taken := reg[string(name)]; taken {
-			return exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("an environment named %q is already registered, at %s", name, existing.Path),
-				"pick another name, or remove the old one with 'tamp rm "+string(name)+"'")
-		}
-		// The name decides a hostname too — the mail UI's — and the router
-		// would refuse a configuration holding that address twice.
-		mailHost := router.MailHost(string(name))
-		if owner, what, clash := hostClaimedBy(reg, "", mailHost); clash {
-			return exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("an environment named %q would take the hostname %s, which is already %s of %q",
-					name, mailHost, what, owner),
-				"pick another name, or remove that site with 'tamp site rm "+owner+" "+mailHost+" --yes'")
-		}
-		port, err = AllocateDBPort(reg)
-		if err != nil {
-			return err
-		}
-		reg[string(name)] = Entry{Path: dir, Hash: res.Hash, DBPort: port, Sites: []string{}}
-		return nil
-	})
+	port, err := Claim(m.Home, name, dir, res.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -517,11 +491,7 @@ func (m *Manager) rollback(ctx context.Context, e *Environment, removal engine.R
 }
 
 func (m *Manager) unregister(name Name) {
-	err := UpdateRegistry(m.Home, func(reg Registry) error {
-		delete(reg, string(name))
-		return nil
-	})
-	if err != nil {
+	if err := Release(m.Home, name); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not remove %q from the registry: %v", name, err))
 	}
 }

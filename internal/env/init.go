@@ -10,7 +10,6 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
-	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
@@ -200,8 +199,16 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 	}
 
 	log.step("adopting " + dir)
-	if err := m.reregister(e); err != nil {
+	port, err := Reclaim(m.Home, e.Name(), e.Dir, e.Resources.Hash, e.Config.Ports.DB)
+	if err != nil {
 		return err
+	}
+	if port != e.Config.Ports.DB {
+		m.Out.Warn(fmt.Sprintf("another environment holds host port %d now, so this one's database moves to %d",
+			e.Config.Ports.DB, port))
+		// Written back by writeEnvironment, which rewrites tamp.toml as part
+		// of regenerating everything this adoption regenerates.
+		e.Config.Ports.DB = port
 	}
 
 	sync := m.syncMode(ctx, cfg.Sync.Mode)
@@ -258,79 +265,6 @@ func (m *Manager) requireUnregistered(e *Environment) error {
 		fmt.Sprintf("%q is already an environment on this machine — there is nothing to adopt", e.Name()),
 		fmt.Sprintf("start it with 'tamp start %s'; to rebuild it from source, run 'tamp rm %s' first (volumes are kept) and then tamp init again",
 			e.Name(), e.Name()))
-}
-
-// reregister puts a re-adopted environment back in the machine's index.
-//
-// The port it used to publish is taken again when nothing else has claimed it,
-// so a database client's saved connection still works. When something has, a
-// new one is allocated and written back into tamp.toml — the alternative is
-// two environments publishing one port, of which only the first would start.
-func (m *Manager) reregister(e *Environment) error {
-	name := string(e.Name())
-
-	var port int
-	err := UpdateRegistry(m.Home, func(reg Registry) error {
-		if existing, taken := reg[name]; taken && !samePath(existing.Path, e.Dir) {
-			return exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("an environment named %q is already registered, at %s", name, existing.Path),
-				"remove that one with 'tamp rm "+name+"', or rename this directory's environment in "+ConfigFile)
-		}
-		// The environment's own mail hostname always looks claimed by the
-		// environment itself, which is not a clash — only another environment
-		// having taken it as a site is.
-		if owner, what, clash := hostClaimedBy(reg, name, router.MailHost(name)); clash && owner != name {
-			return exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("%s is already %s of %q", router.MailHost(name), what, owner),
-				"rename this directory's environment in "+ConfigFile)
-		}
-
-		// The port this environment recorded is its own to take back, and the
-		// registry is the only thing that can say otherwise. Whether something
-		// is listening on it right now is not the question: an environment
-		// being adopted in place is quite likely to be listening on it itself.
-		port = e.Config.Ports.DB
-		if claimedBy(reg, name, port) {
-			var err error
-			if port, err = AllocateDBPort(reg); err != nil {
-				return err
-			}
-		}
-		reg[name] = Entry{Path: e.Dir, Hash: e.Resources.Hash, DBPort: port, Sites: sitesOf(reg, name)}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	if port != e.Config.Ports.DB {
-		m.Out.Warn(fmt.Sprintf("another environment holds host port %d now, so this one's database moves to %d",
-			e.Config.Ports.DB, port))
-		// Written back by writeEnvironment, which rewrites tamp.toml as part
-		// of regenerating everything this adoption regenerates.
-		e.Config.Ports.DB = port
-	}
-	return nil
-}
-
-// claimedBy reports whether an environment other than self holds a host port.
-func claimedBy(reg Registry, self string, port int) bool {
-	for name, entry := range reg {
-		if name != self && entry.DBPort == port {
-			return true
-		}
-	}
-	return false
-}
-
-// sitesOf is the site list tamp last recorded for an environment, which an
-// adoption keeps: the bench is about to be asked anyway, and until it answers
-// this is what its routes are assembled from.
-func sitesOf(reg Registry, name string) []string {
-	if entry, ok := reg[name]; ok {
-		return entry.Sites
-	}
-	return []string{}
 }
 
 // samePath compares two environment directories the way the resource hash
