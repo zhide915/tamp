@@ -18,7 +18,6 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
-	"github.com/zhide915/tamp/internal/frappe"
 )
 
 // DefaultServices are the compose services a tamp environment contains. The
@@ -143,17 +142,10 @@ type Fake struct {
 	// declared app on the bench, the way bench itself would.
 	AppAliases map[string]string
 
-	// sites is the set of sites on the fake's bench. tamp creates one and
-	// then reads the bench back to find out what it has, so the two commands
-	// have to be modelled together for either to be testable.
-	sites map[string]bool
-
-	// apps is the set of apps fetched onto the fake's bench, and siteApps what
-	// each site has installed. Both are modelled for the same reason sites is:
-	// tamp fetches an app and then reads the bench back to decide whether a
-	// site may install it.
-	apps     map[string]bool
-	siteApps map[string][]string
+	// sim is the model of the Frappe bench behind this engine — sites, apps,
+	// per-site installs — kept apart from the recording so the two change for
+	// different reasons.
+	sim *benchSim
 
 	// running tracks, per project, whether its containers exist and whether
 	// they are running — so that up, stop, down and Containers tell one
@@ -271,9 +263,7 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 		// went: the sites, the apps, and every file tamp wrote into them.
 		// A fake that remembered them would let "the data is gone" pass
 		// without being true.
-		f.sites = nil
-		f.apps = nil
-		f.siteApps = nil
+		f.bench().reset()
 		f.Files = map[string]string{}
 	}
 	return nil
@@ -391,150 +381,36 @@ func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 			return err
 		}
 	}
-	if strings.Contains(exec.Line(), "bench init") {
-		f.put(frappe.CommonSiteConfigPath, BenchInitConfig)
-		// bench init clones frappe, which is what makes a second run of it
-		// against the same bench a different code path.
-		f.AddApp(frappe.FrappeApp)
-	}
-	// The probe tamp uses to decide whether a bench already has a source
-	// tree. It has to answer no for a bench the fake has never initialized,
-	// or every create would take the rebuild path.
-	if strings.Contains(exec.Line(), `test -d "`+frappe.AppsDir) {
-		if !f.apps[scriptArg(exec.Cmd, 0)] {
-			return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 1}
-		}
-		return nil
-	}
-	return f.answerSiteCommand(exec, req.Stdout)
+	return f.bench().answer(exec, req.Stdout)
 }
 
-// answerSiteCommand keeps the fake's idea of what a bench holds — its sites,
-// its apps, and which apps each site has — in step with the commands tamp
-// runs, and answers the ones that ask.
-//
-// A recording alone would not do here: tamp fetches an app or creates a site
-// and then reads the bench back to find out what it now holds, so a fake that
-// forgot the write would let a broken round trip pass. Arguments travel beside
-// the script rather than inside it, which is what makes the hostname and the
-// app name readable at a fixed position.
-func (f *Fake) answerSiteCommand(exec Exec, stdout io.Writer) error {
-	switch {
-	case strings.Contains(exec.Line(), "bench new-site"):
-		f.addSite(siteArg(exec.Cmd, "new-site"))
-	case strings.Contains(exec.Line(), "bench drop-site"):
-		host := siteArg(exec.Cmd, "drop-site")
-		delete(f.sites, host)
-		delete(f.Files, frappe.SiteConfigPath(host))
-	// The listing script names a site by the config file every site has.
-	case strings.Contains(exec.Line(), "site_config.json"):
-		for _, host := range f.Sites() {
-			fmt.Fprintln(stdout, host)
-		}
-	case strings.Contains(exec.Line(), "bench get-app"):
-		name := appNameFromSource(scriptArg(exec.Cmd, 0))
-		if declared, ok := f.AppAliases[name]; ok {
-			name = declared
-		}
-		f.AddApp(name)
-	case strings.Contains(exec.Line(), "install-app"):
-		host, app := scriptArg(exec.Cmd, 0), scriptArg(exec.Cmd, 1)
-		if f.siteApps == nil {
-			f.siteApps = map[string][]string{}
-		}
-		f.siteApps[host] = append(f.siteApps[host], app)
-	case strings.Contains(exec.Line(), "list-apps"):
-		// Every Frappe site has frappe installed; anything else got there
-		// through an install-app above.
-		fmt.Fprintln(stdout, "frappe")
-		for _, app := range f.siteApps[siteArg(exec.Cmd, "--site")] {
-			fmt.Fprintln(stdout, app)
-		}
-	case strings.Contains(exec.Line(), "cd "+frappe.AppsDir):
-		for _, app := range f.Apps() {
-			fmt.Fprintln(stdout, app)
+// bench is the fake's model of the Frappe bench, made on first use so the
+// zero Fake still works.
+func (f *Fake) bench() *benchSim {
+	if f.sim == nil {
+		f.sim = &benchSim{
+			aliases: func() map[string]string { return f.AppAliases },
+			put:     f.put,
+			drop:    func(path string) { delete(f.Files, path) },
 		}
 	}
-	return nil
+	return f.sim
 }
 
 // Apps names the apps the fake's bench holds, sorted.
-func (f *Fake) Apps() []string { return slices.Sorted(maps.Keys(f.apps)) }
+func (f *Fake) Apps() []string { return f.bench().appsSorted() }
 
 // AddApp puts an app on the fake's bench without a fetch — the backdrop for a
 // test whose subject is what tamp does with an app that is already there.
-func (f *Fake) AddApp(name string) {
-	if name == "" {
-		return
-	}
-	if f.apps == nil {
-		f.apps = map[string]bool{}
-	}
-	f.apps[name] = true
-}
+func (f *Fake) AddApp(name string) { f.bench().addApp(name) }
 
 // SiteApps names what a site had installed on it, in the order tamp installed
 // them.
-func (f *Fake) SiteApps(host string) []string { return f.siteApps[host] }
-
-// appNameFromSource is the app directory a clone URL produces, which is the
-// last segment of its path.
-func appNameFromSource(source string) string {
-	source = strings.TrimSuffix(strings.TrimSuffix(source, "/"), ".git")
-	if i := strings.LastIndexAny(source, "/:"); i >= 0 {
-		source = source[i+1:]
-	}
-	return source
-}
-
-// scriptArg is the nth argument tamp passed beside a script it ran.
-func scriptArg(cmd []string, n int) string {
-	const firstScriptArg = 4 // bash -c <script> tamp <arg>...
-	if len(cmd) > firstScriptArg+n {
-		return cmd[firstScriptArg+n]
-	}
-	return ""
-}
-
-// siteArg is the hostname a bench site command was pointed at.
-//
-// It reads both spellings the fake sees. tamp's own scripts carry the
-// hostname beside the script as its first argument; a user reaching the same
-// bench command through 'tamp exec' types it straight after the subcommand,
-// and a fake that only understood the first would make a site created that way
-// invisible to the code that goes looking for it.
-func siteArg(cmd []string, subcommand string) string {
-	if len(cmd) > 0 && cmd[0] == "bash" {
-		const firstScriptArg = 4 // bash -c <script> tamp <arg>
-		if len(cmd) > firstScriptArg {
-			return cmd[firstScriptArg]
-		}
-		return ""
-	}
-	for i, word := range cmd {
-		if word == subcommand && i+1 < len(cmd) {
-			return cmd[i+1]
-		}
-	}
-	return ""
-}
+func (f *Fake) SiteApps(host string) []string { return f.bench().siteApps[host] }
 
 // Sites names the sites the fake's bench holds, sorted — what tamp created
 // through it, less what tamp dropped.
-func (f *Fake) Sites() []string { return slices.Sorted(maps.Keys(f.sites)) }
-
-func (f *Fake) addSite(host string) {
-	if host == "" {
-		return
-	}
-	if f.sites == nil {
-		f.sites = map[string]bool{}
-	}
-	f.sites[host] = true
-	// Creating a site writes its own config, which is where the database name
-	// Frappe invented is recorded — and the only place anything can read it.
-	f.put(frappe.SiteConfigPath(host), fmt.Sprintf(`{"db_name": %q}`, "_"+strings.ReplaceAll(host, ".", "_")))
-}
+func (f *Fake) Sites() []string { return f.bench().sitesSorted() }
 
 func (f *Fake) Logs(_ context.Context, req engine.LogRequest) error {
 	f.Calls = append(f.Calls, "Logs")
