@@ -54,10 +54,10 @@ expect mail.fifteen.localhost /
 
 say "create sixteen — version-16, alongside fifteen, under Mutagen"
 # fifteen keeps bind, the Linux default; Mutagen here puts its pin under
-# the scheduled drift run too.
+# the scheduled drift run.
 "$TAMP" create sixteen --frappe version-16 --sync mutagen --dir "$WORK"
-# A blocked Mutagen falls back to a bind mount with exit 0; the compose
-# file betrays the mode.
+# A blocked Mutagen falls back to a bind mount with exit 0; only the
+# compose file records the mode.
 if grep -q '\./apps:' "$WORK/sixteen/compose.yaml"; then
   fail "sixteen fell back to a bind mount — the Mutagen pin was never exercised"
 fi
@@ -80,15 +80,14 @@ done
 [ "$found" = yes ] || fail "Mutagen never delivered apps/frappe to the host"
 
 say "each environment runs its own MariaDB version"
-# The exact versions belong to the matrix pins; the contract is only that
-# the two environments do not share one.
+# The pins own the exact versions; assert only that the two differ.
 mariadb=$(docker ps --format '{{.Image}}' | grep '^mariadb:' | sort -u || true)
 if [ "$(printf '%s' "$mariadb" | grep -c .)" -ne 2 ]; then
   fail "expected two distinct MariaDB versions, saw: ${mariadb:-none}"
 fi
 
 say "rm fifteen leaves the source tree intact"
-# Positive first, or the survived-rm grep could rot into matching nothing.
+# Positive check first, so the survived-rm grep cannot silently match nothing.
 docker ps --format '{{.Names}}' | grep -q '^tamp-fifteen-' \
   || fail "expected running fifteen containers before rm"
 "$TAMP" rm fifteen --yes

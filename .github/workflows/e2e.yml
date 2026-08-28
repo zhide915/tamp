@@ -1,6 +1,6 @@
 name: E2E
 
-# Docs and the Windows acceptance script cannot change what this job proves.
+# None of the ignored paths are exercised by this job.
 on:
   push:
     branches: [main]

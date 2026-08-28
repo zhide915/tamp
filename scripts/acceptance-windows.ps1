@@ -83,8 +83,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Create failed - nothing further can run. Not safe to release."
     exit 1
 }
-# A blocked Mutagen falls back to a bind mount with exit 0; the compose
-# file betrays the mode.
+# A blocked Mutagen falls back to a bind mount with exit 0; only the
+# compose file records the mode.
 $compose = Join-Path $WorkDir "$envName\compose.yaml"
 $usedBind = Select-String -Path $compose -Pattern "\./apps:" -Quiet
 Record "create used Mutagen, not the bind-mount fallback" (-not $usedBind)
