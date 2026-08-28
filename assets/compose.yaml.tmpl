@@ -40,6 +40,13 @@ services:
       # The bench, split into the layers tamp manages separately: source in
       # the workspace, the virtualenv, and every site's files.
       - code:{{ .WorkspaceDir }}
+{{- if .AppsBind }}
+      # The source layer, bound straight from the host. This is the Linux
+      # answer: the container reads the host's filesystem at native speed with
+      # inotify working, so nothing has to be mirrored. Elsewhere neither of
+      # those holds, and tamp runs a sync session instead of writing this line.
+      - {{ .AppsBind }}:{{ .AppsDir }}
+{{- end }}
       - deps:{{ .EnvDir }}
       - sites:{{ .SitesDir }}
       # Shared with every other environment on this machine — see below.

@@ -6,6 +6,7 @@ import (
 
 	"github.com/zhide915/tamp/assets"
 	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
@@ -57,8 +58,13 @@ type composeData struct {
 	BenchDir     string
 	EnvDir       string
 	SitesDir     string
+	AppsDir      string
 	ProcfilePath string
 	EnvScript    string
+
+	// AppsBind is the host path bound over the bench's apps directory, or
+	// empty when the source reaches the container some other way.
+	AppsBind string
 }
 
 // Generate rewrites every file tamp generates from tamp.toml.
@@ -66,7 +72,18 @@ type composeData struct {
 // It runs at create and again at the start of every start, so an
 // environment's containers always match its config — including after tamp
 // itself is upgraded and the templates beneath it change.
-func (e *Environment) Generate() error {
+//
+// The sync mode is passed rather than read off the config because it is not
+// only in the config: "auto" means different things on different machines, and
+// a machine that cannot get Mutagen falls back to the bind mount this writes.
+func (e *Environment) Generate(sync syncer.Effective) error {
+	// A relative path, resolved by compose against the compose file's own
+	// directory, and with forward slashes, which compose accepts everywhere.
+	appsBind := ""
+	if sync == syncer.UseBind {
+		appsBind = "./" + syncer.AppsDirName
+	}
+
 	return assets.Write("compose.yaml.tmpl", ComposePath(e.Dir), composeData{
 		Name:         e.Config.Name,
 		Project:      e.Resources.Project(),
@@ -97,8 +114,10 @@ func (e *Environment) Generate() error {
 		BenchDir:     frappe.BenchDir,
 		EnvDir:       frappe.EnvDir,
 		SitesDir:     frappe.SitesDir,
+		AppsDir:      frappe.AppsDir,
 		ProcfilePath: frappe.ProcfilePath,
 		EnvScript:    toolchain.EnvScript,
+		AppsBind:     appsBind,
 	})
 }
 

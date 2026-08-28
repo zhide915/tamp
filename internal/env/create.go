@@ -14,6 +14,7 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
 	"github.com/zhide915/tamp/internal/router"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -24,8 +25,8 @@ const CreateLogFile = "create.log"
 
 // createSteps is how many numbered steps a create prints before the apps are
 // counted in — one step each. It grows as tamp learns to do more at create
-// time — a bench, a toolchain, a router.
-const createSteps = 9
+// time — a bench, a toolchain, a sync session, a router.
+const createSteps = 10
 
 // CreateRequest is what `tamp create` was asked for.
 type CreateRequest struct {
@@ -39,6 +40,8 @@ type CreateRequest struct {
 	// Apps is the --apps value, still unvalidated: a comma-separated list of
 	// app specs, each a name or a git URL, optionally with a branch after it.
 	Apps string
+	// Sync is the --sync value, still unvalidated.
+	Sync string
 }
 
 // Create provisions a new environment and brings its containers up.
@@ -60,9 +63,18 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	if err != nil {
 		return err
 	}
+	syncMode, err := syncer.ParseMode(req.Sync)
+	if err != nil {
+		return err
+	}
 	dir, err := m.createDir(req, name)
 	if err != nil {
 		return err
+	}
+	// Warnings, not refusals: where the environment goes is the user's call,
+	// and both of these describe a setup that works until it does not.
+	for _, warning := range syncer.PathWarnings(dir) {
+		m.Out.Warn(warning)
 	}
 
 	// One numbered step per app: fetching one is minutes of cloning and
@@ -80,13 +92,22 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	log.note(fmt.Sprintf("python %s · node %s · mariadb %s",
 		toolchain.Python, toolchain.Node, toolchain.MariaDB))
 
+	// Settled before the environment is written, because it decides what is
+	// written: a bind mount is a line in the compose file, and a machine that
+	// cannot get Mutagen falls back to one.
+	sync := m.syncMode(ctx, syncMode)
+
 	log.step("writing the environment")
-	e, err := m.provision(dir, name, version, apps, toolchain)
+	e, err := m.provision(dir, name, version, apps, toolchain, syncMode)
 	if err != nil {
 		return err
 	}
+	if err := m.writeEnvironment(e, sync); err != nil {
+		m.unregister(name)
+		return err
+	}
 
-	status, err := m.build(ctx, e, log)
+	status, err := m.build(ctx, e, sync, log)
 	if err != nil {
 		m.rollback(ctx, e, log)
 		return err
@@ -104,7 +125,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 // Everything from here on happens inside containers, and every step of it is
 // undone by the rollback its one caller performs: an environment that got a
 // toolchain but no bench is not half-created, it is failed.
-func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) (router.Status, error) {
+func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effective, log *createLog) (router.Status, error) {
 	log.step("starting containers")
 	if err := m.ensureSharedVolumes(ctx); err != nil {
 		return router.Status{}, err
@@ -144,6 +165,13 @@ func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) (ro
 		return router.Status{}, err
 	}
 	if err := bench.WaitForWeb(ctx); err != nil {
+		return router.Status{}, err
+	}
+
+	// After the bench exists, because what a session mirrors out is the apps
+	// tree the steps above put there.
+	log.step("starting the sync session")
+	if err := m.startSync(ctx, e, sync, log.stream()); err != nil {
 		return router.Status{}, err
 	}
 
@@ -219,7 +247,7 @@ func (m *Manager) createDir(req CreateRequest, name Name) (string, error) {
 
 // provision claims the name, writes the environment's files, and returns it
 // ready to start. Everything here is undoable by rollback.
-func (m *Manager) provision(dir string, name Name, version FrappeVersion, apps []App, tc Toolchain) (*Environment, error) {
+func (m *Manager) provision(dir string, name Name, version FrappeVersion, apps []App, tc Toolchain, sync syncer.Mode) (*Environment, error) {
 	res, err := NewResources(name, dir)
 	if err != nil {
 		return nil, err
@@ -256,20 +284,13 @@ func (m *Manager) provision(dir string, name Name, version FrappeVersion, apps [
 		return nil, err
 	}
 
-	e := &Environment{
-		Dir:       dir,
-		Config:    NewConfig(name, version, apps, tc, port),
-		Resources: res,
-	}
-	if err := m.writeEnvironment(e); err != nil {
-		m.unregister(name)
-		return nil, err
-	}
-	return e, nil
+	cfg := NewConfig(name, version, apps, tc, port)
+	cfg.Sync.Mode = sync
+	return &Environment{Dir: dir, Config: cfg, Resources: res}, nil
 }
 
 // writeEnvironment lays down the directory and everything in it.
-func (m *Manager) writeEnvironment(e *Environment) error {
+func (m *Manager) writeEnvironment(e *Environment, sync syncer.Effective) error {
 	if err := os.MkdirAll(StateDir(e.Dir), 0o755); err != nil {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot create %s: %v", StateDir(e.Dir), err),
@@ -284,7 +305,10 @@ func (m *Manager) writeEnvironment(e *Environment) error {
 	if err := EnsureDBRootPassword(e.Dir); err != nil {
 		return err
 	}
-	return e.Generate()
+	if err := ensureAppsDir(e.Dir, sync); err != nil {
+		return err
+	}
+	return e.Generate(sync)
 }
 
 // rollback undoes what a failed create put outside the environment directory.
@@ -294,6 +318,9 @@ func (m *Manager) writeEnvironment(e *Environment) error {
 // too" would replace the actionable error with a less useful one.
 func (m *Manager) rollback(ctx context.Context, e *Environment, log *createLog) {
 	m.Out.Warn(fmt.Sprintf("create failed — rolling back %s", e.Name()))
+
+	// Before the containers, because the far end of the session is one of them.
+	m.terminateSync(ctx, e)
 
 	// The router joins the environment's network at the last step of a create,
 	// and Docker refuses to remove a network that still has something on it.

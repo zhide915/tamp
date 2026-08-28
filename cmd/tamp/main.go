@@ -12,7 +12,9 @@ import (
 	"os/signal"
 
 	"github.com/zhide915/tamp/internal/engine"
+	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -26,15 +28,19 @@ var (
 
 func main() {
 	ui.EnableColorSupport()
-	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, engine.New())))
+	// The tamp home is where the managed Mutagen lives. A machine tamp
+	// cannot find a home directory on has bigger problems than syncing, and
+	// every command that needs one says so for itself.
+	home, _ := env.Home()
+	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, engine.New(), syncer.New(home))))
 }
 
 // run is the whole CLI minus the process. Tests drive this directly, which is
 // why nothing below it reads os.Args, os.Stdin, os.Stdout, the real
 // environment — or reaches Docker except through the engine handed to it.
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine) exitcode.Code {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine, sync syncer.Mutagen) exitcode.Code {
 	p := ui.NewPrinter(stdout, stderr, lookupEnv)
-	root := newRootCommand(p, eng, stdin)
+	root := newRootCommand(p, eng, sync, stdin)
 	root.SetArgs(args)
 
 	// Ctrl-C cancels the context instead of killing the process, so a

@@ -10,10 +10,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/router"
+	"github.com/zhide915/tamp/internal/syncer"
 )
 
 // Status is a check's verdict.
@@ -62,11 +64,12 @@ type Report struct {
 }
 
 // Run performs every check tamp currently knows how to make.
-func Run(ctx context.Context, e engine.Engine, r *router.Router) Report {
+func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutagen) Report {
 	return Report{Checks: []Check{
 		dockerCheck(ctx, e),
 		composeCheck(ctx, e),
 		routerCheck(ctx, r),
+		syncCheck(ctx, s, runtime.GOOS),
 	}}
 }
 
@@ -152,6 +155,45 @@ func routerCheck(ctx context.Context, r *router.Router) Check {
 		Name:   "Router",
 		Status: Pass,
 		Detail: "running on " + status.URL("localhost"),
+	}
+}
+
+// syncCheck reports the state of the Mutagen tamp manages.
+//
+// Nothing here is ever a failure. On Linux there is no Mutagen to have: the
+// source is bind-mounted, at native speed, and a check that failed for a
+// missing binary would be reporting the absence of something tamp would never
+// use. Elsewhere a missing binary is a download tamp has not needed yet, and
+// a download it cannot make is a bind mount — degraded, and working.
+func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
+	const name = "Sync"
+
+	if syncer.Resolve(syncer.ModeAuto, goos) != syncer.UseMutagen {
+		return Check{
+			Name:   name,
+			Status: Pass,
+			Detail: "bind mount — this platform needs no Mutagen",
+		}
+	}
+
+	binary, err := s.Find(ctx)
+	if err != nil {
+		return Check{
+			Name:   name,
+			Status: Warn,
+			Detail: fmt.Sprintf("no Mutagen %s yet — tamp downloads it the first time it syncs", syncer.Version),
+			Fix:    "nothing to do; if the download is blocked, tamp falls back to a bind mount and says so",
+		}
+	}
+
+	where := "on PATH"
+	if binary.Managed {
+		where = "managed by tamp"
+	}
+	return Check{
+		Name:   name,
+		Status: Pass,
+		Detail: fmt.Sprintf("Mutagen %s, %s, at %s", binary.Version, where, binary.Path),
 	}
 }
 

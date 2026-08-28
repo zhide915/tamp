@@ -8,12 +8,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
 // newRootCommand assembles the tamp command tree. Every command in it shares
 // one Printer, so --quiet and --no-color are applied in exactly one place.
-func newRootCommand(p *ui.Printer, eng engine.Engine, stdin io.Reader) *cobra.Command {
+func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin io.Reader) *cobra.Command {
 	var noColor, quiet bool
 
 	root := &cobra.Command{
@@ -56,17 +57,17 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, stdin io.Reader) *cobra.Co
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable coloured output")
 	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "print only results and errors")
 
-	root.AddCommand(newCreateCommand(p, eng))
-	root.AddCommand(newListCommand(p, eng))
-	root.AddCommand(newStartCommand(p, eng))
-	root.AddCommand(newStopCommand(p, eng))
-	root.AddCommand(newRestartCommand(p, eng))
-	root.AddCommand(newRemoveCommand(p, eng))
-	root.AddCommand(newSiteCommand(p, eng))
-	root.AddCommand(newExecCommand(p, eng, stdin))
-	root.AddCommand(newLogsCommand(p, eng))
-	root.AddCommand(newDBCommand(p, eng))
-	root.AddCommand(newDoctorCommand(p, eng))
+	root.AddCommand(newCreateCommand(p, eng, sync))
+	root.AddCommand(newListCommand(p, eng, sync))
+	root.AddCommand(newStartCommand(p, eng, sync))
+	root.AddCommand(newStopCommand(p, eng, sync))
+	root.AddCommand(newRestartCommand(p, eng, sync))
+	root.AddCommand(newRemoveCommand(p, eng, sync))
+	root.AddCommand(newSiteCommand(p, eng, sync))
+	root.AddCommand(newExecCommand(p, eng, sync, stdin))
+	root.AddCommand(newLogsCommand(p, eng, sync))
+	root.AddCommand(newDBCommand(p, eng, sync))
+	root.AddCommand(newDoctorCommand(p, eng, sync))
 	root.AddCommand(newVersionCommand(p))
 
 	return root

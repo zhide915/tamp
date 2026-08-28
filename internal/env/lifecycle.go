@@ -17,6 +17,7 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
 	"github.com/zhide915/tamp/internal/router"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/toolchain"
 	"github.com/zhide915/tamp/internal/ui"
 )
@@ -31,11 +32,15 @@ type Manager struct {
 	Home   string
 	Cwd    string
 	Engine engine.Engine
-	Out    *ui.Printer
+	// Sync is the agent that mirrors an environment's source to the host. It
+	// is tamp's second external process after the engine, and so its second
+	// seam: nothing here runs Mutagen itself.
+	Sync syncer.Mutagen
+	Out  *ui.Printer
 }
 
 // NewManager resolves the machine-global paths a lifecycle operation needs.
-func NewManager(eng engine.Engine, out *ui.Printer) (*Manager, error) {
+func NewManager(eng engine.Engine, sync syncer.Mutagen, out *ui.Printer) (*Manager, error) {
 	home, err := Home()
 	if err != nil {
 		return nil, err
@@ -46,7 +51,7 @@ func NewManager(eng engine.Engine, out *ui.Printer) (*Manager, error) {
 			fmt.Sprintf("cannot determine the current directory: %v", err),
 			"run tamp from a directory that still exists")
 	}
-	return &Manager{Home: home, Cwd: cwd, Engine: eng, Out: out}, nil
+	return &Manager{Home: home, Cwd: cwd, Engine: eng, Sync: sync, Out: out}, nil
 }
 
 // resolve finds the environment a command was pointed at, and reports anything
@@ -199,8 +204,13 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	// the source of truth on every start, not only on the ones that go on to
 	// touch a container. A hand-edited compose.yaml has to disappear whether
 	// or not the environment happens to be up.
+	// Settled before anything is written, because it decides what is written:
+	// a bind mount is a line in the compose file, and a machine that cannot
+	// get Mutagen falls back to one.
+	sync := m.syncMode(ctx, e.Config.Sync.Mode)
+
 	m.Out.Step(1, startSteps, "regenerating "+ComposeFile+" from "+ConfigFile)
-	if err := m.regenerate(e); err != nil {
+	if err := m.regenerate(e, sync); err != nil {
 		return err
 	}
 
@@ -226,7 +236,12 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		}
 	}
 
-	m.Out.Step(3, startSteps, "routing "+router.MailHost(string(e.Name())))
+	m.Out.Step(3, startSteps, "starting the sync session")
+	if err := m.startSync(ctx, e, sync, m.Out.Stream()); err != nil {
+		return err
+	}
+
+	m.Out.Step(4, startSteps, "routing "+router.MailHost(string(e.Name())))
 	status, err := m.applyRoutes(ctx, m.Out.Stream())
 	if err != nil {
 		return err
@@ -243,14 +258,17 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 
 // startSteps is how many numbered steps a start prints. It grows alongside
 // create's, as tamp learns to revive more of an environment.
-const startSteps = 3
+const startSteps = 4
 
 // regenerate rewrites the environment's generated files from tamp.toml.
-func (m *Manager) regenerate(e *Environment) error {
+func (m *Manager) regenerate(e *Environment, sync syncer.Effective) error {
 	if err := EnsureDBRootPassword(e.Dir); err != nil {
 		return err
 	}
-	return e.Generate()
+	if err := ensureAppsDir(e.Dir, sync); err != nil {
+		return err
+	}
+	return e.Generate(sync)
 }
 
 // Stop stops an environment's containers. Volumes always survive it — there is
@@ -280,6 +298,11 @@ func (m *Manager) stop(ctx context.Context, name string, final bool) error {
 		m.Out.OK(fmt.Sprintf("%s is already stopped", e.Name()))
 		return nil
 	}
+
+	// Paused before the containers go, not after: the far end of the session
+	// is a container, and Mutagen would spend the teardown reporting that it
+	// had gone away.
+	m.pauseSync(ctx, e)
 
 	if err := m.Engine.ComposeStop(ctx, e.project(), m.Out.Stream()); err != nil {
 		return err

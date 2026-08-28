@@ -9,11 +9,20 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
 // generated builds an environment and returns its rendered compose.yaml.
 func generated(t *testing.T) (*Environment, string) {
+	t.Helper()
+	return generatedWithSync(t, syncer.UseMutagen)
+}
+
+// generatedWithSync is the same for an environment whose source reaches its
+// container a particular way — which is the one thing that changes the shape
+// of the file.
+func generatedWithSync(t *testing.T, sync syncer.Effective) (*Environment, string) {
 	t.Helper()
 	dir := t.TempDir()
 	_, tc, err := ParseFrappeVersion(string(Version15))
@@ -26,7 +35,7 @@ func generated(t *testing.T) (*Environment, string) {
 	}
 	e := &Environment{Dir: dir, Config: NewConfig("erp15", Version15, nil, tc, 33061), Resources: res}
 
-	if err := e.Generate(); err != nil {
+	if err := e.Generate(sync); err != nil {
 		t.Fatalf("Generate = %v", err)
 	}
 	body, err := os.ReadFile(ComposePath(dir))
@@ -253,4 +262,17 @@ func firstLines(s string, n int) string {
 		lines = lines[:n]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// The two sync modes differ in the compose file by exactly one mount, and that
+// mount is the whole of the Linux answer: the container reads the host's own
+// filesystem, so there is nothing to mirror.
+func TestGenerateBindsTheHostSourceOnlyInBindMode(t *testing.T) {
+	bind := frappe.AppsDir
+	if _, body := generatedWithSync(t, syncer.UseBind); !strings.Contains(body, "./"+syncer.AppsDirName+":"+bind) {
+		t.Errorf("bind mode did not bind the host's apps directory over %s:\n%s", bind, body)
+	}
+	if _, body := generatedWithSync(t, syncer.UseMutagen); strings.Contains(body, "./"+syncer.AppsDirName+":") {
+		t.Errorf("mutagen mode bound the host's apps directory, which is what it exists to avoid:\n%s", body)
+	}
 }

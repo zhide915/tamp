@@ -28,6 +28,38 @@ for you, for the same reason — it would have to invent the branch.
 tamp exec erp15 -- bench get-app hrms --branch version-15
 ```
 
+## Where the source lives
+
+Every environment keeps its apps in `<envdir>/apps/`, and that is where you and
+your agent edit them. How it gets there depends on the machine, and tamp picks
+for you.
+
+On Linux it is a plain bind mount: the container reads the host's filesystem
+directly, at full speed, with file events arriving as they should.
+
+On Windows and macOS a bind mount is neither of those things — it is slow
+enough to have made `bench new-site` take hours, and inotify events never fire,
+so the dev server never reloads. So the code lives in a container volume and
+[Mutagen](https://mutagen.io) mirrors it two ways to `apps/` on the host, host
+side winning any conflict. tamp downloads and manages that binary itself,
+checksum-verified: you install tamp and Docker, nothing else. If the download
+is blocked, tamp says so loudly and falls back to a bind mount — which works,
+slowly, without hot reload.
+
+The session pauses when you stop the environment, resumes when you start it,
+and is torn down when you remove it. `--sync bind|mutagen|off` overrides the
+choice; `tamp doctor` says which Mutagen tamp found.
+
+**Git belongs to the host.** `.git` syncs, and after an app's first clone every
+git command should be run on the host side, in `<envdir>/apps/<app>`. That is
+what makes two-way syncing a live `.git` safe: only one side ever writes to it.
+tamp refuses `bench update` through `tamp exec` and warns on container-side
+`git` for the same reason.
+
+Two things fight this. Keep environments out of OneDrive, Dropbox and Google
+Drive — two synchronizers on one directory undo each other — and out of paths
+with spaces in them. tamp warns about both when it creates one.
+
 ## Watching an environment, and its database
 
 `tamp logs` shows one service at a time. The bench's five processes — `web`,

@@ -13,6 +13,7 @@ import (
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/router"
+	"github.com/zhide915/tamp/internal/syncer/synctest"
 )
 
 // doctor's contract is honesty: every check says pass, warn or fail, a failing
@@ -24,7 +25,10 @@ func run(t *testing.T, e engine.Engine) doctor.Report {
 	t.Helper()
 	// A tamp home the router has never started in: no check may depend on
 	// tamp having run before.
-	return doctor.Run(context.Background(), e, router.New(t.TempDir(), e))
+	// A machine that already has the pinned Mutagen: what this file is about
+	// is the engine and the router, and a sync check that varied with the
+	// developer's own machine would make every one of these tests flaky.
+	return doctor.Run(context.Background(), e, router.New(t.TempDir(), e), synctest.Installed())
 }
 
 func find(t *testing.T, r doctor.Report, name string) doctor.Check {
@@ -166,7 +170,7 @@ func TestBrokenRouterStateIsAFailureRatherThanAWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := doctor.Run(context.Background(), enginetest.Running(), router.New(home, enginetest.Running()))
+	r := doctor.Run(context.Background(), enginetest.Running(), router.New(home, enginetest.Running()), synctest.Installed())
 
 	c := find(t, r, "Router")
 	if c.Status != doctor.Fail {

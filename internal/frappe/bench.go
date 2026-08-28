@@ -125,7 +125,7 @@ func (b *Bench) Provision(ctx context.Context) error {
 // volume on every create would cost real time for nothing.
 func (b *Bench) prepareDirs(ctx context.Context) error {
 	dirs := []string{
-		WorkspaceDir, BenchDir, EnvDir, SitesDir,
+		WorkspaceDir, BenchDir, EnvDir, SitesDir, AppsDir,
 		toolchain.Dir, PipCacheDir, YarnCacheDir,
 	}
 	script := fmt.Sprintf("set -e; mkdir -p %[1]s; chown %[2]s:%[2]s %[1]s",

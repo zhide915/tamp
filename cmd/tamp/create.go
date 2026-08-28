@@ -2,16 +2,18 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-func newCreateCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
-	var frappe, apps, dir string
+func newCreateCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+	var frappe, apps, sync_, dir string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -25,7 +27,7 @@ func newCreateCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 			"one is fetched at its repository's default branch, usually develop.",
 		Args: exactlyOneName,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, p)
+			m, err := env.NewManager(eng, sync, p)
 			if err != nil {
 				return err
 			}
@@ -34,6 +36,7 @@ func newCreateCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 				Parent: dir,
 				Frappe: frappe,
 				Apps:   apps,
+				Sync:   sync_,
 			})
 		},
 	}
@@ -42,6 +45,8 @@ func newCreateCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 		"Frappe version: version-15, version-16 or develop")
 	cmd.Flags().StringVar(&apps, "apps", "",
 		"apps to fetch onto the bench, comma-separated: erpnext:version-15, or a git URL")
+	cmd.Flags().StringVar(&sync_, "sync", string(syncer.ModeAuto),
+		"how source reaches the container: "+strings.Join(syncer.ModeNames(), ", "))
 	cmd.Flags().StringVar(&dir, "dir", "",
 		"create the environment under this directory instead of the current one")
 	return cmd

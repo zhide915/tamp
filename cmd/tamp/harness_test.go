@@ -9,6 +9,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer/synctest"
 )
 
 // This file is tamp's CLI test harness and the house style for every later
@@ -28,6 +29,10 @@ type cli struct {
 	// point. It starts healthy; a test about a broken engine replaces it, and
 	// afterwards reads engine.Calls to assert what tamp asked it to do.
 	engine *enginetest.Fake
+	// sync is the recording fake standing in for Mutagen — tamp's second and
+	// last fake point. It starts as a machine that already has the pinned
+	// binary; a test about a blocked download replaces it.
+	sync *synctest.Fake
 	// stdin is what tamp reads as its standard input. It is an exhausted pipe
 	// by default — no terminal, nothing to read — which is what every command
 	// but exec sees.
@@ -42,7 +47,13 @@ func sandbox(t *testing.T) *cli {
 	t.Setenv("USERPROFILE", home) // os.UserHomeDir consults this on Windows
 	t.Setenv("NO_COLOR", "")      // empty reads as unset, so it neither forces nor blocks colour
 	t.Chdir(dir)
-	return &cli{home: home, dir: dir, engine: enginetest.Running(), stdin: strings.NewReader("")}
+	return &cli{
+		home:   home,
+		dir:    dir,
+		engine: enginetest.Running(),
+		sync:   synctest.Installed(),
+		stdin:  strings.NewReader(""),
+	}
 }
 
 type result struct {
@@ -54,7 +65,7 @@ type result struct {
 func (c *cli) run(t *testing.T, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(args, c.stdin, &stdout, &stderr, os.LookupEnv, c.engine)
+	code := run(args, c.stdin, &stdout, &stderr, os.LookupEnv, c.engine, c.sync)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 

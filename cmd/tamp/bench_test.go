@@ -51,7 +51,7 @@ func TestCreateStreamsItsStepsAndNamesTheToolchain(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStdoutContains(t,
-		"[1/9]", "[9/9]",
+		"[1/10]", "[10/10]",
 		"python 3.14 · node 24 · mariadb 11.8",
 		"initializing the bench",
 	)

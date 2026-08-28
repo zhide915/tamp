@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
@@ -125,7 +125,7 @@ func isRunning(containers []engine.Container, service string) bool {
 // the mistakes that are easy to make by accident and otherwise gets out of the
 // way, and --raw removes even that.
 func (m *Manager) advise(e *Environment, cmd []string) error {
-	apps := filepath.Join(e.Dir, "apps")
+	apps := syncer.AppsDir(e.Dir)
 	switch sub := benchSubcommand(cmd); {
 	case sub == "start", sub == "serve":
 		return exitcode.New(exitcode.CodeFailed,

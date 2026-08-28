@@ -10,6 +10,7 @@ import (
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/router"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -17,7 +18,7 @@ import (
 // waiting at a prompt, and no honest answer takes this long.
 const diagnosisTimeout = 15 * time.Second
 
-func newDoctorCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
+func newDoctorCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Check that tamp's prerequisites are in place",
@@ -37,7 +38,7 @@ func newDoctorCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 				return err
 			}
 
-			report := doctor.Run(ctx, eng, router.New(home, eng))
+			report := doctor.Run(ctx, eng, router.New(home, eng), sync)
 			report.Print(p)
 
 			if report.OK() {

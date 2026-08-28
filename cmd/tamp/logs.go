@@ -8,6 +8,7 @@ import (
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -16,7 +17,7 @@ import (
 // week, and it is what --tail 0 is for.
 const defaultTail = 200
 
-func newLogsCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
+func newLogsCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
 	var follow bool
 	var tail int
 
@@ -39,7 +40,7 @@ func newLogsCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 				return exitcode.Usage(fmt.Sprintf("--tail %d asks for a negative number of lines", tail),
 					"use a positive count, or 0 for the whole log")
 			}
-			m, err := env.NewManager(eng, p)
+			m, err := env.NewManager(eng, sync, p)
 			if err != nil {
 				return err
 			}

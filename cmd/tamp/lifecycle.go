@@ -8,11 +8,12 @@ import (
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-func newStartCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
-	return newLifecycleCommand(p, eng, "start", "Start an environment",
+func newStartCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+	return newLifecycleCommand(p, eng, sync, "start", "Start an environment",
 		"Start an environment.\n\n"+
 			"tamp regenerates the environment's generated files from tamp.toml\n"+
 			"first, so the containers always match the config — hand-edits to\n"+
@@ -20,15 +21,15 @@ func newStartCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 		(*env.Manager).Start)
 }
 
-func newStopCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
-	return newLifecycleCommand(p, eng, "stop", "Stop an environment's containers",
+func newStopCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+	return newLifecycleCommand(p, eng, sync, "stop", "Stop an environment's containers",
 		"Stop an environment's containers.\n\n"+
 			"Volumes always survive: stopping an environment never touches its data.",
 		(*env.Manager).Stop)
 }
 
-func newRestartCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
-	return newLifecycleCommand(p, eng, "restart", "Stop an environment and start it again",
+func newRestartCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+	return newLifecycleCommand(p, eng, sync, "restart", "Stop an environment and start it again",
 		"Stop an environment and start it again.", (*env.Manager).Restart)
 }
 
@@ -36,7 +37,7 @@ func newRestartCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 // method they call: they share an argument rule, an environment resolution and
 // a help shape, and writing that three times would be three chances to drift.
 func newLifecycleCommand(
-	p *ui.Printer, eng engine.Engine,
+	p *ui.Printer, eng engine.Engine, sync syncer.Mutagen,
 	use, short, long string,
 	run func(*env.Manager, context.Context, string) error,
 ) *cobra.Command {
@@ -46,7 +47,7 @@ func newLifecycleCommand(
 		Long:  long + "\n\n" + envArgHelp,
 		Args:  optionalEnvArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, p)
+			m, err := env.NewManager(eng, sync, p)
 			if err != nil {
 				return err
 			}

@@ -43,9 +43,11 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 		return err
 	}
 
-	// Before the teardown, not after: Docker refuses to remove a network that
-	// still has a container attached, and the router is attached to every
-	// environment's.
+	// Both before the teardown, and for the same reason: each is attached to
+	// something the teardown is about to take away. Docker refuses to remove a
+	// network that still has a container on it, and a sync session whose far
+	// end has gone is a session that spends its life reporting so.
+	m.terminateSync(ctx, e)
 	if err := m.router().Detach(ctx, e.Resources.Network()); err != nil {
 		return err
 	}

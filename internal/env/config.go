@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 )
 
 // ConfigFile is the marker that makes a directory an environment. Every
@@ -72,7 +73,7 @@ type EngineSection struct {
 
 // SyncSection selects how the host apps/ tree reaches the container.
 type SyncSection struct {
-	Mode string `toml:"mode"`
+	Mode syncer.Mode `toml:"mode"`
 }
 
 // RouterSection selects hostname routing or the published-port fallback.
@@ -102,7 +103,7 @@ func NewConfig(name Name, version FrappeVersion, apps []App, tc Toolchain, dbPor
 		Frappe:    FrappeSection{Version: version, Apps: apps},
 		Toolchain: tc,
 		Engine:    EngineSection{Kind: EngineDocker},
-		Sync:      SyncSection{Mode: "auto"},
+		Sync:      SyncSection{Mode: syncer.ModeAuto},
 		Router:    RouterSection{Mode: "auto"},
 		Ports:     PortsSection{DB: dbPort},
 	}
@@ -167,6 +168,10 @@ func (c *Config) validate(path string) error {
 	if c.Engine.Kind != EngineDocker {
 		return invalid(fmt.Sprintf("engine %q is not supported", c.Engine.Kind),
 			`Docker is tamp's only engine — set kind = "docker"`)
+	}
+	if _, err := syncer.ParseMode(string(c.Sync.Mode)); err != nil {
+		return invalid(fmt.Sprintf("[sync] mode = %q is not a way of syncing source", c.Sync.Mode),
+			"modes: "+strings.Join(syncer.ModeNames(), ", "))
 	}
 	if c.Ports.DB <= 0 {
 		return invalid(fmt.Sprintf("[ports] db = %d is not a port", c.Ports.DB),
