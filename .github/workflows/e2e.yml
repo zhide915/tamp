@@ -1,0 +1,47 @@
+name: E2E
+
+# Docs and the Windows acceptance script cannot change what this job proves.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - scripts/acceptance-windows.ps1
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - scripts/acceptance-windows.ps1
+  workflow_dispatch:
+  # A red weekly run on an unchanged repo means upstream moved under a pin.
+  schedule:
+    - cron: "0 5 * * 1"
+
+permissions:
+  contents: read
+
+# The event name keeps a push from cancelling a scheduled drift check.
+concurrency:
+  group: e2e-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: create → site → route → rm (ubuntu, real Docker)
+    runs-on: ubuntu-latest
+    # Two bench builds from cold caches dominate the runtime.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build tamp
+        run: go build -o tamp ./cmd/tamp
+
+      - name: End-to-end
+        run: bash scripts/e2e.sh "$PWD/tamp"
