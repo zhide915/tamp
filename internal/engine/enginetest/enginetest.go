@@ -122,6 +122,13 @@ type Fake struct {
 	// the declared app on the bench, as bench itself would.
 	AppAliases map[string]string
 
+	// PrivateRepos maps an app source URL to the password that unlocks it:
+	// git commands touching the source fail the way auth does.
+	PrivateRepos map[string]string
+	// MissingRepos are source URLs no host serves: git commands touching
+	// them fail the way a typo or a deleted repository does.
+	MissingRepos map[string]bool
+
 	// sim models the Frappe bench behind the engine, kept apart from the
 	// recording so the two change for different reasons.
 	sim *benchSim
@@ -359,7 +366,7 @@ func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 			return err
 		}
 	}
-	return f.bench().answer(exec, req.Stdout)
+	return f.bench().answer(exec, req.Stdout, req.Stderr)
 }
 
 // bench lazily builds the bench model, so the zero Fake works.
@@ -367,6 +374,8 @@ func (f *Fake) bench() *benchSim {
 	if f.sim == nil {
 		f.sim = &benchSim{
 			aliases: func() map[string]string { return f.AppAliases },
+			private: func() map[string]string { return f.PrivateRepos },
+			missing: func() map[string]bool { return f.MissingRepos },
 			put:     f.put,
 			drop:    func(path string) { delete(f.Files, path) },
 		}

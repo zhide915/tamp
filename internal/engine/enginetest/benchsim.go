@@ -19,9 +19,12 @@ type benchSim struct {
 	apps     map[string]bool
 	siteApps map[string][]string
 
-	// Hooks back into the Fake: the alias table is the test's to script,
-	// and site configs land in the shared container filesystem.
+	// Hooks back into the Fake: the alias, private and missing tables are
+	// the test's to script, and site configs land in the shared container
+	// filesystem.
 	aliases func() map[string]string
+	private func() map[string]string
+	missing func() map[string]bool
 	put     func(path, body string)
 	drop    func(path string)
 }
@@ -33,7 +36,17 @@ func (s *benchSim) reset() {
 
 // answer updates the model for the command just run and replies to the ones
 // that ask. Script arguments sit beside the script at fixed positions.
-func (s *benchSim) answer(exec Exec, stdout io.Writer) error {
+func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
+	if stderr == nil {
+		stderr = io.Discard
+	}
+
+	// The preflight probe: reachable answers, missing and locked refuse the
+	// way real git does, writing why to stderr.
+	if strings.Contains(exec.Line(), "git ls-remote") {
+		return s.remoteRefusal(exec, scriptArg(exec.Cmd, 0), stderr)
+	}
+
 	if strings.Contains(exec.Line(), "bench init") {
 		s.put(frappe.CommonSiteConfigPath, BenchInitConfig)
 		// bench init clones frappe; a second run against the same bench is a
@@ -64,7 +77,11 @@ func (s *benchSim) answer(exec Exec, stdout io.Writer) error {
 			fmt.Fprintln(stdout, host)
 		}
 	case strings.Contains(exec.Line(), "bench get-app"):
-		name := appNameFromSource(scriptArg(exec.Cmd, 0))
+		source := scriptArg(exec.Cmd, 0)
+		if err := s.remoteRefusal(exec, source, stderr); err != nil {
+			return err
+		}
+		name := appNameFromSource(source)
 		if declared, ok := s.aliases()[name]; ok {
 			name = declared
 		}
@@ -85,6 +102,20 @@ func (s *benchSim) answer(exec Exec, stdout io.Writer) error {
 		for _, app := range s.appsSorted() {
 			fmt.Fprintln(stdout, app)
 		}
+	}
+	return nil
+}
+
+// remoteRefusal is git meeting the scripted repository tables. The words on
+// stderr are the real git's, because that is what tamp classifies.
+func (s *benchSim) remoteRefusal(exec Exec, source string, stderr io.Writer) error {
+	if s.missing()[source] {
+		fmt.Fprintf(stderr, "fatal: repository '%s' not found\n", source)
+		return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
+	}
+	if _, private := s.private()[source]; private {
+		fmt.Fprintf(stderr, "fatal: could not read Username for '%s': terminal prompts disabled\n", source)
+		return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
 	}
 	return nil
 }

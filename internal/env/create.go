@@ -25,7 +25,7 @@ import (
 const CreateLogFile = "create.log"
 
 // buildSteps is build's numbered step count, before the per-app steps.
-const buildSteps = 7
+const buildSteps = 8
 
 // createSteps adds the three steps a create runs before build.
 const createSteps = 3 + buildSteps
@@ -191,6 +191,13 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 	}
 
 	bench := e.bench(m.Engine, log.stream())
+
+	// Before anything slow: an unreachable app source must cost seconds, not
+	// the minutes a bench build takes.
+	log.step("checking that every app source answers")
+	if err := m.preflightApps(ctx, bench, e.Config.Frappe.Apps, log); err != nil {
+		return router.Status{}, err
+	}
 
 	// Slow once per machine, near-instant after: the toolchain and package
 	// caches live in volumes shared by every environment.
