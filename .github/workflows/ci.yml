@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: build · lint · test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Windows is tamp's primary platform, so a Linux failure must never hide
+      # a Windows one.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      # Direct dependencies mis-tagged as indirect still build and still lint,
+      # so only a tidy check catches manifest drift.
+      - name: go.mod is tidy
+        run: go mod tidy && git diff --exit-code -- go.mod go.sum
+
+      # Linting runs per-OS on purpose: build-tagged files (console_windows.go)
+      # are only ever analysed on the platform that compiles them.
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+
+      - name: Test
+        run: go test ./...

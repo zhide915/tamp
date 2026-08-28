@@ -1,0 +1,3 @@
+# gofmt only accepts LF, and GitHub's Windows runners check out with CRLF by
+# default — without this, every Go file fails the linter on windows-latest.
+* text=auto eol=lf
