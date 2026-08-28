@@ -4,14 +4,11 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
-	"github.com/zhide915/tamp/internal/syncer"
-	"github.com/zhide915/tamp/internal/ui"
 )
 
-func newSiteCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+func newSiteCommand(d deps) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "site",
 		Short: "Create, list and remove the sites on an environment's bench",
@@ -28,13 +25,13 @@ func newSiteCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobr
 		},
 	}
 
-	cmd.AddCommand(newSiteNewCommand(p, eng, sync))
-	cmd.AddCommand(newSiteListCommand(p, eng, sync))
-	cmd.AddCommand(newSiteRemoveCommand(p, eng, sync))
+	cmd.AddCommand(newSiteNewCommand(d))
+	cmd.AddCommand(newSiteListCommand(d))
+	cmd.AddCommand(newSiteRemoveCommand(d))
 	return cmd
 }
 
-func newSiteNewCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+func newSiteNewCommand(d deps) *cobra.Command {
 	var adminPassword, apps string
 
 	cmd := &cobra.Command{
@@ -50,7 +47,7 @@ func newSiteNewCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *c
 			"none of them, because it has no way to know which branch you want.\n\n" + envArgHelp,
 		Args: envAndOneArg("tamp site new needs a hostname for the site"),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, sync, p)
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}
@@ -71,7 +68,7 @@ func newSiteNewCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *c
 	return cmd
 }
 
-func newSiteListCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+func newSiteListCommand(d deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list [env]",
 		Short: "List an environment's sites",
@@ -81,7 +78,7 @@ func newSiteListCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *
 			"its apps column reads ? until the environment is running again.\n\n" + envArgHelp,
 		Args: optionalEnvArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, sync, p)
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}
@@ -90,7 +87,7 @@ func newSiteListCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *
 	}
 }
 
-func newSiteRemoveCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+func newSiteRemoveCommand(d deps) *cobra.Command {
 	var yes bool
 
 	cmd := &cobra.Command{
@@ -101,7 +98,7 @@ func newSiteRemoveCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen)
 			"Without --yes tamp prints what it would destroy and stops.\n\n" + envArgHelp,
 		Args: envAndOneArg("tamp site rm needs the hostname of the site to remove"),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, sync, p)
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}

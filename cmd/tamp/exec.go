@@ -6,15 +6,12 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
-	"github.com/zhide915/tamp/internal/syncer"
-	"github.com/zhide915/tamp/internal/ui"
 	"golang.org/x/term"
 )
 
-func newExecCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin io.Reader) *cobra.Command {
+func newExecCommand(d deps, stdin io.Reader) *cobra.Command {
 	var raw bool
 
 	cmd := &cobra.Command{
@@ -31,7 +28,7 @@ func newExecCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 		DisableFlagsInUseLine: true,
 		Args:                  execArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, sync, p)
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}
@@ -43,7 +40,7 @@ func newExecCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 				Cmd:      args[dash:],
 				Raw:      raw,
 				Stdin:    stdin,
-				Terminal: attachedConsole(stdin, p.Out),
+				Terminal: attachedConsole(stdin, d.p.Out),
 			})
 		},
 	}

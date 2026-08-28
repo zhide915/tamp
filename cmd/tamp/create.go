@@ -5,14 +5,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/syncer"
-	"github.com/zhide915/tamp/internal/ui"
 )
 
-func newCreateCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+func newCreateCommand(d deps) *cobra.Command {
 	var frappe, apps, syncMode, dir string
 
 	cmd := &cobra.Command{
@@ -27,7 +25,7 @@ func newCreateCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *co
 			"one is fetched at its repository's default branch, usually develop.",
 		Args: exactlyOneName,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, sync, p)
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}

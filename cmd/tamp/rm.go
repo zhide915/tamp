@@ -2,13 +2,10 @@ package main
 
 import (
 	"github.com/spf13/cobra"
-	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
-	"github.com/zhide915/tamp/internal/syncer"
-	"github.com/zhide915/tamp/internal/ui"
 )
 
-func newRemoveCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+func newRemoveCommand(d deps) *cobra.Command {
 	var volumes, yes bool
 
 	cmd := &cobra.Command{
@@ -19,7 +16,7 @@ func newRemoveCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *co
 			"Volumes survive unless you pass --volumes.\n\n" + envArgHelp,
 		Args: optionalEnvArg,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			m, err := env.NewManager(eng, sync, p)
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}

@@ -4,13 +4,11 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/syncer"
-	"github.com/zhide915/tamp/internal/ui"
 )
 
-func newInitCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobra.Command {
+func newInitCommand(d deps) *cobra.Command {
 	var frappe, apps, syncMode, name string
 
 	cmd := &cobra.Command{
@@ -27,7 +25,7 @@ func newInitCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen) *cobr
 			"flags below do not apply to a directory being adopted.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			m, err := env.NewManager(eng, sync, p)
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}

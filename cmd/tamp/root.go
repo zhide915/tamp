@@ -7,14 +7,30 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zhide915/tamp/internal/engine"
+	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
+// deps is everything a command needs, built once at the root so that no
+// constructor threads it through piece by piece.
+type deps struct {
+	p    *ui.Printer
+	eng  engine.Engine
+	sync syncer.Mutagen
+}
+
+// manager opens the environment Manager every environment-facing command
+// starts with.
+func (d deps) manager() (*env.Manager, error) {
+	return env.NewManager(d.eng, d.sync, d.p)
+}
+
 // newRootCommand assembles the tamp command tree. Every command in it shares
 // one Printer, so --quiet and --no-color are applied in exactly one place.
 func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin io.Reader) *cobra.Command {
+	d := deps{p: p, eng: eng, sync: sync}
 	var noColor, quiet bool
 
 	root := &cobra.Command{
@@ -57,18 +73,18 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable coloured output")
 	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "print only results and errors")
 
-	root.AddCommand(newCreateCommand(p, eng, sync))
-	root.AddCommand(newInitCommand(p, eng, sync))
-	root.AddCommand(newListCommand(p, eng, sync))
-	root.AddCommand(newStartCommand(p, eng, sync))
-	root.AddCommand(newStopCommand(p, eng, sync))
-	root.AddCommand(newRestartCommand(p, eng, sync))
-	root.AddCommand(newRemoveCommand(p, eng, sync))
-	root.AddCommand(newSiteCommand(p, eng, sync))
-	root.AddCommand(newExecCommand(p, eng, sync, stdin))
-	root.AddCommand(newLogsCommand(p, eng, sync))
-	root.AddCommand(newDBCommand(p, eng, sync))
-	root.AddCommand(newDoctorCommand(p, eng, sync))
+	root.AddCommand(newCreateCommand(d))
+	root.AddCommand(newInitCommand(d))
+	root.AddCommand(newListCommand(d))
+	root.AddCommand(newStartCommand(d))
+	root.AddCommand(newStopCommand(d))
+	root.AddCommand(newRestartCommand(d))
+	root.AddCommand(newRemoveCommand(d))
+	root.AddCommand(newSiteCommand(d))
+	root.AddCommand(newExecCommand(d, stdin))
+	root.AddCommand(newLogsCommand(d))
+	root.AddCommand(newDBCommand(d))
+	root.AddCommand(newDoctorCommand(d))
 	root.AddCommand(newVersionCommand(p))
 
 	return root
