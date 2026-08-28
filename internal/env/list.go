@@ -1,14 +1,11 @@
 package env
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
-	"strings"
-	"text/tabwriter"
 
 	"github.com/zhide915/tamp/internal/router"
 )
@@ -154,30 +151,17 @@ func (m *Manager) prune(gone []string) {
 }
 
 func (m *Manager) printListing(rows []listing) {
-	// tabwriter needs the whole table before it can align it, so the table is
-	// rendered into a buffer and then handed to the Printer line by line.
-	// Writing straight into the Printer's stream would work and would also be
-	// the one place in tamp that bypasses it.
-	var table bytes.Buffer
-	w := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tSTATE\tFRAPPE\tPYTHON\tNODE\tMARIADB\tMAIL\tPATH")
+	table := make([][]string, 0, len(rows))
 	for _, row := range rows {
 		frappe, python, node, mariadb := unknownField, unknownField, unknownField, unknownField
 		if row.Cfg != nil {
 			frappe = string(row.Cfg.Frappe.Version)
 			python, node, mariadb = row.Cfg.Toolchain.Python, row.Cfg.Toolchain.Node, row.Cfg.Toolchain.MariaDB
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			row.Name, row.State, frappe, python, node, mariadb, row.Mail, row.Path)
+		table = append(table, []string{
+			row.Name, string(row.State), frappe, python, node, mariadb, row.Mail, row.Path})
 	}
-	if err := w.Flush(); err != nil {
-		m.Out.Warn(fmt.Sprintf("could not lay out the table: %v", err))
-		return
-	}
-
-	for line := range strings.SplitSeq(strings.TrimRight(table.String(), "\n"), "\n") {
-		m.Out.Print(line)
-	}
+	m.Out.Table([]string{"NAME", "STATE", "FRAPPE", "PYTHON", "NODE", "MARIADB", "MAIL", "PATH"}, table)
 }
 
 // unknownField stands in for a column tamp could not fill — an environment

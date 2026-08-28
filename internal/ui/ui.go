@@ -4,9 +4,12 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"text/tabwriter"
 
 	"golang.org/x/term"
 )
@@ -93,6 +96,26 @@ func (p *Printer) Stream() io.Writer {
 		return io.Discard
 	}
 	return p.Out
+}
+
+// Table writes an aligned table to stdout, one Print per line, so the rule
+// that every line of output crosses the Printer holds for tables too.
+// tabwriter needs the whole table before it can align it, which is why the
+// rows arrive as data rather than as writes.
+func (p *Printer) Table(header []string, rows [][]string) {
+	var table bytes.Buffer
+	w := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, strings.Join(header, "\t"))
+	for _, row := range rows {
+		fmt.Fprintln(w, strings.Join(row, "\t"))
+	}
+	if err := w.Flush(); err != nil {
+		p.Warn(fmt.Sprintf("could not lay out the table: %v", err))
+		return
+	}
+	for line := range strings.SplitSeq(strings.TrimRight(table.String(), "\n"), "\n") {
+		p.Print(line)
+	}
 }
 
 // Mark is the ✓/!/✗ prefix on a result line.

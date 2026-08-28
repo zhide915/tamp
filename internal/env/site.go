@@ -1,14 +1,12 @@
 package env
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"fmt"
 	"runtime"
 	"slices"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
@@ -406,25 +404,13 @@ func (m *Manager) recordSites(e *Environment, hosts []string) error {
 }
 
 func (m *Manager) printSites(rows []siteRow) {
-	// tabwriter needs the whole table before it can align it, so it is
-	// rendered into a buffer and handed to the Printer line by line rather
-	// than writing straight past it.
-	var table bytes.Buffer
-	w := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "HOST\tURL\tAPPS")
+	table := make([][]string, 0, len(rows))
 	for _, row := range rows {
 		apps := unknownField
 		if row.Apps != nil {
 			apps = strings.Join(row.Apps, " ")
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\n", row.Host, row.URL, apps)
+		table = append(table, []string{row.Host, row.URL, apps})
 	}
-	if err := w.Flush(); err != nil {
-		m.Out.Warn(fmt.Sprintf("could not lay out the table: %v", err))
-		return
-	}
-
-	for line := range strings.SplitSeq(strings.TrimRight(table.String(), "\n"), "\n") {
-		m.Out.Print(line)
-	}
+	m.Out.Table([]string{"HOST", "URL", "APPS"}, table)
 }

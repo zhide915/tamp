@@ -1,11 +1,8 @@
 package env
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"strings"
-	"text/tabwriter"
 )
 
 // DBHost is the address an environment's MariaDB is published on. It is
@@ -62,10 +59,8 @@ func (m *Manager) printDatabases(ctx context.Context, e *Environment, hosts []st
 		return
 	}
 
-	var table bytes.Buffer
-	w := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "SITE\tDATABASE")
 	bench := e.bench(m.Engine, m.Out.Stream())
+	rows := make([][]string, 0, len(hosts))
 	for _, host := range hosts {
 		database := unknownField
 		if live {
@@ -76,14 +71,7 @@ func (m *Manager) printDatabases(ctx context.Context, e *Environment, hosts []st
 				database = name
 			}
 		}
-		fmt.Fprintf(w, "%s\t%s\n", host, database)
+		rows = append(rows, []string{host, database})
 	}
-	if err := w.Flush(); err != nil {
-		m.Out.Warn(fmt.Sprintf("could not lay out the table: %v", err))
-		return
-	}
-
-	for line := range strings.SplitSeq(strings.TrimRight(table.String(), "\n"), "\n") {
-		m.Out.Print(line)
-	}
+	m.Out.Table([]string{"SITE", "DATABASE"}, rows)
 }
