@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -61,6 +62,7 @@ func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutage
 		composeCheck(ctx, e),
 		routerCheck(ctx, r),
 		syncCheck(ctx, s, runtime.GOOS),
+		hostGitCheck(ctx),
 		localhostCheck(),
 		pathsCheck(envDirs),
 	}}
@@ -175,6 +177,26 @@ func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
 		Name:   name,
 		Status: Pass,
 		Detail: fmt.Sprintf("Mutagen %s, %s, at %s", binary.Version, where, binary.Path),
+	}
+}
+
+// hostGitCheck never fails: only the credential bridge needs host git, and
+// only for private repositories (ADR 0002).
+func hostGitCheck(ctx context.Context) Check {
+	const name = "Host git"
+	out, err := exec.CommandContext(ctx, "git", "version").Output()
+	if err != nil {
+		return Check{
+			Name:   name,
+			Status: Warn,
+			Detail: "not found — tamp needs it only to fetch private app repositories",
+			Fix:    "install git and sign in to your git host once; everything else works without it",
+		}
+	}
+	return Check{
+		Name:   name,
+		Status: Pass,
+		Detail: strings.TrimSpace(string(out)) + " — used only for private app repositories",
 	}
 }
 

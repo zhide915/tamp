@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,6 +35,14 @@ func sandbox(t *testing.T) *cli {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home) // what os.UserHomeDir reads on Windows
 	t.Setenv("NO_COLOR", "")      // empty counts as unset: colour neither forced nor blocked
+	// The bridge runs host git for real; point it away from the developer's
+	// own credential manager. Tests that want credentials write this file.
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	t.Setenv("GIT_CONFIG_GLOBAL", filepath.Join(home, "gitconfig"))
+	t.Setenv("GIT_TERMINAL_PROMPT", "0")
+	// Git Bash exports SSH_ASKPASS; left alone, a fill with no helper opens
+	// a GUI prompt on the developer's screen and hangs the test on it.
+	t.Setenv("GIT_ASKPASS", "true")
 	t.Chdir(dir)
 	return &cli{
 		home:   home,

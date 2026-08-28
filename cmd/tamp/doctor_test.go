@@ -30,6 +30,24 @@ func TestDoctorReportsEveryCheckWhenTheEngineIsHealthy(t *testing.T) {
 	}
 }
 
+// Host git matters only to the credential bridge, so its absence warns and
+// never fails — a doctor that failed here would break machines that never
+// fetch a private repository.
+func TestDoctorReportsHostGitAsAWarnOnlyCheck(t *testing.T) {
+	c := sandbox(t)
+
+	r := c.run(t, "doctor")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStdoutContains(t, "✓ Host git", "private app repositories")
+
+	t.Setenv("PATH", t.TempDir()) // a PATH with no git on it
+	missing := c.run(t, "doctor")
+
+	missing.assertCode(t, exitcode.CodeOK)
+	missing.assertStdoutContains(t, "! Host git", "install git")
+}
+
 // The create-time path warning must not be the only one: a directory can
 // start syncing to the cloud long after create.
 func TestDoctorWarnsAboutAnEnvironmentInACloudSyncedPath(t *testing.T) {

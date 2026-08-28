@@ -195,7 +195,8 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 	// Before anything slow: an unreachable app source must cost seconds, not
 	// the minutes a bench build takes.
 	log.step("checking that every app source answers")
-	if err := m.preflightApps(ctx, bench, e.Config.Frappe.Apps, log); err != nil {
+	bridge, err := m.preflightApps(ctx, bench, e.Config.Frappe.Apps, log)
+	if err != nil {
 		return router.Status{}, err
 	}
 
@@ -229,7 +230,7 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 		}
 	}
 
-	if err := m.fetchApps(ctx, e, bench, log); err != nil {
+	if err := m.fetchApps(ctx, e, bench, bridge, log); err != nil {
 		return router.Status{}, err
 	}
 	if err := m.handGitToHost(ctx, e, sync); err != nil {
@@ -261,7 +262,7 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 
 // fetchApps clones each app onto the bench and onto no site — installation is
 // per site, and `tamp site new --apps` is where the user decides.
-func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.Bench, log *createLog) error {
+func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.Bench, bridge *bridge, log *createLog) error {
 	onBench, err := bench.Apps(ctx)
 	if err != nil {
 		return err
@@ -291,7 +292,7 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 			m.Out.Warn(fmt.Sprintf("fetching default branch of %s — pin with %s:%s if you meant a release branch",
 				app.Name, pin, e.Config.Frappe.Version))
 		}
-		if err := bench.GetApp(ctx, frappe.GetAppRequest{Source: app.Source, Branch: app.Branch}); err != nil {
+		if err := m.fetchApp(ctx, bench, bridge, app); err != nil {
 			return err
 		}
 
@@ -315,6 +316,34 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 		return e.Config.Save(ConfigPath(e.Dir))
 	}
 	return nil
+}
+
+// fetchApp runs one bench get-app, injecting the bridge's credential into
+// that exec alone and completing the credential protocol on the outcome.
+func (m *Manager) fetchApp(ctx context.Context, bench *frappe.Bench, bridge *bridge, app *App) error {
+	env := bridge.envFor(app.Source)
+	if env == nil {
+		return bench.GetApp(ctx, frappe.GetAppRequest{Source: app.Source, Branch: app.Branch})
+	}
+
+	// The tee: an authenticated fetch that fails must be classified, so the
+	// host's helper can be told to drop a credential that stopped working.
+	var said bytes.Buffer
+	authed := *bench
+	authed.Out = io.MultiWriter(bench.Out, &said)
+	err := authed.GetApp(ctx, frappe.GetAppRequest{Source: app.Source, Branch: app.Branch, Env: env})
+	if err == nil {
+		bridge.approve(ctx, app.Source)
+		return nil
+	}
+	if authShaped(said.String()) {
+		bridge.reject(ctx, app.Source)
+		_, host, _, hostErr := sourceParts(app.Source)
+		if hostErr == nil {
+			return refusedCredential(app.Source, host)
+		}
+	}
+	return err
 }
 
 // newApps names the apps that appeared between two bench listings.

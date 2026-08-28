@@ -123,7 +123,8 @@ type Fake struct {
 	AppAliases map[string]string
 
 	// PrivateRepos maps an app source URL to the password that unlocks it:
-	// git commands touching the source fail the way auth does.
+	// git commands touching the source fail the way auth does unless the
+	// exec's environment carries that password.
 	PrivateRepos map[string]string
 	// MissingRepos are source URLs no host serves: git commands touching
 	// them fail the way a typo or a deleted repository does.

@@ -113,11 +113,12 @@ func (s *benchSim) remoteRefusal(exec Exec, source string, stderr io.Writer) err
 		fmt.Fprintf(stderr, "fatal: repository '%s' not found\n", source)
 		return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
 	}
-	if _, private := s.private()[source]; private {
-		fmt.Fprintf(stderr, "fatal: could not read Username for '%s': terminal prompts disabled\n", source)
-		return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
+	password, private := s.private()[source]
+	if !private || (password != "" && slices.Contains(exec.Env, frappe.CredentialPasswordVar+"="+password)) {
+		return nil
 	}
-	return nil
+	fmt.Fprintf(stderr, "fatal: could not read Username for '%s': terminal prompts disabled\n", source)
+	return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
 }
 
 func (s *benchSim) addApp(name string) {

@@ -3,6 +3,7 @@ package frappe
 import (
 	"context"
 
+	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
@@ -15,12 +16,22 @@ type GetAppRequest struct {
 	Source string
 	// Branch to fetch; empty means the repository's default.
 	Branch string
+	// Env is added to the fetch exec's environment — the credential
+	// bridge's injection (CredentialEnv), when the app's host needs one.
+	Env []string
 }
 
 // GetApp fetches an app onto the bench without installing it anywhere:
 // apps are fetched per bench and installed per site.
 func (b *Bench) GetApp(ctx context.Context, req GetAppRequest) error {
-	return b.run(ctx, getAppScript, req.Source, req.Branch)
+	return b.Engine.Exec(ctx, engine.ExecRequest{
+		Container: b.Container,
+		Cmd:       engine.Script(getAppScript, req.Source, req.Branch),
+		Env:       req.Env,
+		WorkDir:   BenchDir,
+		Stdout:    b.Out,
+		Stderr:    b.Out,
+	})
 }
 
 // bench treats an empty --branch as the literal name "", so the flag is
