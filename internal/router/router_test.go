@@ -30,16 +30,6 @@ func demo() Env {
 	}
 }
 
-func other() Env {
-	return Env{
-		Name:    "other",
-		Network: "tamp-other-ef34gh",
-		Web:     "tamp-other-ef34gh-frappe-1:8000",
-		Socket:  "tamp-other-ef34gh-frappe-1:9000",
-		Mail:    "tamp-other-ef34gh-mailpit-1:8025",
-	}
-}
-
 func (r *Router) assembled(t *testing.T) string {
 	t.Helper()
 	body, err := os.ReadFile(r.caddyfilePath())
