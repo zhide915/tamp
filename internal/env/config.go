@@ -91,12 +91,15 @@ type PortsSection struct {
 const EngineDocker = "docker"
 
 // NewConfig builds the tamp.toml a fresh environment starts life with.
-func NewConfig(name Name, version FrappeVersion, tc Toolchain, dbPort int) *Config {
+func NewConfig(name Name, version FrappeVersion, apps []App, tc Toolchain, dbPort int) *Config {
+	if apps == nil {
+		apps = []App{}
+	}
 	return &Config{
 		Schema:    SchemaVersion,
 		Name:      name,
 		Profile:   ProfileDev,
-		Frappe:    FrappeSection{Version: version, Apps: []App{}},
+		Frappe:    FrappeSection{Version: version, Apps: apps},
 		Toolchain: tc,
 		Engine:    EngineSection{Kind: EngineDocker},
 		Sync:      SyncSection{Mode: "auto"},

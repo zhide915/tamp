@@ -34,7 +34,7 @@ func newSiteCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 }
 
 func newSiteNewCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
-	var adminPassword string
+	var adminPassword, apps string
 
 	cmd := &cobra.Command{
 		Use:   "new [env] <host>",
@@ -44,7 +44,9 @@ func newSiteNewCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 			"free across every environment on this machine. A *.localhost name is\n" +
 			"browsable immediately; anything else needs a hosts-file entry, and\n" +
 			"tamp prints the line to add.\n\n" +
-			"The environment has to be running: tamp never starts one for you.\n\n" + envArgHelp,
+			"The environment has to be running: tamp never starts one for you.\n\n" +
+			"Apps named with --apps have to be on the bench already: tamp fetches\n" +
+			"none of them, because it has no way to know which branch you want.\n\n" + envArgHelp,
 		Args: envAndOneArg("tamp site new needs a hostname for the site"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := env.NewManager(eng, p)
@@ -55,11 +57,14 @@ func newSiteNewCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 			return m.SiteNew(cmd.Context(), env.SiteNewRequest{
 				Env:           name,
 				Host:          host,
+				Apps:          apps,
 				AdminPassword: adminPassword,
 			})
 		},
 	}
 
+	cmd.Flags().StringVar(&apps, "apps", "",
+		"apps to install on the site, comma-separated; each must already be on the bench")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "",
 		"the site Administrator's password (tamp generates and prints one otherwise)")
 	return cmd

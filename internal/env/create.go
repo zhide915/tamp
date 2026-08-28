@@ -12,6 +12,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
 	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/ui"
 )
@@ -21,8 +22,9 @@ import (
 // tamp got and what the engine said.
 const CreateLogFile = "create.log"
 
-// createSteps is how many numbered steps a create prints. It grows as tamp
-// learns to do more at create time — a bench, a toolchain, a router.
+// createSteps is how many numbered steps a create prints before the apps are
+// counted in — one step each. It grows as tamp learns to do more at create
+// time — a bench, a toolchain, a router.
 const createSteps = 9
 
 // CreateRequest is what `tamp create` was asked for.
@@ -34,6 +36,9 @@ type CreateRequest struct {
 	Parent string
 	// Frappe is the --frappe value, still unvalidated.
 	Frappe string
+	// Apps is the --apps value, still unvalidated: a comma-separated list of
+	// app specs, each a name or a git URL, optionally with a branch after it.
+	Apps string
 }
 
 // Create provisions a new environment and brings its containers up.
@@ -51,12 +56,19 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	if err != nil {
 		return err
 	}
+	apps, err := ParseApps(req.Apps)
+	if err != nil {
+		return err
+	}
 	dir, err := m.createDir(req, name)
 	if err != nil {
 		return err
 	}
 
-	log := &createLog{out: m.Out, total: createSteps}
+	// One numbered step per app: fetching one is minutes of cloning and
+	// pip-installing, and a create that spent them under a single line would
+	// look stuck.
+	log := &createLog{out: m.Out, total: createSteps + len(apps)}
 	defer log.save(dir)
 
 	log.step("checking Docker")
@@ -69,7 +81,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 		toolchain.Python, toolchain.Node, toolchain.MariaDB))
 
 	log.step("writing the environment")
-	e, err := m.provision(dir, name, version, toolchain)
+	e, err := m.provision(dir, name, version, apps, toolchain)
 	if err != nil {
 		return err
 	}
@@ -116,6 +128,10 @@ func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) (ro
 		return router.Status{}, err
 	}
 
+	if err := m.fetchApps(ctx, e, bench, log); err != nil {
+		return router.Status{}, err
+	}
+
 	log.step("configuring the bench")
 	if err := bench.Configure(ctx); err != nil {
 		return router.Status{}, err
@@ -135,6 +151,29 @@ func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) (ro
 	// environment's network is made by the compose up above.
 	log.step("routing " + router.MailHost(string(e.Name())))
 	return m.applyRoutes(ctx, log.stream())
+}
+
+// fetchApps clones each of the environment's apps onto the bench.
+//
+// Onto the bench and onto no site: an app is fetched once and installed per
+// site, so a create that installed them everywhere would be deciding something
+// 'tamp site new --apps' exists to let the user decide.
+func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.Bench, log *createLog) error {
+	for _, app := range e.Config.Frappe.Apps {
+		log.step("fetching " + app.Name)
+		if app.Branch == "" {
+			// The one predictable way this goes wrong: most Frappe apps
+			// default to develop, which does not run on a pinned bench. tamp
+			// says so rather than picking a branch, because plenty of apps
+			// have no version-15 branch to pick.
+			m.Out.Warn(fmt.Sprintf("fetching default branch of %s — pin with %s:%s if you meant a release branch",
+				app.Name, app.Name, e.Config.Frappe.Version))
+		}
+		if err := bench.GetApp(ctx, frappe.GetAppRequest{Source: app.Source, Branch: app.Branch}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // announceDBPassword prints the environment's generated MariaDB credential.
@@ -180,7 +219,7 @@ func (m *Manager) createDir(req CreateRequest, name Name) (string, error) {
 
 // provision claims the name, writes the environment's files, and returns it
 // ready to start. Everything here is undoable by rollback.
-func (m *Manager) provision(dir string, name Name, version FrappeVersion, tc Toolchain) (*Environment, error) {
+func (m *Manager) provision(dir string, name Name, version FrappeVersion, apps []App, tc Toolchain) (*Environment, error) {
 	res, err := NewResources(name, dir)
 	if err != nil {
 		return nil, err
@@ -219,7 +258,7 @@ func (m *Manager) provision(dir string, name Name, version FrappeVersion, tc Too
 
 	e := &Environment{
 		Dir:       dir,
-		Config:    NewConfig(name, version, tc, port),
+		Config:    NewConfig(name, version, apps, tc, port),
 		Resources: res,
 	}
 	if err := m.writeEnvironment(e); err != nil {

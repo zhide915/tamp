@@ -24,7 +24,7 @@ func generated(t *testing.T) (*Environment, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &Environment{Dir: dir, Config: NewConfig("erp15", Version15, tc, 33061), Resources: res}
+	e := &Environment{Dir: dir, Config: NewConfig("erp15", Version15, nil, tc, 33061), Resources: res}
 
 	if err := e.Generate(); err != nil {
 		t.Fatalf("Generate = %v", err)

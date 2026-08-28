@@ -177,6 +177,29 @@ func TestSiteNewPrintsAGeneratedAdminPasswordExactlyOnce(t *testing.T) {
 	}
 }
 
+// After `bench new-site` succeeds the site and its database exist, whatever
+// happens next. A failure past that point must not take with it the one thing
+// only this run knows — the generated password — and must still route the
+// site, or the claimed hostname points at nothing until an unrelated command
+// happens to reassemble the routes.
+func TestAFailureAfterTheSiteExistsStillPrintsThePasswordAndRoutesIt(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--apps", "erpnext:version-15")
+	c.engine.ExecFails = map[string]error{
+		"install-app": exitcode.New(exitcode.CodeFailed, "migration failed", ""),
+	}
+
+	r := c.run(t, "site", "new", "demo", "shop.localhost", "--apps", "erpnext")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	if adminPasswordLine.FindStringSubmatch(r.stdout) == nil {
+		t.Errorf("the generated Administrator password was lost with the failure:\n%s", r.stdout)
+	}
+	if !strings.Contains(c.caddyfile(t), "http://shop.localhost {") {
+		t.Errorf("the site exists but is not routed:\n%s", c.caddyfile(t))
+	}
+}
+
 func TestSiteNewTakesTheAdminPasswordFromTheFlag(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

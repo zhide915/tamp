@@ -15,7 +15,8 @@ import (
 	"github.com/zhide915/tamp/internal/router"
 )
 
-// siteSteps is how many numbered steps creating a site prints.
+// siteSteps is how many numbered steps creating a site prints before its apps
+// are counted in — one step each.
 const siteSteps = 3
 
 // SiteNewRequest is what `tamp site new` was asked for.
@@ -24,6 +25,9 @@ type SiteNewRequest struct {
 	Env string
 	// Host is the site's hostname, still unvalidated.
 	Host string
+	// Apps is the --apps value, still unvalidated: a comma-separated list of
+	// apps to install, each already fetched onto the bench.
+	Apps string
 	// AdminPassword is what --admin-password supplied. Empty means tamp
 	// generates one and prints it.
 	AdminPassword string
@@ -46,6 +50,17 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	if err := m.requireRunning(ctx, e, "so tamp cannot create a site in it"); err != nil {
 		return err
 	}
+	apps, err := ParseInstallApps(req.Apps)
+	if err != nil {
+		return err
+	}
+	bench := e.bench(m.Engine, m.Out.Stream())
+	// Before the site exists, before the hostname is claimed, before anything
+	// at all: an app that is not on the bench is a create that would fail
+	// halfway and leave a site with some of the apps asked for.
+	if err := m.requireApps(ctx, e, bench, apps); err != nil {
+		return err
+	}
 
 	password, err := ReadDBRootPassword(e.Dir)
 	if err != nil {
@@ -66,8 +81,8 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		return err
 	}
 
-	m.Out.Step(1, siteSteps, "creating "+host.String()+" and its database")
-	bench := e.bench(m.Engine, m.Out.Stream())
+	steps := siteSteps + len(apps)
+	m.Out.Step(1, steps, "creating "+host.String()+" and its database")
 	if err := bench.NewSite(ctx, frappe.NewSiteRequest{
 		Host:           host.String(),
 		DBRootPassword: password,
@@ -77,30 +92,93 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		return err
 	}
 
+	for i, app := range apps {
+		m.Out.Step(2+i, steps, "installing "+app+" on "+host.String())
+		if err := bench.InstallApp(ctx, host.String(), app); err != nil {
+			return m.salvageSite(ctx, generated, admin, err)
+		}
+	}
+
 	// The bench-wide config already says this, and the site says it again for
 	// itself: a per-site key survives whatever later happens to the shared
 	// file, and this is the setting that makes Frappe reload changed code.
-	m.Out.Step(2, siteSteps, "turning on developer mode")
+	m.Out.Step(2+len(apps), steps, "turning on developer mode")
 	if err := bench.SetSiteConfig(ctx, host.String(), "developer_mode", "1"); err != nil {
-		return err
+		return m.salvageSite(ctx, generated, admin, err)
 	}
 
-	m.Out.Step(3, siteSteps, "routing "+host.String())
+	m.Out.Step(3+len(apps), steps, "routing "+host.String())
 	status, err := m.applyRoutes(ctx, m.Out.Stream())
 	if err != nil {
+		m.revealAdmin(generated, admin)
 		return err
 	}
 
 	m.Out.OK(host.String() + " is ready on " + e.Name().String())
 	m.Out.Note("site: " + status.URL(host.String()))
-	// Only a password tamp invented is worth printing: echoing back the one
-	// the user typed puts it in a second place for no one's benefit.
-	if generated {
-		m.Out.Note("Administrator password: " + admin)
-		m.Out.Note("tamp generated it and prints it this once — it is not stored anywhere")
-	}
+	m.revealAdmin(generated, admin)
 	m.warnUnresolvable(host)
 	return nil
+}
+
+// revealAdmin prints a generated Administrator password. Only a password tamp
+// invented is worth printing: echoing back the one the user typed puts it in a
+// second place for no one's benefit.
+func (m *Manager) revealAdmin(generated bool, admin string) {
+	if !generated {
+		return
+	}
+	m.Out.Note("Administrator password: " + admin)
+	m.Out.Note("tamp generated it and prints it this once — it is not stored anywhere")
+}
+
+// salvageSite is the error path for a failure after `bench new-site` has
+// succeeded: the site exists and keeps its hostname claim, so the one thing
+// only this run knows — the generated password — is printed anyway, and the
+// routes are reassembled so that the site the user is about to repair is at
+// least reachable.
+func (m *Manager) salvageSite(ctx context.Context, generated bool, admin string, err error) error {
+	m.revealAdmin(generated, admin)
+	if _, rerr := m.applyRoutes(ctx, m.Out.Stream()); rerr != nil {
+		m.Out.Warn("the new site is not routed yet: " + rerr.Error())
+	}
+	return err
+}
+
+// requireApps refuses a site whose apps the bench does not have.
+//
+// It refuses rather than fetching, and it refuses before anything has been
+// done: tamp has no way to know which branch of an app this bench wants, so
+// guessing one would be the difference between a working site and a broken
+// one. The hint is the command that settles it, with the branch left for the
+// user to fill in because that is exactly the part tamp cannot supply.
+func (m *Manager) requireApps(ctx context.Context, e *Environment, bench *frappe.Bench, apps []string) error {
+	if len(apps) == 0 {
+		return nil
+	}
+	onBench, err := bench.Apps(ctx)
+	if err != nil {
+		return err
+	}
+
+	var missing []string
+	for _, app := range apps {
+		if !slices.Contains(onBench, app) {
+			missing = append(missing, app)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	m.Out.Print(fmt.Sprintf("%s does not have, on its bench:", e.Name()))
+	for _, app := range missing {
+		m.Out.Print("  " + app)
+		m.Out.Hint(fmt.Sprintf("  fetch it: tamp exec %s -- bench get-app %s --branch <branch>", e.Name(), app))
+	}
+	return exitcode.New(exitcode.CodeFailed,
+		fmt.Sprintf("%s cannot install %s", e.Name(), strings.Join(missing, ", ")),
+		"fetch the apps above onto the bench first — tamp will not guess a branch")
 }
 
 // warnUnresolvable says what a hostname outside .localhost still needs.

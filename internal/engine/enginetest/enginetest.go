@@ -131,10 +131,23 @@ type Fake struct {
 	// so the two have to be modelled together for either to be testable.
 	networks map[string]map[string]bool
 
+	// AppAliases maps a repository's URL-derived name to the app its code
+	// actually declares, for the real-world case where the two differ —
+	// frappe/health clones as healthcare. A get-app on a mapped name puts the
+	// declared app on the bench, the way bench itself would.
+	AppAliases map[string]string
+
 	// sites is the set of sites on the fake's bench. tamp creates one and
 	// then reads the bench back to find out what it has, so the two commands
 	// have to be modelled together for either to be testable.
 	sites map[string]bool
+
+	// apps is the set of apps fetched onto the fake's bench, and siteApps what
+	// each site has installed. Both are modelled for the same reason sites is:
+	// tamp fetches an app and then reads the bench back to decide whether a
+	// site may install it.
+	apps     map[string]bool
+	siteApps map[string][]string
 
 	// running tracks, per project, whether its containers exist and whether
 	// they are running — so that up, stop, down and Containers tell one
@@ -350,13 +363,15 @@ func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 	return f.answerSiteCommand(exec, req.Stdout)
 }
 
-// answerSiteCommand keeps the fake's idea of which sites a bench has in step
-// with the commands tamp runs, and answers the two that ask.
+// answerSiteCommand keeps the fake's idea of what a bench holds — its sites,
+// its apps, and which apps each site has — in step with the commands tamp
+// runs, and answers the ones that ask.
 //
-// A recording alone would not do here: tamp creates a site and then lists the
-// bench to find out what it now holds, so a fake that forgot the create would
-// let a broken round trip pass. Arguments travel beside the script rather than
-// inside it, which is what makes the hostname readable at a fixed position.
+// A recording alone would not do here: tamp fetches an app or creates a site
+// and then reads the bench back to find out what it now holds, so a fake that
+// forgot the write would let a broken round trip pass. Arguments travel beside
+// the script rather than inside it, which is what makes the hostname and the
+// app name readable at a fixed position.
 func (f *Fake) answerSiteCommand(exec Exec, stdout io.Writer) error {
 	switch {
 	case strings.Contains(exec.Line(), "bench new-site"):
@@ -368,12 +383,69 @@ func (f *Fake) answerSiteCommand(exec Exec, stdout io.Writer) error {
 		for _, host := range f.Sites() {
 			fmt.Fprintln(stdout, host)
 		}
+	case strings.Contains(exec.Line(), "bench get-app"):
+		name := appNameFromSource(scriptArg(exec.Cmd, 0))
+		if declared, ok := f.AppAliases[name]; ok {
+			name = declared
+		}
+		f.AddApp(name)
+	case strings.Contains(exec.Line(), "install-app"):
+		host, app := scriptArg(exec.Cmd, 0), scriptArg(exec.Cmd, 1)
+		if f.siteApps == nil {
+			f.siteApps = map[string][]string{}
+		}
+		f.siteApps[host] = append(f.siteApps[host], app)
 	case strings.Contains(exec.Line(), "list-apps"):
 		// Every Frappe site has frappe installed; anything else got there
-		// through an install tamp has not learned to run yet.
+		// through an install-app above.
 		fmt.Fprintln(stdout, "frappe")
+		for _, app := range f.siteApps[siteArg(exec.Cmd, "--site")] {
+			fmt.Fprintln(stdout, app)
+		}
+	case strings.Contains(exec.Line(), "cd "+frappe.AppsDir):
+		for _, app := range f.Apps() {
+			fmt.Fprintln(stdout, app)
+		}
 	}
 	return nil
+}
+
+// Apps names the apps the fake's bench holds, sorted.
+func (f *Fake) Apps() []string { return slices.Sorted(maps.Keys(f.apps)) }
+
+// AddApp puts an app on the fake's bench without a fetch — the backdrop for a
+// test whose subject is what tamp does with an app that is already there.
+func (f *Fake) AddApp(name string) {
+	if name == "" {
+		return
+	}
+	if f.apps == nil {
+		f.apps = map[string]bool{}
+	}
+	f.apps[name] = true
+}
+
+// SiteApps names what a site had installed on it, in the order tamp installed
+// them.
+func (f *Fake) SiteApps(host string) []string { return f.siteApps[host] }
+
+// appNameFromSource is the app directory a clone URL produces, which is the
+// last segment of its path.
+func appNameFromSource(source string) string {
+	source = strings.TrimSuffix(strings.TrimSuffix(source, "/"), ".git")
+	if i := strings.LastIndexAny(source, "/:"); i >= 0 {
+		source = source[i+1:]
+	}
+	return source
+}
+
+// scriptArg is the nth argument tamp passed beside a script it ran.
+func scriptArg(cmd []string, n int) string {
+	const firstScriptArg = 4 // bash -c <script> tamp <arg>...
+	if len(cmd) > firstScriptArg+n {
+		return cmd[firstScriptArg+n]
+	}
+	return ""
 }
 
 // siteArg is the hostname a bench site command was pointed at.

@@ -26,7 +26,7 @@ func TestConfigRoundTrips(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := NewConfig("next16", Version16, tc, 33062)
+	want := NewConfig("next16", Version16, nil, tc, 33062)
 	path := ConfigPath(t.TempDir())
 
 	if err := want.Save(path); err != nil {
@@ -48,7 +48,7 @@ func TestConfigRoundTrips(t *testing.T) {
 // will be overwritten.
 func TestSavedConfigExplainsThatGeneratedFilesAreRewritten(t *testing.T) {
 	path := ConfigPath(t.TempDir())
-	if err := NewConfig("erp15", Version15, Toolchain{}, 33061).Save(path); err != nil {
+	if err := NewConfig("erp15", Version15, nil, Toolchain{}, 33061).Save(path); err != nil {
 		t.Fatal(err)
 	}
 	body, err := os.ReadFile(path)

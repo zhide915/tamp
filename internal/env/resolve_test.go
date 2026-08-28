@@ -24,7 +24,7 @@ func plant(t *testing.T, home, dir, name string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := NewConfig(n, DefaultFrappeVersion, tc, FirstDBPort).Save(ConfigPath(dir)); err != nil {
+	if err := NewConfig(n, DefaultFrappeVersion, nil, tc, FirstDBPort).Save(ConfigPath(dir)); err != nil {
 		t.Fatal(err)
 	}
 	res, err := NewResources(n, dir)
