@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -12,7 +13,7 @@ import (
 
 // newRootCommand assembles the tamp command tree. Every command in it shares
 // one Printer, so --quiet and --no-color are applied in exactly one place.
-func newRootCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
+func newRootCommand(p *ui.Printer, eng engine.Engine, stdin io.Reader) *cobra.Command {
 	var noColor, quiet bool
 
 	root := &cobra.Command{
@@ -61,6 +62,7 @@ func newRootCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 	root.AddCommand(newStopCommand(p, eng))
 	root.AddCommand(newRestartCommand(p, eng))
 	root.AddCommand(newRemoveCommand(p, eng))
+	root.AddCommand(newExecCommand(p, eng, stdin))
 	root.AddCommand(newDoctorCommand(p, eng))
 	root.AddCommand(newVersionCommand(p))
 

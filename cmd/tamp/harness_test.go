@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -27,6 +28,10 @@ type cli struct {
 	// point. It starts healthy; a test about a broken engine replaces it, and
 	// afterwards reads engine.Calls to assert what tamp asked it to do.
 	engine *enginetest.Fake
+	// stdin is what tamp reads as its standard input. It is an exhausted pipe
+	// by default — no terminal, nothing to read — which is what every command
+	// but exec sees.
+	stdin io.Reader
 }
 
 func sandbox(t *testing.T) *cli {
@@ -37,7 +42,7 @@ func sandbox(t *testing.T) *cli {
 	t.Setenv("USERPROFILE", home) // os.UserHomeDir consults this on Windows
 	t.Setenv("NO_COLOR", "")      // empty reads as unset, so it neither forces nor blocks colour
 	t.Chdir(dir)
-	return &cli{home: home, dir: dir, engine: enginetest.Running()}
+	return &cli{home: home, dir: dir, engine: enginetest.Running(), stdin: strings.NewReader("")}
 }
 
 type result struct {
@@ -49,7 +54,7 @@ type result struct {
 func (c *cli) run(t *testing.T, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(args, &stdout, &stderr, os.LookupEnv, c.engine)
+	code := run(args, c.stdin, &stdout, &stderr, os.LookupEnv, c.engine)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 

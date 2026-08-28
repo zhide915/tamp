@@ -61,6 +61,11 @@ type Exec struct {
 	Env       []string
 	WorkDir   string
 	User      string
+	// Stdin says whether tamp attached the caller's input to the command.
+	Stdin bool
+	// TTY and Size are the pseudo-terminal tamp asked for, if it asked.
+	TTY  bool
+	Size engine.ConsoleSize
 }
 
 // Line renders the exec the way a test asks about it: the whole command on one
@@ -250,6 +255,9 @@ func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 		Env:       slices.Clone(req.Env),
 		WorkDir:   req.WorkDir,
 		User:      req.User,
+		Stdin:     req.Stdin != nil,
+		TTY:       req.TTY,
+		Size:      req.Size,
 	}
 	f.Execs = append(f.Execs, exec)
 	if f.ExecErr != nil {

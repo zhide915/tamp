@@ -21,15 +21,15 @@ func (d *Docker) Exec(ctx context.Context, req ExecRequest) error {
 		return err
 	}
 
+	size := client.ConsoleSize{Width: req.Size.Width, Height: req.Size.Height}
 	created, err := api.ExecCreate(ctx, req.Container, client.ExecCreateOptions{
-		Cmd:        req.Cmd,
-		Env:        req.Env,
-		WorkingDir: req.WorkDir,
-		User:       req.User,
-		// No TTY: tamp is not a terminal for these commands, and without one
-		// the daemon multiplexes the two streams so stdout and stderr arrive
-		// separately — which is what lets tamp read a command's answer
-		// without its progress chatter mixed in.
+		Cmd:          req.Cmd,
+		Env:          req.Env,
+		WorkingDir:   req.WorkDir,
+		User:         req.User,
+		TTY:          req.TTY,
+		ConsoleSize:  size,
+		AttachStdin:  req.Stdin != nil,
 		AttachStdout: true,
 		AttachStderr: true,
 	})
@@ -37,22 +37,29 @@ func (d *Docker) Exec(ctx context.Context, req ExecRequest) error {
 		return execError(req, err)
 	}
 
-	attached, err := api.ExecAttach(ctx, created.ID, client.ExecAttachOptions{})
+	attached, err := api.ExecAttach(ctx, created.ID, client.ExecAttachOptions{TTY: req.TTY, ConsoleSize: size})
 	if err != nil {
 		return execError(req, err)
 	}
 	defer attached.Close()
 
-	stdout, stderr := req.Stdout, req.Stderr
-	if stdout == nil {
-		stdout = io.Discard
+	if req.Stdin != nil {
+		// Nothing waits for this: a terminal nobody is typing at never reaches
+		// EOF, so the read outlives the command and goes with the process.
+		go func() {
+			_, _ = io.Copy(attached.Conn, req.Stdin)
+			if !req.TTY {
+				// Half-closing is what gives a piped command its own EOF.
+				// Under a pseudo-terminal there is nothing to half-close — EOF
+				// there is a key the user presses — and asking for one over a
+				// Windows named pipe takes the whole connection down with it,
+				// output included.
+				_ = attached.CloseWrite()
+			}
+		}()
 	}
-	if stderr == nil {
-		stderr = io.Discard
-	}
-	// Reading to EOF is also how tamp waits for the command: the stream ends
-	// when the process does, and only then is the exit code below meaningful.
-	if _, err := stdcopy.StdCopy(stdout, stderr, attached.Reader); err != nil {
+
+	if err := copyOutput(req, attached.Reader); err != nil {
 		return execError(req, err)
 	}
 
@@ -64,6 +71,31 @@ func (d *Docker) Exec(ctx context.Context, req ExecRequest) error {
 		return &ExitError{Container: req.Container, Cmd: req.Cmd, Status: res.ExitCode}
 	}
 	return nil
+}
+
+// copyOutput drains the command's output until it ends.
+//
+// It is also how tamp waits for the command: the stream ends when the process
+// does, and only then is the exit status meaningful.
+func copyOutput(req ExecRequest, r io.Reader) error {
+	stdout, stderr := req.Stdout, req.Stderr
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	if req.TTY {
+		// Under a pseudo-terminal there is one stream and no framing to undo:
+		// the terminal is where the two were interleaved in the first place.
+		_, err := io.Copy(stdout, r)
+		return err
+	}
+	// Without one the daemon frames the two streams so they arrive separately
+	// — which is what lets tamp read a command's answer without its progress
+	// chatter mixed in.
+	_, err := stdcopy.StdCopy(stdout, stderr, r)
+	return err
 }
 
 // ExitError is a command that ran inside a container and came back non-zero.

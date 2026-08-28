@@ -71,9 +71,23 @@ type ExecRequest struct {
 	// make a freshly created volume writable by the user the bench runs as.
 	User string
 	// Stdout and Stderr receive the command's two streams, demultiplexed.
-	// Either may be nil, which discards that stream.
+	// Either may be nil, which discards that stream. Under TTY there is only
+	// one stream and it all arrives on Stdout.
 	Stdout, Stderr io.Writer
+	// Stdin, when set, is attached to the command's standard input.
+	Stdin io.Reader
+	// TTY runs the command under a pseudo-terminal, which is what an
+	// interactive command needs — a shell, a REPL, anything that draws itself.
+	// It costs the separation of the two output streams: the daemon can only
+	// keep them apart when there is no terminal for them to interleave on.
+	TTY bool
+	// Size is the pseudo-terminal's dimensions, meaningful only with TTY.
+	Size ConsoleSize
 }
+
+// ConsoleSize is a terminal's dimensions in character cells. The zero value
+// leaves the size to the daemon's default.
+type ConsoleSize struct{ Width, Height uint }
 
 // Script builds the argv that runs a shell script with positional arguments.
 //

@@ -24,15 +24,15 @@ var (
 
 func main() {
 	ui.EnableColorSupport()
-	os.Exit(int(run(os.Args[1:], os.Stdout, os.Stderr, os.LookupEnv, engine.New())))
+	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, engine.New())))
 }
 
 // run is the whole CLI minus the process. Tests drive this directly, which is
-// why nothing below it reads os.Args, os.Stdout, the real environment — or
-// reaches Docker except through the engine handed to it.
-func run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine) exitcode.Code {
+// why nothing below it reads os.Args, os.Stdin, os.Stdout, the real
+// environment — or reaches Docker except through the engine handed to it.
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine) exitcode.Code {
 	p := ui.NewPrinter(stdout, stderr, lookupEnv)
-	root := newRootCommand(p, eng)
+	root := newRootCommand(p, eng, stdin)
 	root.SetArgs(args)
 
 	if err := root.Execute(); err != nil {
