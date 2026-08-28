@@ -12,6 +12,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -22,7 +23,7 @@ const CreateLogFile = "create.log"
 
 // createSteps is how many numbered steps a create prints. It grows as tamp
 // learns to do more at create time — a bench, a toolchain, a router.
-const createSteps = 8
+const createSteps = 9
 
 // CreateRequest is what `tamp create` was asked for.
 type CreateRequest struct {
@@ -73,12 +74,14 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 		return err
 	}
 
-	if err := m.build(ctx, e, log); err != nil {
+	status, err := m.build(ctx, e, log)
+	if err != nil {
 		m.rollback(ctx, e, log)
 		return err
 	}
 
 	m.Out.OK(fmt.Sprintf("%s ready — no sites yet", name))
+	m.announceRoutes(e, status)
 	m.announceDBPassword(e)
 	m.Out.Hint("next: tamp site new <host>")
 	return nil
@@ -89,13 +92,13 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 // Everything from here on happens inside containers, and every step of it is
 // undone by the rollback its one caller performs: an environment that got a
 // toolchain but no bench is not half-created, it is failed.
-func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) error {
+func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) (router.Status, error) {
 	log.step("starting containers")
 	if err := m.ensureSharedVolumes(ctx); err != nil {
-		return err
+		return router.Status{}, err
 	}
 	if err := m.Engine.ComposeUp(ctx, e.project(), log.stream()); err != nil {
-		return err
+		return router.Status{}, err
 	}
 
 	bench := e.bench(m.Engine, log.stream())
@@ -105,26 +108,33 @@ func (m *Manager) build(ctx context.Context, e *Environment, log *createLog) err
 	// environment, so this is where a second create stops being expensive.
 	log.step(fmt.Sprintf("provisioning python %s and node %s", bench.Python, bench.Node))
 	if err := bench.Provision(ctx); err != nil {
-		return err
+		return router.Status{}, err
 	}
 
 	log.step("initializing the bench")
 	if err := bench.Init(ctx); err != nil {
-		return err
+		return router.Status{}, err
 	}
 
 	log.step("configuring the bench")
 	if err := bench.Configure(ctx); err != nil {
-		return err
+		return router.Status{}, err
 	}
 
 	// The container decides at boot whether it has a bench to run. It did not
 	// when it first started, and it does now, so it is asked again.
 	log.step("starting the bench processes")
 	if err := m.Engine.ComposeRestart(ctx, e.project(), FrappeService, log.stream()); err != nil {
-		return err
+		return router.Status{}, err
 	}
-	return bench.WaitForWeb(ctx)
+	if err := bench.WaitForWeb(ctx); err != nil {
+		return router.Status{}, err
+	}
+
+	// Last, because the router can only join a network that exists, and the
+	// environment's network is made by the compose up above.
+	log.step("routing " + router.MailHost(string(e.Name())))
+	return m.applyRoutes(ctx, log.stream())
 }
 
 // announceDBPassword prints the environment's generated MariaDB credential.
@@ -237,11 +247,21 @@ func (m *Manager) writeEnvironment(e *Environment) error {
 func (m *Manager) rollback(ctx context.Context, e *Environment, log *createLog) {
 	m.Out.Warn(fmt.Sprintf("create failed — rolling back %s", e.Name()))
 
+	// The router joins the environment's network at the last step of a create,
+	// and Docker refuses to remove a network that still has something on it.
+	if err := m.router().Detach(ctx, e.Resources.Network()); err != nil {
+		m.Out.Warn(fmt.Sprintf("could not detach the router: %v", err))
+	}
 	if err := m.Engine.ComposeDown(ctx, e.project(), engine.RemoveVolumes, log.stream()); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not remove the containers: %v", err))
 		m.Out.Warn(fmt.Sprintf("remove them by hand with: docker compose -p %s down --volumes", e.Resources.Project()))
 	}
 	m.unregister(e.Name())
+	// The registry no longer names this environment, so nothing may still
+	// route to it.
+	if _, err := m.refreshRoutes(ctx); err != nil {
+		m.Out.Warn(fmt.Sprintf("could not update the router's routes: %v", err))
+	}
 
 	m.Out.Note(fmt.Sprintf("%s was left in place, with %s and %s",
 		e.Dir, ConfigFile, filepath.Join(StateDirName, CreateLogFile)))

@@ -16,6 +16,7 @@ import (
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/toolchain"
 	"github.com/zhide915/tamp/internal/ui"
 )
@@ -171,28 +172,42 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if stateOf(containers) == StateRunning {
-		// Starting a running environment is a no-op with a notice, exit 0:
-		// scripts and agents run start defensively, and that must not fail.
+	// Starting a running environment is a no-op for its containers, with a
+	// notice and exit 0: scripts and agents run start defensively, and that
+	// must not fail. The routing below still happens — the router is
+	// machine-global, and it may have been stopped since.
+	running := stateOf(containers) == StateRunning
+
+	if running {
+		m.Out.Step(2, startSteps, "containers are already running")
+	} else {
+		m.Out.Step(2, startSteps, "starting containers")
+		if err := m.ensureSharedVolumes(ctx); err != nil {
+			return err
+		}
+		if err := m.Engine.ComposeUp(ctx, e.project(), m.Out.Stream()); err != nil {
+			return err
+		}
+	}
+
+	m.Out.Step(3, startSteps, "routing "+router.MailHost(string(e.Name())))
+	status, err := m.applyRoutes(ctx, m.Out.Stream())
+	if err != nil {
+		return err
+	}
+
+	if running {
 		m.Out.OK(fmt.Sprintf("%s is already running", e.Name()))
-		return nil
+	} else {
+		m.Out.OK(fmt.Sprintf("%s started", e.Name()))
 	}
-
-	m.Out.Step(2, startSteps, "starting containers")
-	if err := m.ensureSharedVolumes(ctx); err != nil {
-		return err
-	}
-	if err := m.Engine.ComposeUp(ctx, e.project(), m.Out.Stream()); err != nil {
-		return err
-	}
-
-	m.Out.OK(fmt.Sprintf("%s started", e.Name()))
+	m.announceRoutes(e, status)
 	return nil
 }
 
 // startSteps is how many numbered steps a start prints. It grows alongside
 // create's, as tamp learns to revive more of an environment.
-const startSteps = 2
+const startSteps = 3
 
 // regenerate rewrites the environment's generated files from tamp.toml.
 func (m *Manager) regenerate(e *Environment) error {

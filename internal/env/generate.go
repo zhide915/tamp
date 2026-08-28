@@ -1,14 +1,10 @@
 package env
 
 import (
-	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
-	"text/template"
 
 	"github.com/zhide915/tamp/assets"
-	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
 	"github.com/zhide915/tamp/internal/toolchain"
 )
@@ -71,7 +67,7 @@ type composeData struct {
 // environment's containers always match its config — including after tamp
 // itself is upgraded and the templates beneath it change.
 func (e *Environment) Generate() error {
-	return render("compose.yaml.tmpl", ComposePath(e.Dir), composeData{
+	return assets.Write("compose.yaml.tmpl", ComposePath(e.Dir), composeData{
 		Name:         e.Config.Name,
 		Project:      e.Resources.Project(),
 		Network:      e.Resources.Network(),
@@ -115,32 +111,5 @@ func WriteGitignore(dir string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	return render("gitignore.tmpl", path, nil)
-}
-
-func render(name, path string, data any) error {
-	tmpl, err := template.ParseFS(assets.FS, name)
-	if err != nil {
-		// The templates are compiled into the binary, so this is a broken
-		// build rather than anything the user did.
-		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("tamp's %s template is broken: %v", name, err),
-			"report this — it is a bug in tamp, not in your environment")
-	}
-
-	// Rendered whole before anything is written: a template that fails halfway
-	// must not leave a truncated compose.yaml where the old one was.
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("tamp's %s template is broken: %v", name, err),
-			"report this — it is a bug in tamp, not in your environment")
-	}
-
-	if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
-		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("cannot write %s: %v", path, err),
-			"check that the environment directory is writable")
-	}
-	return nil
+	return assets.Write("gitignore.tmpl", path, nil)
 }

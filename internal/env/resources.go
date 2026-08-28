@@ -101,6 +101,11 @@ const (
 	MailpitService    = "mailpit"
 )
 
+// MailUIPort is where Mailpit serves its web UI inside the environment's
+// network. Nothing publishes it to the host — the router is how it is reached,
+// which is what keeps one more port off the machine.
+const MailUIPort = 8025
+
 // Container names one of the environment's containers the way compose names
 // it: the project, the service, and the replica number — of which tamp's
 // services only ever have one.

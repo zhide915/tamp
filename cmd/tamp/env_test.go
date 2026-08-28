@@ -11,6 +11,7 @@ import (
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/router"
 )
 
 // path names a file inside the sandbox's working directory.
@@ -40,11 +41,30 @@ func (c *cli) create(t *testing.T, name string, args ...string) {
 	r.assertCode(t, exitcode.CodeOK)
 }
 
-// ops returns the compose operations tamp asked the engine for, by method.
+// ops returns the compose operations tamp asked the engine for on some
+// environment, by method.
+//
+// The global router's own project is left out: it is not part of any
+// environment, and a test asking "what did create do to demo" would otherwise
+// have to subtract it every time. routerOps is where it is asked about.
 func (c *cli) ops(method string) []enginetest.Op {
+	return filterOps(c.engine.Ops, method, func(project string) bool {
+		return project != router.Project
+	})
+}
+
+// routerOps returns the compose operations tamp asked for on the global
+// router, by method.
+func (c *cli) routerOps(method string) []enginetest.Op {
+	return filterOps(c.engine.Ops, method, func(project string) bool {
+		return project == router.Project
+	})
+}
+
+func filterOps(ops []enginetest.Op, method string, keep func(project string) bool) []enginetest.Op {
 	var out []enginetest.Op
-	for _, op := range c.engine.Ops {
-		if op.Method == method {
+	for _, op := range ops {
+		if op.Method == method && keep(op.Project.Name) {
 			out = append(out, op)
 		}
 	}
@@ -392,7 +412,9 @@ func TestTwoEnvironmentsShareNoResources(t *testing.T) {
 
 	projects := map[string]bool{}
 	for _, op := range c.engine.Ops {
-		projects[op.Project.Name] = true
+		if op.Project.Name != router.Project {
+			projects[op.Project.Name] = true
+		}
 	}
 	if len(projects) != 2 {
 		t.Fatalf("compose projects = %v, want two distinct ones", projects)

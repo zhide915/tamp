@@ -9,11 +9,15 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/zhide915/tamp/internal/router"
 )
 
 // listing is one row of `tamp list`.
 type listing struct {
-	Name  string
+	Name string
+	// Mail is where this environment's mail UI is reached through the router.
+	Mail  string
 	State State
 	Cfg   *Config
 	Path  string
@@ -40,6 +44,14 @@ func (m *Manager) List(ctx context.Context) error {
 		m.Out.Warn("Docker is unreachable, so tamp cannot tell which environments are running")
 	}
 
+	// The router's own port is tamp's to remember, so the URLs below are
+	// still right with Docker down — only "is it up" needs the engine, and the
+	// status comes back carrying the port either way.
+	status, err := m.router().Status(ctx)
+	if err != nil && engineUp {
+		return err
+	}
+
 	var rows []listing
 	var gone []string
 	for _, name := range reg.Names() {
@@ -50,7 +62,7 @@ func (m *Manager) List(ctx context.Context) error {
 			continue
 		}
 
-		row := listing{Name: name, State: StateUnknown, Path: entry.Path}
+		row := listing{Name: name, Mail: MailURL(Name(name), status), State: StateUnknown, Path: entry.Path}
 		cfg, warnings, err := LoadConfig(ConfigPath(entry.Path))
 		if err != nil {
 			// A config tamp cannot read is still an environment that exists;
@@ -77,6 +89,8 @@ func (m *Manager) List(ctx context.Context) error {
 
 	m.prune(gone)
 
+	m.printRouter(status, engineUp)
+
 	if len(rows) == 0 {
 		m.Out.Print("no environments yet")
 		m.Out.Hint("create one: tamp create <name>")
@@ -84,6 +98,22 @@ func (m *Manager) List(ctx context.Context) error {
 	}
 	m.printListing(rows)
 	return nil
+}
+
+// printRouter says whether hostname access works at all. It leads the listing
+// because it is the answer to "why does none of this respond" whenever the one
+// container every environment depends on is down.
+func (m *Manager) printRouter(status router.Status, engineUp bool) {
+	switch {
+	case !engineUp:
+		m.Out.Print("router  unknown — Docker is unreachable")
+	case status.Running:
+		m.Out.Print("router  running on " + status.URL("localhost"))
+	default:
+		m.Out.Print("router  not running — no hostname resolves until it is")
+		m.Out.Hint("start it by starting an environment: tamp start <name>")
+	}
+	m.Out.Print("")
 }
 
 // prune drops registry entries whose directory no longer holds a tamp.toml.
@@ -130,15 +160,15 @@ func (m *Manager) printListing(rows []listing) {
 	// the one place in tamp that bypasses it.
 	var table bytes.Buffer
 	w := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tSTATE\tFRAPPE\tPYTHON\tNODE\tMARIADB\tPATH")
+	fmt.Fprintln(w, "NAME\tSTATE\tFRAPPE\tPYTHON\tNODE\tMARIADB\tMAIL\tPATH")
 	for _, row := range rows {
 		frappe, python, node, mariadb := unknownField, unknownField, unknownField, unknownField
 		if row.Cfg != nil {
 			frappe = string(row.Cfg.Frappe.Version)
 			python, node, mariadb = row.Cfg.Toolchain.Python, row.Cfg.Toolchain.Node, row.Cfg.Toolchain.MariaDB
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			row.Name, row.State, frappe, python, node, mariadb, row.Path)
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			row.Name, row.State, frappe, python, node, mariadb, row.Mail, row.Path)
 	}
 	if err := w.Flush(); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not lay out the table: %v", err))

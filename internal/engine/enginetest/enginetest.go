@@ -86,10 +86,17 @@ type Fake struct {
 
 	// UpErr, StopErr, RestartErr and DownErr script a compose operation that
 	// fails — the mid-create failure whose rollback tamp has to get right.
-	UpErr      error
+	UpErr error
+	// UpErrOnce fails only the next compose up, then clears itself. It is how a
+	// test scripts a port that refuses the bind while the fallback attempt
+	// succeeds.
+	UpErrOnce  error
 	StopErr    error
 	RestartErr error
 	DownErr    error
+
+	// NetworkErr fails every network operation.
+	NetworkErr error
 
 	// ExecErr fails every in-container command. The fake otherwise answers
 	// them all with success, which is what a bench container whose toolchain
@@ -117,6 +124,12 @@ type Fake struct {
 	Files map[string]string
 	// Volumes names each volume tamp asked to exist, in order.
 	Volumes []string
+
+	// networks is the fake's set of Docker networks, each holding the names of
+	// the containers attached to it. Compose makes and removes an
+	// environment's network, and tamp attaches the router to it afterwards,
+	// so the two have to be modelled together for either to be testable.
+	networks map[string]map[string]bool
 
 	// running tracks, per project, whether its containers exist and whether
 	// they are running — so that up, stop, down and Containers tell one
@@ -155,6 +168,7 @@ func Unavailable() *Fake {
 		RestartErr: unreachable,
 		DownErr:    unreachable,
 		ExecErr:    unreachable,
+		NetworkErr: unreachable,
 		Services:   slices.Clone(DefaultServices),
 		Files:      map[string]string{},
 	}
@@ -180,10 +194,19 @@ func (f *Fake) ComposeUp(_ context.Context, p engine.ComposeProject, out io.Writ
 	if err := f.record("ComposeUp", p, engine.KeepVolumes, out); err != nil {
 		return err
 	}
+	if f.UpErrOnce != nil {
+		err := f.UpErrOnce
+		f.UpErrOnce = nil
+		return err
+	}
 	if f.UpErr != nil {
 		return f.UpErr
 	}
 	f.setRunning(p.Name, true)
+	// Compose creates the project's network on the way up. tamp names an
+	// environment's network after its project, which is what lets the fake
+	// know it without being told.
+	f.ensureNetwork(p.Name)
 	return nil
 }
 
@@ -208,11 +231,17 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 		return f.DownErr
 	}
 	delete(f.running, p.Name)
+	delete(f.networks, p.Name)
 	return nil
 }
 
 func (f *Fake) Containers(_ context.Context, project string) ([]engine.Container, error) {
 	f.Calls = append(f.Calls, "Containers")
+	if f.PingErr != nil {
+		// An engine tamp cannot reach cannot be asked what is running on it
+		// either, and code that copes with one has to cope with the other.
+		return nil, f.PingErr
+	}
 
 	running, exists := f.running[project]
 	if !exists {
@@ -239,6 +268,48 @@ func (f *Fake) ComposeRestart(_ context.Context, p engine.ComposeProject, servic
 		f.setRunning(p.Name, true)
 	}
 	return nil
+}
+
+func (f *Fake) InspectNetwork(_ context.Context, name string) (*engine.Network, error) {
+	f.Calls = append(f.Calls, "InspectNetwork")
+	if f.NetworkErr != nil {
+		return nil, f.NetworkErr
+	}
+	attached, exists := f.networks[name]
+	if !exists {
+		return nil, nil
+	}
+	return &engine.Network{Name: name, Containers: slices.Sorted(maps.Keys(attached))}, nil
+}
+
+func (f *Fake) ConnectNetwork(_ context.Context, network, container string) error {
+	f.Calls = append(f.Calls, "ConnectNetwork")
+	if f.NetworkErr != nil {
+		return f.NetworkErr
+	}
+	attached, exists := f.networks[network]
+	if !exists {
+		return exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("cannot attach %s to the network %s: no such network", container, network),
+			"this is a tamp bug: the network should exist before anything joins it")
+	}
+	attached[container] = true
+	return nil
+}
+
+func (f *Fake) DisconnectNetwork(_ context.Context, network, container string) error {
+	f.Calls = append(f.Calls, "DisconnectNetwork")
+	if f.NetworkErr != nil {
+		return f.NetworkErr
+	}
+	delete(f.networks[network], container)
+	return nil
+}
+
+// Attached names the containers on a network, sorted. A network the fake never
+// made has none, which is how a test asks whether a teardown took it away.
+func (f *Fake) Attached(network string) []string {
+	return slices.Sorted(maps.Keys(f.networks[network]))
 }
 
 func (f *Fake) EnsureVolume(_ context.Context, name string) error {
@@ -341,6 +412,28 @@ func (f *Fake) record(method string, p engine.ComposeProject, removal engine.Rem
 	}
 	return nil
 }
+
+// Up puts a project's containers and network in place without a compose up.
+// It is the backdrop for a test whose subject is what tamp does with
+// something it finds already running.
+func (f *Fake) Up(project string) {
+	f.setRunning(project, true)
+	f.ensureNetwork(project)
+}
+
+func (f *Fake) ensureNetwork(name string) {
+	if f.networks == nil {
+		f.networks = map[string]map[string]bool{}
+	}
+	if _, exists := f.networks[name]; !exists {
+		f.networks[name] = map[string]bool{}
+	}
+}
+
+// Down stops a project's containers without a compose stop, leaving them and
+// the project's network in place — a machine on which something tamp started
+// earlier is no longer running.
+func (f *Fake) Down(project string) { f.setRunning(project, false) }
 
 func (f *Fake) setRunning(project string, running bool) {
 	if f.running == nil {

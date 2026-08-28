@@ -2,6 +2,8 @@ package doctor_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/router"
 )
 
 // doctor's contract is honesty: every check says pass, warn or fail, a failing
@@ -17,8 +20,11 @@ import (
 // something failed. These tests hold that against a recording fake, which also
 // pins what tamp asked the engine to do.
 
-func run(e engine.Engine) doctor.Report {
-	return doctor.Run(context.Background(), e)
+func run(t *testing.T, e engine.Engine) doctor.Report {
+	t.Helper()
+	// A tamp home the router has never started in: no check may depend on
+	// tamp having run before.
+	return doctor.Run(context.Background(), e, router.New(t.TempDir(), e))
 }
 
 func find(t *testing.T, r doctor.Report, name string) doctor.Check {
@@ -41,7 +47,11 @@ func names(r doctor.Report) []string {
 }
 
 func TestHealthyEngineReportsEveryCheckAsPassing(t *testing.T) {
-	r := run(enginetest.Running())
+	e := enginetest.Running()
+	// A machine tamp has already been used on, so its router is up.
+	e.Up(router.Project)
+
+	r := run(t, e)
 
 	for _, c := range r.Checks {
 		if c.Status != doctor.Pass {
@@ -56,7 +66,7 @@ func TestHealthyEngineReportsEveryCheckAsPassing(t *testing.T) {
 // "Docker reachable (version, socket path)" — a check that says only "pass"
 // tells the user nothing about which engine tamp would use.
 func TestDockerCheckNamesTheVersionAndTheAddress(t *testing.T) {
-	c := find(t, run(enginetest.Running()), "Docker")
+	c := find(t, run(t, enginetest.Running()), "Docker")
 
 	for _, want := range []string{"29.7.2", "unix:///var/run/docker.sock", string(engine.SourceProbe)} {
 		if !strings.Contains(c.Detail, want) {
@@ -66,7 +76,7 @@ func TestDockerCheckNamesTheVersionAndTheAddress(t *testing.T) {
 }
 
 func TestComposeCheckNamesTheVersion(t *testing.T) {
-	c := find(t, run(enginetest.Running()), "Docker Compose")
+	c := find(t, run(t, enginetest.Running()), "Docker Compose")
 
 	if !strings.Contains(c.Detail, "2.39.1") {
 		t.Errorf("detail %q does not name the compose version", c.Detail)
@@ -74,7 +84,7 @@ func TestComposeCheckNamesTheVersion(t *testing.T) {
 }
 
 func TestUnreachableEngineFailsWithTheExitCodeAndTheFix(t *testing.T) {
-	r := run(enginetest.Unavailable())
+	r := run(t, enginetest.Unavailable())
 
 	c := find(t, r, "Docker")
 	if c.Status != doctor.Fail {
@@ -99,7 +109,7 @@ func TestComposeIsStillCheckedWhenDockerIsDown(t *testing.T) {
 	e := enginetest.Running()
 	e.PingErr = exitcode.New(exitcode.CodeEngineUnavailable, "Docker is not answering", "start Docker")
 
-	r := run(e)
+	r := run(t, e)
 
 	if got := find(t, r, "Docker").Status; got != doctor.Fail {
 		t.Errorf("Docker check = %v, want Fail", got)
@@ -117,11 +127,53 @@ func TestComposeIsStillCheckedWhenDockerIsDown(t *testing.T) {
 func TestDoctorAsksTheEngineForEachCheckExactlyOnce(t *testing.T) {
 	e := enginetest.Running()
 
-	run(e)
+	run(t, e)
 
-	want := []string{"Ping", "ComposeVersion"}
+	want := []string{"Ping", "ComposeVersion", "Containers"}
 	if !slices.Equal(e.Calls, want) {
 		t.Errorf("engine calls = %v, want %v", e.Calls, want)
+	}
+}
+
+// A machine that has never run an environment has no router, and saying so is
+// not the same as saying something is broken: tamp starts one on the next
+// create or start, and doctor must still exit 0.
+func TestARouterThatIsNotRunningWarnsRatherThanFails(t *testing.T) {
+	r := run(t, enginetest.Running())
+
+	c := find(t, r, "Router")
+	if c.Status != doctor.Warn {
+		t.Errorf("Router check = %v, want Warn", c.Status)
+	}
+	if c.Fix == "" {
+		t.Error("the Router warning says nothing about how to start one")
+	}
+	if got := r.ExitCode(); got != exitcode.CodeOK {
+		t.Errorf("ExitCode() = %d, want %d — a stopped router is not a failure", got, exitcode.CodeOK)
+	}
+}
+
+// tamp's own state being unreadable is tamp's fault, and doctor must not
+// file it under the same warning as "you have not started a router yet" — the
+// user would be told to run a command that cannot work.
+func TestBrokenRouterStateIsAFailureRatherThanAWarning(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, router.DirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, router.DirName, "router.json"),
+		[]byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := doctor.Run(context.Background(), enginetest.Running(), router.New(home, enginetest.Running()))
+
+	c := find(t, r, "Router")
+	if c.Status != doctor.Fail {
+		t.Errorf("Router check = %v, want Fail", c.Status)
+	}
+	if c.Fix == "" {
+		t.Error("the Router failure carries no fix")
 	}
 }
 
@@ -131,7 +183,7 @@ func TestExitCodeComesFromTheFailingCheck(t *testing.T) {
 	e := enginetest.Running()
 	e.PingErr = exitcode.New(exitcode.CodeFailed, "something else went wrong", "retry")
 
-	if got := run(e).ExitCode(); got != exitcode.CodeFailed {
+	if got := run(t, e).ExitCode(); got != exitcode.CodeFailed {
 		t.Errorf("ExitCode() = %d, want %d", got, exitcode.CodeFailed)
 	}
 }

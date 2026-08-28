@@ -7,7 +7,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/zhide915/tamp/internal/doctor"
 	"github.com/zhide915/tamp/internal/engine"
+	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -30,7 +32,12 @@ func newDoctorCommand(p *ui.Printer, eng engine.Engine) *cobra.Command {
 			ctx, cancel := context.WithTimeout(cmd.Context(), diagnosisTimeout)
 			defer cancel()
 
-			report := doctor.Run(ctx, eng)
+			home, err := env.Home()
+			if err != nil {
+				return err
+			}
+
+			report := doctor.Run(ctx, eng, router.New(home, eng))
 			report.Print(p)
 
 			if report.OK() {

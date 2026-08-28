@@ -54,6 +54,17 @@ type Container struct {
 	Running bool
 }
 
+// Network is one Docker network and what is attached to it.
+//
+// tamp's environments each own one, and the global router is attached to
+// every one of them: that attachment is the only reason the router can reach
+// containers which publish nothing to the host.
+type Network struct {
+	Name string
+	// Containers names the containers currently on the network.
+	Containers []string
+}
+
 // ExecRequest is one command tamp runs inside a running container.
 //
 // It is tamp's way into a live environment: bench, uv and nvm are somebody
@@ -151,6 +162,17 @@ type Engine interface {
 	// environment that was never created, or whose containers were removed,
 	// has none — that is an empty slice, not an error.
 	Containers(ctx context.Context, project string) ([]Container, error)
+
+	// InspectNetwork reports a network and the containers on it. A name the
+	// machine has no network for is a nil result and a nil error: tamp keeps
+	// routes for stopped environments, whose networks may be gone.
+	InspectNetwork(ctx context.Context, name string) (*Network, error)
+	// ConnectNetwork attaches a container to a network it is not already on.
+	ConnectNetwork(ctx context.Context, network, container string) error
+	// DisconnectNetwork detaches a container from a network. It has to happen
+	// before that network is removed — Docker refuses to remove one that still
+	// has something attached.
+	DisconnectNetwork(ctx context.Context, network, container string) error
 
 	// EnsureVolume creates a volume unless it is already there. It exists
 	// because compose refuses to start a project whose external volumes are

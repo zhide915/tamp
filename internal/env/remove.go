@@ -43,6 +43,13 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 		return err
 	}
 
+	// Before the teardown, not after: Docker refuses to remove a network that
+	// still has a container attached, and the router is attached to every
+	// environment's.
+	if err := m.router().Detach(ctx, e.Resources.Network()); err != nil {
+		return err
+	}
+
 	removal := engine.KeepVolumes
 	if req.Volumes {
 		removal = engine.RemoveVolumes
@@ -55,6 +62,13 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 		delete(reg, string(e.Name()))
 		return nil
 	}); err != nil {
+		return err
+	}
+
+	// The registry is what the routes are assembled from, so this is what
+	// takes this environment's routes away — and, just as importantly, leaves
+	// every other environment's in place.
+	if _, err := m.refreshRoutes(ctx); err != nil {
 		return err
 	}
 
