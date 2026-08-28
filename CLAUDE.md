@@ -1,4 +1,4 @@
-# froth
+# tamp
 
 Environment manager for Frappe Framework.
 
@@ -6,7 +6,7 @@ Environment manager for Frappe Framework.
 
 ### Issue tracker
 
-Issues live in GitHub Issues on `zhide915/froth`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues on `zhide915/tamp`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

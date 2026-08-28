@@ -2,7 +2,7 @@
 
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
-froth is a **single-context** repo: one `CONTEXT.md` and one `docs/adr/` at the root.
+tamp is a **single-context** repo: one `CONTEXT.md` and one `docs/adr/` at the root.
 
 ## Before exploring, read these
 
