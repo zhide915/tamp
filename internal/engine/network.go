@@ -8,24 +8,18 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// InspectNetwork reports a network and what is attached to it, and reports a
-// name the machine has no network for as nil rather than as a failure.
-//
-// The absence is an ordinary answer here: tamp carries routes for
-// environments that are stopped, and a stopped environment whose network has
-// been taken down is simply nothing for the router to attach to.
+// InspectNetwork reports a network and its containers; a missing network is
+// (nil, nil), since routes for stopped environments outlive their networks.
 func (d *Docker) InspectNetwork(ctx context.Context, name string) (*Network, error) {
 	_, api, err := d.connect()
 	if err != nil {
 		return nil, err
 	}
 
-	// Listed before it is inspected because the list distinguishes "no such
-	// network" from every other failure without tamp having to interpret the
-	// daemon's status codes; inspect alone would return one error for both.
+	// List first: the list separates "no such network" from other failures
+	// without interpreting the daemon's status codes; inspect conflates them.
 	found, err := api.NetworkList(ctx, client.NetworkListOptions{
-		// The daemon's name filter matches substrings, so the exact name is
-		// still tamp's to pick out below.
+		// The name filter matches substrings; the exact match happens below.
 		Filters: make(client.Filters).Add("name", name),
 	})
 	if err != nil {

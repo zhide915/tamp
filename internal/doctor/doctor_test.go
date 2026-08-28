@@ -14,18 +14,10 @@ import (
 	"github.com/zhide915/tamp/internal/syncer/synctest"
 )
 
-// doctor's contract is honesty: every check says pass, warn or fail, a failing
-// check always carries the fix, and tamp exits non-zero exactly when
-// something failed. These tests hold that against a recording fake, which also
-// pins what tamp asked the engine to do.
-
 func run(t *testing.T, e engine.Engine) doctor.Report {
 	t.Helper()
-	// A tamp home the router has never started in: no check may depend on
-	// tamp having run before.
-	// A machine that already has the pinned Mutagen: what this file is about
-	// is the engine and the router, and a sync check that varied with the
-	// developer's own machine would make every one of these tests flaky.
+	// Fresh home and an installed Mutagen: these tests are about the engine
+	// and the router, not the developer's machine.
 	return doctor.Run(context.Background(), e, router.New(t.TempDir(), e), synctest.Installed())
 }
 
@@ -48,9 +40,8 @@ func names(r doctor.Report) []string {
 	return out
 }
 
-// tamp's own state being unreadable is tamp's fault, and doctor must not
-// file it under the same warning as "you have not started a router yet" — the
-// user would be told to run a command that cannot work.
+// Unreadable tamp state must not be filed under "router not started yet" —
+// that warning's fix cannot work here.
 func TestBrokenRouterStateIsAFailureRatherThanAWarning(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, router.DirName), 0o755); err != nil {
@@ -72,8 +63,6 @@ func TestBrokenRouterStateIsAFailureRatherThanAWarning(t *testing.T) {
 	}
 }
 
-// tamp's exit codes are a public contract, so doctor reports the code of the
-// thing that is broken rather than a blanket "something failed".
 func TestExitCodeComesFromTheFailingCheck(t *testing.T) {
 	e := enginetest.Running()
 	e.PingErr = exitcode.New(exitcode.CodeFailed, "something else went wrong", "retry")

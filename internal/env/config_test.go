@@ -18,8 +18,8 @@ func writeConfig(t *testing.T, body string) string {
 	return path
 }
 
-// tamp.toml is a public contract: what tamp writes, tamp must read
-// back unchanged, or an environment stops being addressable after an upgrade.
+// What tamp writes it must read back unchanged, or an upgrade orphans
+// environments.
 func TestConfigRoundTrips(t *testing.T) {
 	_, tc, err := ParseFrappeVersion("version-16")
 	if err != nil {
@@ -43,7 +43,6 @@ func TestConfigRoundTrips(t *testing.T) {
 	}
 }
 
-// A file from a newer tamp must say so, not be reinterpreted by this one.
 func TestUnknownSchemaTellsTheUserToUpgrade(t *testing.T) {
 	path := writeConfig(t, "schema = 2\nname = \"erp15\"\n")
 
@@ -56,8 +55,7 @@ func TestUnknownSchemaTellsTheUserToUpgrade(t *testing.T) {
 	}
 }
 
-// Unknown keys are preserved-in-place-by-not-being-rewritten and reported, not
-// fatal: a config from a newer patch release still has to start.
+// A config from a newer patch release still has to load.
 func TestUnknownKeysWarnRatherThanFail(t *testing.T) {
 	path := writeConfig(t, validConfig+"\nsparkles = true\n")
 
@@ -92,8 +90,7 @@ func TestInvalidConfigsAreRejectedWithAFix(t *testing.T) {
 	}
 }
 
-// A directory that is not an environment is exit 3, the same code an unknown
-// environment name produces — "there is no such environment" either way.
+// Exit 3, the same as an unknown name: "no such environment" either way.
 func TestMissingConfigIsNotFound(t *testing.T) {
 	_, _, err := LoadConfig(ConfigPath(t.TempDir()))
 

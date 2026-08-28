@@ -13,34 +13,27 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// DataDirName is where tamp keeps Mutagen's own state, under the tamp home.
-//
-// tamp gives Mutagen a data directory of its own rather than sharing the
-// user's. A client and a daemon of different releases refuse each other, and
-// the user's Mutagen is theirs to upgrade whenever they like — pointing tamp
-// at their daemon would turn their upgrade into tamp's outage.
+// DataDirName is Mutagen's state directory under the tamp home. tamp runs its
+// own daemon rather than sharing the user's: Mutagen releases refuse each
+// other, and the user upgrading theirs must not break tamp.
 const DataDirName = "mutagen"
 
 // CLI drives the real Mutagen binary.
 type CLI struct {
-	// Home is the tamp home, under which the managed binary and Mutagen's own
-	// state live.
 	Home string
-	// ReleaseBaseURL overrides where the pinned release is downloaded from. It
-	// is a field so a test can serve the archive locally.
+	// ReleaseBaseURL overrides the download source so tests can serve the
+	// archive locally.
 	ReleaseBaseURL string
-	// LookPath finds an executable on the machine's PATH. It is a field for
-	// the same reason: what the developer running the tests happens to have
-	// installed must not decide what they say.
+	// LookPath stands in for exec.LookPath so tests are independent of what
+	// the machine has installed.
 	LookPath func(string) (string, error)
 }
 
-// New returns the Mutagen driver for the machine whose tamp home is home.
+// New returns a Mutagen driver rooted at the given tamp home.
 func New(home string) *CLI { return &CLI{Home: home} }
 
-// syncMode is what makes this two-way sync safe to point at a container:
-// both sides propagate, and a file changed on both since the last pass is
-// resolved in favour of the host — the side a person or an agent is editing.
+// syncMode propagates both ways and resolves a two-sided change in favour of
+// the host — the side being edited.
 const syncMode = "two-way-resolved"
 
 func (c *CLI) Create(ctx context.Context, s Session, out io.Writer) error {
@@ -48,8 +41,7 @@ func (c *CLI) Create(ctx context.Context, s Session, out io.Writer) error {
 		"sync", "create",
 		"--name=" + s.Name,
 		"--sync-mode=" + syncMode,
-		// The user's own ~/.mutagen.yml has no business changing what tamp's
-		// sessions do; every setting that matters is on this command line.
+		// Keep the user's ~/.mutagen.yml out of tamp's sessions.
 		"--no-global-configuration",
 	}
 	for _, ignore := range Ignores {
@@ -60,9 +52,8 @@ func (c *CLI) Create(ctx context.Context, s Session, out io.Writer) error {
 	if err := c.run(ctx, s.DockerHost, out, args...); err != nil {
 		return err
 	}
-	// Waiting for the first full pass is what makes "created" mean "the source
-	// is on the host": the session exists the moment it is made, and the tree
-	// behind it arrives some seconds later.
+	// Flush waits for the first full pass, so returning means the source is
+	// actually on the host.
 	return c.run(ctx, s.DockerHost, out, "sync", "flush", s.Name)
 }
 
@@ -78,9 +69,8 @@ func (c *CLI) Terminate(ctx context.Context, name string) error {
 	return c.run(ctx, "", nil, "sync", "terminate", name)
 }
 
-// sessionTemplate prints one session name per line. Asking Mutagen for exactly
-// the field tamp wants beats parsing the table it prints for people, which is
-// laid out for reading rather than for machines.
+// sessionTemplate asks Mutagen for names directly rather than parsing its
+// human-oriented table.
 const sessionTemplate = `{{range .}}{{.Name}}
 {{end}}`
 
@@ -99,11 +89,9 @@ func (c *CLI) Sessions(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// run invokes Mutagen, downloading it first if the machine has none.
-//
-// dockerHost points Mutagen's docker transport at the same engine tamp
-// resolved, rather than leaving it to find one for itself. It is empty for the
-// commands that only talk to Mutagen's own daemon.
+// run invokes Mutagen, installing it first if needed. dockerHost pins the
+// docker transport to the engine tamp resolved; it is empty for commands that
+// only talk to Mutagen's own daemon.
 func (c *CLI) run(ctx context.Context, dockerHost string, out io.Writer, args ...string) error {
 	binary, err := c.Ensure(ctx)
 	if err != nil {
@@ -126,8 +114,7 @@ func (c *CLI) run(ctx context.Context, dockerHost string, out io.Writer, args ..
 		cmd.Stdout, cmd.Stderr = out, out
 	}
 
-	// A command tamp is not narrating still has to be able to say why it
-	// failed, so its output is kept rather than dropped.
+	// Capture output when not streaming, so a failure can still say why.
 	var captured bytes.Buffer
 	if out == nil {
 		cmd.Stdout, cmd.Stderr = &captured, &captured
@@ -144,8 +131,7 @@ func (c *CLI) run(ctx context.Context, dockerHost string, out io.Writer, args ..
 	return nil
 }
 
-// firstLine keeps tamp's one-line error contract when Mutagen answers with a
-// paragraph. The rest is on the stream when tamp was narrating the command.
+// firstLine trims a multi-line Mutagen error to tamp's one-line contract.
 func firstLine(s string) string {
 	if newline := strings.Index(s, "\n"); newline >= 0 {
 		return strings.TrimSpace(s[:newline])
@@ -153,6 +139,4 @@ func firstLine(s string) string {
 	return s
 }
 
-// A driver that has drifted from the interface would silently stop being the
-// thing tamp's lifecycle is written against.
 var _ Mutagen = (*CLI)(nil)

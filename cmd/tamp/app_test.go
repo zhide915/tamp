@@ -8,10 +8,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// An app reaches a site by two deliberate steps: fetched onto the bench at
-// create, installed onto a site at 'site new'. What these tests hold in place
-// is the seam between them — tamp never fetches an app a site asks for, and
-// never guesses the branch of one it does fetch.
+// Apps move in two explicit steps — fetched onto the bench, installed onto a
+// site — and tamp never bridges the two or guesses a branch.
 
 func TestCreateFetchesEachAppOntoTheBenchAtTheBranchAsked(t *testing.T) {
 	c := sandbox(t)
@@ -23,13 +21,12 @@ func TestCreateFetchesEachAppOntoTheBenchAtTheBranchAsked(t *testing.T) {
 	if !slices.Contains(fetched.Cmd, "version-15") {
 		t.Errorf("tamp fetched erpnext without the branch asked for: %v", fetched.Cmd)
 	}
-	// frappe comes from bench init; the other two are what tamp fetched.
+	// frappe itself arrives via bench init.
 	if got := c.engine.Apps(); !slices.Equal(got, []string{"erpnext", "frappe", "hrms"}) {
 		t.Errorf("bench apps = %v, want [erpnext frappe hrms]", got)
 	}
 
-	// The environment records where each app came from, so a later tamp can
-	// say what this bench is made of without asking the bench.
+	// tamp.toml records provenance so later commands need not ask the bench.
 	config := c.read(t, "demo", "tamp.toml")
 	for _, want := range []string{`name = "erpnext"`, `source = "https://github.com/frappe/erpnext"`, `branch = "version-15"`} {
 		if !strings.Contains(config, want) {
@@ -38,9 +35,7 @@ func TestCreateFetchesEachAppOntoTheBenchAtTheBranchAsked(t *testing.T) {
 	}
 }
 
-// The one predictable way an unpinned app goes wrong: most Frappe apps default
-// to develop, which does not run on a version-15 bench. tamp fetches it
-// anyway — that is the rule — and says what it just did.
+// Unpinned apps usually default to develop, which a version-15 bench cannot run.
 func TestCreateWarnsThatAnUnpinnedAppTakesTheRepositoryDefaultBranch(t *testing.T) {
 	c := sandbox(t)
 
@@ -53,9 +48,7 @@ func TestCreateWarnsThatAnUnpinnedAppTakesTheRepositoryDefaultBranch(t *testing.
 	}
 }
 
-// The pin hint for a URL-sourced app has to repeat the URL: following a
-// bare-name hint would fetch from the frappe organisation, not the user's
-// repository.
+// A bare-name hint would point at the frappe organisation, not the user's repo.
 func TestThePinHintForAURLAppRepeatsTheURL(t *testing.T) {
 	c := sandbox(t)
 
@@ -66,10 +59,8 @@ func TestThePinHintForAURLAppRepeatsTheURL(t *testing.T) {
 	r.assertStderrContains(t, "https://github.com/myorg/custom_app:version-15")
 }
 
-// A repository's name and the app it declares can differ — frappe/health
-// clones as healthcare. The bench is the authority, and tamp.toml has to
-// record the name the bench will answer with, or re-adoption re-fetches an
-// app that is already there and fails on it.
+// A repo and its app can be named differently (frappe/health -> healthcare);
+// recording the repo's name would make re-adoption re-fetch and fail.
 func TestCreateRecordsTheNameTheAppDeclaresNotTheRepositorys(t *testing.T) {
 	c := sandbox(t)
 	c.engine.AppAliases = map[string]string{"health": "healthcare"}
@@ -97,9 +88,7 @@ func TestSiteNewInstallsTheAppsTheBenchAlreadyHas(t *testing.T) {
 	c.run(t, "site", "list", "demo").assertStdoutContains(t, "erpnext")
 }
 
-// tamp cannot know which branch of a missing app this bench wants, so it
-// refuses — and refuses before the site exists, rather than leaving a site
-// with some of the apps that were asked for.
+// The branch of a missing app is unknowable, so refuse before the site exists.
 func TestSiteNewRefusesAnAppTheBenchDoesNotHaveBeforeAnythingRuns(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -116,8 +105,6 @@ func TestSiteNewRefusesAnAppTheBenchDoesNotHaveBeforeAnythingRuns(t *testing.T) 
 	}
 }
 
-// Installing fetches nothing, so a branch here would be a pin tamp silently
-// dropped.
 func TestSiteNewRefusesAPinnedAppBecauseInstallingFetchesNothing(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--apps", "erpnext:version-15")
@@ -128,8 +115,7 @@ func TestSiteNewRefusesAPinnedAppBecauseInstallingFetchesNothing(t *testing.T) {
 	r.assertStderrContains(t, "--apps erpnext")
 }
 
-// An app fetched behind tamp's back through the exec bridge is as present as
-// one tamp fetched itself: the bench is the authority, not tamp.toml.
+// The bench, not tamp.toml, is the authority on what is present.
 func TestSiteNewAcceptsAnAppFetchedThroughTheExecBridge(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

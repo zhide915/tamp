@@ -8,10 +8,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// tamp's one exception to hostname-only access. What has to be right is that
-// everything a database client needs is on screen and nothing else is needed:
-// the port tamp allocated, the credential tamp generated, and the database
-// name Frappe invented and never says again.
+// db is the one exception to hostname-only access: a MySQL client needs a
+// loopback port, a credential, and the database name Frappe never repeats.
 
 func TestDBPrintsEverythingAClientNeeds(t *testing.T) {
 	c := sandbox(t)
@@ -31,7 +29,6 @@ func TestDBPrintsEverythingAClientNeeds(t *testing.T) {
 	)
 }
 
-// A bench with no sites has no databases, and saying so beats an empty table.
 func TestDBSaysWhenThereIsNothingInTheDatabaseYet(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -42,8 +39,7 @@ func TestDBSaysWhenThereIsNothingInTheDatabaseYet(t *testing.T) {
 	r.assertStdoutContains(t, "no databases yet", "tamp site new demo")
 }
 
-// The connection details are tamp's own record, so they survive a stopped
-// environment — which is exactly when someone reaches for a GUI client.
+// The details come from tamp's own record, so a stopped environment answers.
 func TestDBAnswersWithTheEnvironmentStopped(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -56,11 +52,8 @@ func TestDBAnswersWithTheEnvironmentStopped(t *testing.T) {
 	r.assertStdoutContains(t, strconv.Itoa(c.dbPort(t, "demo")), "shop.localhost")
 }
 
-// dbPort is the host port tamp allocated to an environment.
-//
-// Read back rather than assumed: allocation skips ports something on this
-// machine is already listening on, so a developer who happens to have one of
-// them in use gets a different number and the same correct answer.
+// dbPort reads the allocated port back rather than assuming it: allocation
+// skips ports already in use on this machine.
 func (c *cli) dbPort(t *testing.T, name string) int {
 	t.Helper()
 	cfg, _, err := env.LoadConfig(env.ConfigPath(c.path(name)))
@@ -73,7 +66,6 @@ func (c *cli) dbPort(t *testing.T, name string) int {
 	return cfg.Ports.DB
 }
 
-// dbPassword is the credential tamp generated for an environment.
 func (c *cli) dbPassword(t *testing.T, name string) string {
 	t.Helper()
 	password, err := env.ReadDBRootPassword(c.path(name))

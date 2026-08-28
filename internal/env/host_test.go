@@ -7,9 +7,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// A site's hostname is three things at once — its name, its directory on the
-// bench, and the address the router matches on — so what this accepts is what
-// tamp is able to route, and what it rejects is a site nobody could reach.
+// A hostname is the site's name, its bench directory and its route at once:
+// what ParseHost accepts is what tamp can route.
 
 func TestAHostnameTampCanRoute(t *testing.T) {
 	for _, host := range []string{
@@ -50,16 +49,14 @@ func TestAHostnameTampRefuses(t *testing.T) {
 			if _, err := env.ParseHost(host); err == nil {
 				t.Fatalf("ParseHost(%q) = nil, want a refusal", host)
 			} else if got := exitcode.Of(err); got != exitcode.CodeFailed {
-				// The command line was well-formed; tamp just cannot put this
-				// name where it has to go. That is exit 1, not a usage error.
+				// Exit 1, not a usage error: the command line was well-formed.
 				t.Errorf("ParseHost(%q) exits %d, want %d", host, got, exitcode.CodeFailed)
 			}
 		})
 	}
 }
 
-// A label may be 63 characters and a name 253, and tamp has no business
-// being stricter than DNS about either.
+// tamp has no business being stricter than DNS: 63 per label, 253 per name.
 func TestAHostnameIsMeasuredTheWayDNSMeasuresOne(t *testing.T) {
 	label := func(n int) string {
 		s := make([]byte, n)
@@ -75,7 +72,7 @@ func TestAHostnameIsMeasuredTheWayDNSMeasuresOne(t *testing.T) {
 	if _, err := env.ParseHost(label(64) + ".localhost"); err == nil {
 		t.Error("tamp accepted a 64-character label")
 	}
-	// 63+1+63+1+63+1+61 = 253, the longest name DNS allows, and one more.
+	// 63+1+63+1+63+1+61 = 253, DNS's longest name.
 	limit := label(63) + "." + label(63) + "." + label(63) + "." + label(61)
 	if _, err := env.ParseHost(limit); err != nil {
 		t.Errorf("tamp refused a %d-character hostname: %v", len(limit), err)
@@ -85,8 +82,6 @@ func TestAHostnameIsMeasuredTheWayDNSMeasuresOne(t *testing.T) {
 	}
 }
 
-// Only .localhost resolves to loopback without anyone editing a file, and that
-// is the difference the command reports to the user.
 func TestOnlyALocalhostNameResolvesOnItsOwn(t *testing.T) {
 	for host, want := range map[string]bool{
 		"shop.localhost":       true,

@@ -18,38 +18,27 @@ const RegistryFile = "registry.json"
 
 // Entry is one environment's row in the global registry.
 type Entry struct {
-	// Path is the absolute environment directory. It is what makes
-	// `tamp start erp15` work from anywhere.
+	// Path is what makes `tamp start <name>` work from anywhere.
 	Path string `json:"path"`
-	// Hash is the path hash baked into the environment's Docker resources,
-	// stored so tamp can name them without re-deriving from a path that may
-	// since have moved.
+	// Hash is the path hash baked into the Docker resource names, stored so
+	// they can be derived even after the directory moves.
 	Hash string `json:"hash"`
-	// DBPort is the host port this environment's MariaDB publishes.
-	//
-	// tamp.toml is where the environment records its own port, and where the
-	// compose generator reads it. This is the allocator's ledger, and it is
-	// deliberately not the same thing: allocation has to be decided from data
-	// that is already written when the machine lock is released, and an
-	// environment's tamp.toml is not.
+	// DBPort is the allocator's ledger — deliberately not tamp.toml, which is
+	// written only after the machine lock releases; allocation must read data
+	// already on disk under the lock.
 	DBPort int `json:"db_port"`
-	// Sites caches the environment's site hostnames. It exists so the router
-	// and the hosts block can be assembled while an environment is stopped —
-	// the bench's sites/ directory is the authority whenever it is running.
+	// Sites caches the environment's hostnames so routes can be assembled
+	// while it is stopped; the running bench is the authority.
 	Sites []string `json:"sites"`
 }
 
-// Registry is the whole of ~/.tamp/registry.json.
-//
-// Names are unique in it: it is keyed by name, and `tamp start erp15`
-// has to be unambiguous from any directory on the machine.
+// Registry is ~/.tamp/registry.json. Keyed by name: `tamp start <name>` must
+// be unambiguous from anywhere.
 type Registry map[string]Entry
 
-// RegistryPath is the registry inside a tamp home directory.
 func RegistryPath(home string) string { return filepath.Join(home, RegistryFile) }
 
-// LoadRegistry reads the registry. A machine that has never run tamp create
-// has none, which is an empty registry rather than an error.
+// LoadRegistry treats a missing file as an empty registry.
 func LoadRegistry(home string) (Registry, error) {
 	blob, err := os.ReadFile(RegistryPath(home))
 	if errors.Is(err, fs.ErrNotExist) {
@@ -70,7 +59,7 @@ func LoadRegistry(home string) (Registry, error) {
 	return reg, nil
 }
 
-// Names lists the registered environments in the order a user reads them.
+// Names lists the registered environments, sorted.
 func (r Registry) Names() []string {
 	names := make([]string, 0, len(r))
 	for name := range r {
@@ -80,9 +69,8 @@ func (r Registry) Names() []string {
 	return names
 }
 
-// save writes the registry, replacing the old file only once the new one is
-// complete on disk: an interrupted write must not leave the machine's index of
-// every environment half-written.
+// save writes via temp file and rename, so an interrupted write cannot leave
+// the machine's index half-written.
 func (r Registry) save(home string) error {
 	blob, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
@@ -96,8 +84,7 @@ func (r Registry) save(home string) error {
 	if err != nil {
 		return registryWriteError(path, err)
 	}
-	// Expected to fail on the happy path, where the rename below has already
-	// taken the temp file away; it is here for the paths that do not get there.
+	// A no-op on the happy path, where the rename already consumed the file.
 	defer func() { _ = os.Remove(tmp.Name()) }()
 
 	if _, err := tmp.Write(blob); err != nil {
@@ -119,25 +106,20 @@ func registryWriteError(path string, err error) error {
 		"check the permissions on your ~/.tamp directory")
 }
 
-// The registry is the machine's claims ledger. Everything unique per machine
-// is claimed here, in one pass under the machine lock: environment names,
-// hostnames — a site's and every mail UI's, because the router matches one
-// Host header against all of them at once, and a hostname held twice is a
-// configuration Caddy refuses to load, taking every site on the machine down
-// with it — and the host ports databases publish on.
+// The registry is the machine's claims ledger: names, hostnames (sites and
+// mail UIs alike — Caddy refuses a configuration holding one address twice,
+// taking every site down) and DB ports are all claimed here under the lock.
 
-// A HostClaim names what already answers to a hostname: the owning
-// environment, and whether the hostname is one of its sites or its mail UI.
+// A HostClaim names what already answers to a hostname.
 type HostClaim struct {
 	Host  string
 	Owner string
 	What  string
 }
 
-// Claim registers a new environment: the name, its mail hostname, and a
-// fresh database port, decided together so that both facts are on disk when
-// the lock releases — a second create can neither see the name free nor
-// reuse the port.
+// Claim registers a new environment: name, mail hostname and a fresh DB port
+// decided together, so both facts are on disk when the lock releases and a
+// second create can neither see the name free nor reuse the port.
 func Claim(home string, name Name, dir, hash string) (int, error) {
 	var port int
 	err := UpdateRegistry(home, func(reg Registry) error {
@@ -146,8 +128,6 @@ func Claim(home string, name Name, dir, hash string) (int, error) {
 				fmt.Sprintf("an environment named %q is already registered, at %s", name, existing.Path),
 				"pick another name, or remove the old one with 'tamp rm "+string(name)+"'")
 		}
-		// The name decides a hostname too — the mail UI's — and the router
-		// would refuse a configuration holding that address twice.
 		mailHost := router.MailHost(string(name))
 		if c, clash := claimant(reg, "", mailHost); clash {
 			return exitcode.New(exitcode.CodeFailed,
@@ -165,13 +145,10 @@ func Claim(home string, name Name, dir, hash string) (int, error) {
 	return port, err
 }
 
-// Reclaim registers an environment being adopted back in place: same name,
-// same path, cached site list kept.
-//
-// The port it used to publish is taken again when nothing else has claimed
-// it, so a database client's saved connection still works. When something
-// has, a new one is allocated and returned — the alternative is two
-// environments publishing one port, of which only the first would start.
+// Reclaim re-registers an environment adopted in place, keeping its cached
+// site list and taking back its recorded port — so a database client's saved
+// connection still works — unless another environment claimed the port
+// meanwhile, in which case a fresh one is allocated.
 func Reclaim(home string, name Name, dir, hash string, recorded int) (int, error) {
 	var port int
 	err := UpdateRegistry(home, func(reg Registry) error {
@@ -180,19 +157,17 @@ func Reclaim(home string, name Name, dir, hash string, recorded int) (int, error
 				fmt.Sprintf("an environment named %q is already registered, at %s", name, existing.Path),
 				"remove that one with 'tamp rm "+string(name)+"', or rename this directory's environment in "+ConfigFile)
 		}
-		// The environment's own mail hostname always looks claimed by the
-		// environment itself, which is not a clash — only another environment
-		// having taken it as a site is.
+		// The environment's own mail hostname is not a clash — only another
+		// environment holding it as a site is.
 		if c, clash := claimant(reg, string(name), router.MailHost(string(name))); clash && c.Owner != string(name) {
 			return exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("%s is already %s of %q", router.MailHost(string(name)), c.What, c.Owner),
 				"rename this directory's environment in "+ConfigFile)
 		}
 
-		// The recorded port is this environment's to take back, and the
-		// registry is the only thing that can say otherwise. Whether something
-		// is listening on it right now is not the question: an environment
-		// being adopted in place is quite likely to be listening on it itself.
+		// The registry alone decides: the environment being adopted may well
+		// be listening on its own recorded port right now, so a liveness check
+		// would be wrong.
 		port = recorded
 		if portClaimedBy(reg, string(name), port) {
 			var err error
@@ -215,7 +190,7 @@ func Release(home string, name Name) error {
 }
 
 // ClaimHost records a hostname against an environment, refusing one the
-// machine has already given out — to any environment, as a site or a mail UI.
+// machine has already given out — as a site or a mail UI, to anyone.
 func ClaimHost(home string, name Name, host string) error {
 	return updateSites(home, name, func(reg Registry, sites []string) ([]string, error) {
 		if c, claimed := claimant(reg, "", host); claimed {
@@ -227,19 +202,17 @@ func ClaimHost(home string, name Name, host string) error {
 	})
 }
 
-// ReleaseHost takes a hostname back out of the ledger — because the site it
-// was claimed for could not be made, or has just been dropped.
+// ReleaseHost takes a hostname back out of the ledger.
 func ReleaseHost(home string, name Name, host string) error {
 	return updateSites(home, name, func(_ Registry, sites []string) ([]string, error) {
 		return slices.DeleteFunc(sites, func(s string) bool { return s == host }), nil
 	})
 }
 
-// RecordSites replaces an environment's cached site list with what its bench
-// actually holds, keeping out any hostname the machine has already given to
-// something else — tamp did not create every site on a bench. The refused
-// claims are returned for the caller to report: routing one would put the
-// address in the Caddyfile twice.
+// RecordSites replaces the cached site list with what the bench holds,
+// keeping out hostnames the machine already gave to something else — tamp did
+// not create every site on a bench, and routing one would duplicate a
+// Caddyfile address. Refused claims are returned for the caller to report.
 func RecordSites(home string, name Name, hosts []string) ([]HostClaim, error) {
 	var skipped []HostClaim
 	err := updateSites(home, name, func(reg Registry, _ []string) ([]string, error) {
@@ -256,13 +229,9 @@ func RecordSites(home string, name Name, hosts []string) ([]HostClaim, error) {
 	return skipped, err
 }
 
-// updateSites rewrites one environment's cached site list under the machine
-// lock, keeping it sorted.
-//
-// Every change to that list goes through here, because the list is what the
-// router's routes are assembled from: reading it, deciding, and writing it
-// back is a read-modify-write cycle, and doing it anywhere else is how a
-// concurrent tamp loses a route.
+// updateSites is the single path for changing a site list: a read-modify-
+// write under the machine lock, since the list is what routes are assembled
+// from.
 func updateSites(home string, name Name, change func(Registry, []string) ([]string, error)) error {
 	return UpdateRegistry(home, func(reg Registry) error {
 		entry := reg[string(name)]
@@ -277,18 +246,10 @@ func updateSites(home string, name Name, change func(Registry, []string) ([]stri
 	})
 }
 
-// claimant reports what on this machine already answers to a hostname,
-// ignoring self's own sites.
-//
-// Both kinds of route count. An environment's mail UI is as much a claim on a
-// hostname as a site is, and a site created at mail.demo.localhost would be a
-// second block for an address the router already has — which is why a mail
-// hostname is a clash even for the environment that owns it.
-//
-// self is empty when nothing may hold the hostname yet, which is the question
-// a fresh claim asks. It names an environment when the question is instead
-// "may this environment go on holding it", as it is when tamp reconciles a
-// bench's own site list against the ledger.
+// claimant reports what already answers to a hostname, ignoring self's own
+// sites. Mail UIs count as claims — even against their own environment, since
+// a site at that address would be a second router block for it. self is empty
+// when the question is "is this free at all".
 func claimant(reg Registry, self, host string) (HostClaim, bool) {
 	for _, name := range reg.Names() {
 		if router.MailHost(name) == host {
@@ -301,8 +262,6 @@ func claimant(reg Registry, self, host string) (HostClaim, bool) {
 	return HostClaim{}, false
 }
 
-// portClaimedBy reports whether an environment other than self holds a host
-// port.
 func portClaimedBy(reg Registry, self string, port int) bool {
 	for name, entry := range reg {
 		if name != self && entry.DBPort == port {
@@ -312,9 +271,8 @@ func portClaimedBy(reg Registry, self string, port int) bool {
 	return false
 }
 
-// sitesOf is the site list tamp last recorded for an environment, which a
-// reclaim keeps: the bench is about to be asked anyway, and until it answers
-// this is what its routes are assembled from.
+// sitesOf is the last-recorded site list, which a reclaim keeps until the
+// bench answers.
 func sitesOf(reg Registry, name string) []string {
 	if entry, ok := reg[name]; ok {
 		return entry.Sites
@@ -322,12 +280,8 @@ func sitesOf(reg Registry, name string) []string {
 	return []string{}
 }
 
-// UpdateRegistry runs change against the registry under the machine-global
-// lock, and writes the result back only if change succeeded.
-//
-// Every mutation goes through here. Reading the registry, deciding, and
-// writing it back is a read-modify-write cycle, and doing it outside the lock
-// is exactly how a concurrent tamp loses an environment.
+// UpdateRegistry is the single mutation path: read-modify-write under the
+// machine lock, written back only if change succeeded.
 func UpdateRegistry(home string, change func(Registry) error) error {
 	lock, err := AcquireLock(home)
 	if err != nil {

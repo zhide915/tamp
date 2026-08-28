@@ -16,7 +16,6 @@ func render(r doctor.Report) (stdout, stderr string) {
 	return out.String(), errOut.String()
 }
 
-// Details line up in a column so a report can be read down rather than across.
 func TestPrintAlignsDetailsPastTheLongestName(t *testing.T) {
 	out, _ := render(doctor.Report{Checks: []doctor.Check{
 		{Name: "Docker", Status: doctor.Pass, Detail: "29.7.2"},
@@ -32,8 +31,8 @@ func TestPrintAlignsDetailsPastTheLongestName(t *testing.T) {
 	}
 }
 
-// column is where the reader sees needle, counted in characters — measuring
-// this in bytes would make the test agree with the bug it is looking for.
+// column counts in runes — a byte count would share the very bug the test
+// hunts for.
 func column(line, needle string) int {
 	return utf8.RuneCountInString(line[:strings.Index(line, needle)])
 }

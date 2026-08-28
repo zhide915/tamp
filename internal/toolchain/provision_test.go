@@ -10,10 +10,6 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// The shared volume is what makes the second environment on a machine cheap:
-// a toolchain that is already there is not fetched again. The fake answers
-// tamp's "is uv here?" probe with yes, which is what a machine that has
-// already created one environment looks like.
 func TestAToolchainThatIsAlreadyThereIsNotDownloadedAgain(t *testing.T) {
 	fake := enginetest.Running()
 
@@ -36,10 +32,8 @@ func TestAToolchainThatIsAlreadyThereIsNotDownloadedAgain(t *testing.T) {
 	}
 }
 
-// The probe that decides whether to download has two "no"s to tell apart. A
-// command that ran and said the binary is absent means fetch one; a command
-// tamp could not run at all means something is wrong, and tamp must not
-// answer it by downloading a toolchain into a container that is not there.
+// A probe that ran and said "absent" means download; one that could not run
+// must fail rather than fill a toolchain into a container that is not there.
 func TestABrokenProbeIsAFailureRatherThanAnEmptyToolchain(t *testing.T) {
 	provision := func(fake *enginetest.Fake) error {
 		return toolchain.Provision(t.Context(), fake, toolchain.Request{
@@ -53,8 +47,7 @@ func TestABrokenProbeIsAFailureRatherThanAnEmptyToolchain(t *testing.T) {
 		fake := enginetest.Running()
 		fake.ExecFails = map[string]error{
 			"test -x": &engine.ExitError{Container: "tamp-demo-ab12cd-frappe-1", Status: 1},
-			// Stopped at the next step on purpose: what comes after it is a
-			// real download, which no unit test should reach.
+			// Fails on purpose: the step after uname is a real download.
 			"uname": &engine.ExitError{Container: "tamp-demo-ab12cd-frappe-1", Status: 1},
 		}
 
@@ -81,8 +74,6 @@ func TestABrokenProbeIsAFailureRatherThanAnEmptyToolchain(t *testing.T) {
 	})
 }
 
-// Everything tamp and the bench run has to find the shared Python and Node,
-// and the env script is the one place that says where they are.
 func TestProvisioningWritesTheEnvironmentScriptEveryCommandSources(t *testing.T) {
 	fake := enginetest.Running()
 
@@ -99,8 +90,8 @@ func TestProvisioningWritesTheEnvironmentScriptEveryCommandSources(t *testing.T)
 	if !ok {
 		t.Fatalf("tamp wrote %v, not %s", fake.Written(), toolchain.EnvScript)
 	}
-	// Both language runtimes have to be redirected into the shared volume, or
-	// what one environment installs the next one cannot see.
+	// Both runtimes must resolve into the shared volume, or what one
+	// environment installs the next cannot see.
 	for _, want := range []string{"UV_PYTHON_INSTALL_DIR", "NVM_DIR", toolchain.Dir} {
 		if !strings.Contains(script, want) {
 			t.Errorf("%s does not set %s:\n%s", toolchain.EnvScript, want, script)
@@ -108,9 +99,6 @@ func TestProvisioningWritesTheEnvironmentScriptEveryCommandSources(t *testing.T)
 	}
 }
 
-// The versions come from tamp's matrix, and both have to actually be asked
-// for — a bench built against the wrong Python is the failure tamp exists to
-// prevent.
 func TestProvisioningInstallsTheRequestedPythonAndNode(t *testing.T) {
 	fake := enginetest.Running()
 
@@ -130,8 +118,7 @@ func TestProvisioningInstallsTheRequestedPythonAndNode(t *testing.T) {
 	if !strings.Contains(provisioning.Line(), "nvm install") {
 		t.Errorf("tamp never installed a Node:\n%s", provisioning.Line())
 	}
-	// The versions travel as arguments rather than inside the script, so that
-	// what tamp asked for is visible in the command it ran.
+	// Versions travel as arguments so the command shows what was asked for.
 	if got := provisioning.Cmd[len(provisioning.Cmd)-2:]; got[0] != "3.11" || got[1] != "18" {
 		t.Errorf("tamp provisioned %v, want python 3.11 and node 18", got)
 	}

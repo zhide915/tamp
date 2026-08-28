@@ -11,21 +11,17 @@ import (
 // RemoveRequest is what `tamp rm` was asked for.
 type RemoveRequest struct {
 	Name string
-	// Volumes destroys the environment's storage layers along with it.
-	// Without it they survive, and `tamp init` in the leftover directory
-	// re-adopts them.
+	// Volumes destroys the storage layers too; without it they survive for
+	// `tamp init` to re-adopt.
 	Volumes bool
-	// Yes confirms a destructive action. tamp never prompts: agents run
-	// these commands, so confirmation is a flag, not a question.
+	// Yes replaces a prompt — agents run these commands, so confirmation is a
+	// flag.
 	Yes bool
 }
 
-// Remove takes an environment's containers, network and registry entry away.
-//
-// It never deletes the environment directory. The source layer lives there and
-// tamp does not destroy source — so "remove" here always means
-// "remove what tamp made", and the output says so rather than leaving the
-// user to discover it.
+// Remove tears down an environment's containers, network and registry entry.
+// It never deletes the directory: the source lives there, and tamp does not
+// destroy source.
 func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 	e, err := m.resolve(req.Name)
 	if err != nil {
@@ -43,10 +39,8 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 		return err
 	}
 
-	// Both before the teardown, and for the same reason: each is attached to
-	// something the teardown is about to take away. Docker refuses to remove a
-	// network that still has a container on it, and a sync session whose far
-	// end has gone is a session that spends its life reporting so.
+	// Both before the teardown: Docker refuses to remove a network with a
+	// container still on it, and a sync whose far end vanished loops on errors.
 	m.terminateSync(ctx, e)
 	if err := m.router().Detach(ctx, e.Resources.Network()); err != nil {
 		return err
@@ -67,9 +61,8 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 		return err
 	}
 
-	// The registry is what the routes are assembled from, so this is what
-	// takes this environment's routes away — and, just as importantly, leaves
-	// every other environment's in place.
+	// Routes are assembled from the registry, so this drops only this
+	// environment's.
 	if _, err := m.refreshRoutes(ctx); err != nil {
 		return err
 	}
@@ -79,12 +72,8 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 	return nil
 }
 
-// previewRemoval prints exactly what --yes would destroy, and — because this
-// is where it is still actionable — the recipe for removing the environment
-// completely.
-//
-// This is the whole value of the exit-5 contract: the answer to "what am I
-// confirming" has to be on screen before the user retypes the command.
+// previewRemoval prints exactly what --yes would destroy — the point of the
+// exit-5 contract.
 func (m *Manager) previewRemoval(e *Environment, volumes bool) {
 	dataVolume := "  volume      " + e.Resources.Volume(DataVolume) + "  (every site's database)"
 
@@ -109,19 +98,13 @@ func (m *Manager) previewRemoval(e *Environment, volumes bool) {
 	m.Out.Print("  then delete " + e.Dir + " yourself")
 }
 
-// reportSurvivors says what is still on the machine, and how to finish the job.
-//
-// The recipe printed here is deliberately not the one in the preview: by now
-// the registry entry is gone, so `tamp rm --volumes` would only report an
-// environment it can no longer find. What is left is a Docker volume and a
-// directory, and those are what the user is told about.
+// reportSurvivors names what remains. Its recipe differs from the preview's
+// on purpose: the registry entry is gone now, so `tamp rm --volumes` can no
+// longer find the environment.
 func (m *Manager) reportSurvivors(e *Environment, volumes bool) {
 	if !volumes {
 		volume := e.Resources.Volume(DataVolume)
 		m.Out.Note("the data volume " + volume + " survives, with every site's database in it")
-		// The other half of what was just done: the volumes and the directory
-		// were kept so that this environment can be brought back, and the
-		// command that does it is worth saying while it is still true.
 		m.Out.Hint("bring it back with its data: run 'tamp init' in " + e.Dir)
 		m.Out.Hint("remove it for good: docker volume rm " + volume)
 	}

@@ -8,10 +8,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// defaultAppOwner is the GitHub organisation bench resolves a bare app name
-// against. tamp records the URL that name will actually be cloned from rather
-// than the name alone, so tamp.toml says where an app came from even for the
-// spelling that leaves it out.
+// defaultAppOwner is where bench resolves bare app names. tamp records the
+// full clone URL so tamp.toml says where every app came from.
 const defaultAppOwner = "https://github.com/frappe/"
 
 // ParseApps reads the --apps value: a comma-separated list of app specs.
@@ -25,9 +23,8 @@ func ParseApps(spec string) ([]App, error) {
 		if err != nil {
 			return nil, err
 		}
-		// A duplicate would surface minutes later, when the second fetch fails
-		// against the app the first one put on the bench — and take the whole
-		// create down with it.
+		// A duplicate would only fail minutes later, at the second fetch,
+		// taking the whole create with it.
 		if slices.ContainsFunc(apps, func(a App) bool { return a.Name == app.Name }) {
 			return nil, exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("%s appears more than once in --apps", app.Name),
@@ -38,13 +35,9 @@ func ParseApps(spec string) ([]App, error) {
 	return apps, nil
 }
 
-// ParseApp reads one app spec: a bare name, a git URL, or either with a branch
-// after a colon.
-//
-// A spec without a branch is not an error and not a guess — it is the repo's
-// default branch, which is the only rule that holds for every app. tamp says
-// so out loud rather than inferring a branch from the bench's Frappe version,
-// because plenty of community apps have no version-15 branch to infer.
+// ParseApp reads one spec: a bare name, a git URL, or either with ":branch".
+// No branch means the repo's default branch — tamp never infers one from the
+// Frappe version, because many apps have no matching release branch.
 func ParseApp(spec string) (App, error) {
 	repo, branch := splitBranch(spec)
 	if repo == "" {
@@ -58,9 +51,9 @@ func ParseApp(spec string) (App, error) {
 	if isRepoURL(repo) {
 		name = appNameFromURL(repo)
 	} else {
-		// bench accepts owner/repo spellings; tamp does not, because gluing
-		// one onto the frappe organisation's URL would fetch from a repository
-		// that does not exist — and only after the whole environment is built.
+		// bench accepts owner/repo; tamp refuses it — glued onto the frappe
+		// organisation's URL it would name a repository that does not exist,
+		// failing only after the environment is built.
 		if strings.Contains(repo, "/") {
 			return App{}, exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("%q is neither an app name nor a git URL", spec),
@@ -77,14 +70,9 @@ func ParseApp(spec string) (App, error) {
 	return App{Name: name, Source: source, Branch: branch}, nil
 }
 
-// splitBranch separates an app spec into its repository and its branch.
-//
-// The subtlety is that a repository reference has colons of its own. In a URL
-// they belong to the scheme and to the port, both of which sit before the
-// first slash of the path; in the scp-like form git@host:path the first colon
-// separates the host. So the search for a branch starts after whichever of
-// those the spec has, which is what lets a branch called feature/x be told
-// apart from the path it would otherwise look like.
+// splitBranch separates a spec into repository and branch. A repository has
+// colons of its own — the scheme, a port, the scp-style host separator — so
+// the branch search starts after them, letting a branch like feature/x parse.
 func splitBranch(spec string) (repo, branch string) {
 	from := 0
 	if scheme := strings.Index(spec, "://"); scheme >= 0 {
@@ -107,14 +95,12 @@ func splitBranch(spec string) (repo, branch string) {
 	return spec[:from+colon], spec[from+colon+1:]
 }
 
-// isRepoURL reports whether a spec names a repository by address rather than
-// by the short name bench resolves itself.
 func isRepoURL(repo string) bool {
 	return strings.Contains(repo, "://") || strings.Contains(repo, "@")
 }
 
-// appNameFromURL takes the app's name from the last segment of its clone URL,
-// which is what bench itself names the directory after.
+// appNameFromURL takes the last URL segment — the directory bench itself
+// clones into.
 func appNameFromURL(url string) string {
 	url = strings.TrimSuffix(strings.TrimSuffix(url, "/"), ".git")
 	if slash := strings.LastIndexAny(url, "/:"); slash >= 0 {
@@ -132,12 +118,9 @@ func AppNames(apps []App) []string {
 	return names
 }
 
-// ParseInstallApps reads the --apps value of `tamp site new`: the names of
-// apps that are already on the bench.
-//
-// A branch is rejected rather than ignored. Installing an app onto a site does
-// not fetch anything, so a branch here would be a pin tamp silently dropped —
-// and the branch a bench holds was decided when the app was fetched onto it.
+// ParseInstallApps reads `tamp site new`'s --apps: names of apps already on
+// the bench. A branch is rejected rather than ignored — installing fetches
+// nothing, so a branch here would be a silently dropped pin.
 func ParseInstallApps(spec string) ([]string, error) {
 	names := []string{}
 	for field := range strings.SplitSeq(spec, ",") {
@@ -150,8 +133,8 @@ func ParseInstallApps(spec string) ([]string, error) {
 				fmt.Sprintf("%q pins a branch, and installing an app onto a site fetches nothing", field),
 				fmt.Sprintf("name the app alone: --apps %s", repo))
 		}
-		// repo rather than field: "erpnext:" carries an empty branch, and the
-		// colon would otherwise be compared against bench directory names.
+		// repo, not field: "erpnext:" carries an empty branch, and the colon
+		// would never match a bench directory name.
 		names = append(names, repo)
 	}
 	return names, nil

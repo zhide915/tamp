@@ -8,9 +8,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
+// Scripts branch on these numbers; they may never change.
 func TestCodesMatchTheDocumentedContract(t *testing.T) {
-	// These numbers are a public contract: scripts and agents branch on them,
-	// so they may never be renumbered.
 	for _, tc := range []struct {
 		code exitcode.Code
 		want int
@@ -53,8 +52,6 @@ func TestOfClassifiesErrors(t *testing.T) {
 	}
 }
 
-// A reported failure still exits with its code, but tamp prints nothing more:
-// the command that returned it has already explained itself.
 func TestReportedCarriesTheCodeAndIsSilent(t *testing.T) {
 	err := exitcode.Reported(exitcode.CodeEngineUnavailable)
 
@@ -66,9 +63,7 @@ func TestReportedCarriesTheCodeAndIsSilent(t *testing.T) {
 	}
 }
 
-// Silence is a deliberate mark, not the absence of a message. An ordinary
-// Error that happens to carry no text must still be printed, or a future
-// caller's failure would vanish without a word.
+// An empty message is not the silence mark — only Reported is.
 func TestOnlyReportedErrorsAreSilent(t *testing.T) {
 	for _, err := range []error{
 		exitcode.New(exitcode.CodeFailed, "", ""),

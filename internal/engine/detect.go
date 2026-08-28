@@ -14,9 +14,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Source names where a Docker address came from. tamp prints it, because "you
-// told me via DOCKER_HOST" and "I found a socket lying there" are different
-// facts to someone whose setup is misbehaving.
+// Source names how a Docker address was found; printed so users can see
+// which detection path answered.
 type Source string
 
 const (
@@ -25,17 +24,15 @@ const (
 	SourceProbe   Source = "probed socket"
 )
 
-// Address is the Docker endpoint tamp resolved, and how it got there.
+// Address is the resolved Docker endpoint and its provenance.
 type Address struct {
 	// Host is a docker connection string: unix://, npipe://, tcp:// or ssh://.
 	Host   string
 	Source Source
-	// Context is the docker context name, set only when Source is SourceContext.
+	// Context is set only when Source is SourceContext.
 	Context string
 }
 
-// String renders the address the way doctor and error messages want it: the
-// endpoint, then how tamp arrived at it.
 func (a Address) String() string {
 	if a.Context != "" {
 		return fmt.Sprintf("%s (%s %q)", a.Host, a.Source, a.Context)
@@ -43,20 +40,17 @@ func (a Address) String() string {
 	return fmt.Sprintf("%s (%s)", a.Host, a.Source)
 }
 
-// defaultCandidates are the well-known endpoints tamp probes when nothing
-// points it anywhere. Both are listed on every OS: the stat simply fails for
-// the one that cannot exist there, which is cheaper than a per-platform list
-// and keeps the probe order identical to the spec everywhere.
+// Both endpoints are probed on every OS: the stat for the wrong platform
+// simply fails, keeping the order identical everywhere.
 var defaultCandidates = []string{
 	`npipe:////./pipe/docker_engine`,
 	"unix:///var/run/docker.sock",
 }
 
-// Detector resolves the Docker endpoint. Its fields are the whole of its
-// contact with the outside world, so a test substitutes a temp config dir and
-// a candidate list instead of needing Docker installed.
+// Detector resolves the Docker endpoint. Its fields are its entire contact
+// with the outside world, so tests can run without Docker installed.
 type Detector struct {
-	// ConfigDir is docker's own config directory — ~/.docker, or DOCKER_CONFIG.
+	// ConfigDir is docker's config directory (~/.docker, or DOCKER_CONFIG).
 	ConfigDir  string
 	LookupEnv  func(string) (string, bool)
 	Candidates []string
@@ -64,7 +58,7 @@ type Detector struct {
 	Exists func(host string) bool
 }
 
-// NewDetector builds the Detector tamp uses in production. Pass os.LookupEnv.
+// NewDetector builds the production Detector. Pass os.LookupEnv.
 func NewDetector(lookupEnv func(string) (string, bool)) Detector {
 	return Detector{
 		ConfigDir:  dockerConfigDir(lookupEnv),
@@ -74,10 +68,9 @@ func NewDetector(lookupEnv func(string) (string, bool)) Detector {
 	}
 }
 
-// Detect resolves the Docker endpoint in the documented order: DOCKER_HOST, the
-// active docker context, then the well-known sockets. Finding nothing is an
-// engine-unavailable error, not an empty result — every caller of Detect needs
-// an engine, so there is no useful "no address, no error" case.
+// Detect resolves the endpoint in order: DOCKER_HOST, the active docker
+// context, then the well-known sockets. Finding nothing is an
+// engine-unavailable error, never an empty result.
 func (d Detector) Detect() (Address, error) {
 	if host, ok := d.LookupEnv("DOCKER_HOST"); ok && host != "" {
 		return Address{Host: host, Source: SourceEnv}, nil
@@ -106,14 +99,14 @@ func (d Detector) Detect() (Address, error) {
 }
 
 // fromContext resolves the active docker context's endpoint. A zero Address
-// with a nil error means "no context is selected" — probing should continue.
+// with nil error means no context is selected; probing continues.
 func (d Detector) fromContext() (Address, error) {
 	name, err := d.activeContext()
 	if err != nil {
 		return Address{}, err
 	}
-	// "default" is docker's own name for the platform's built-in socket rather
-	// than a stored context, and it has no metadata on disk.
+	// "default" means the platform's built-in socket; it has no metadata on
+	// disk.
 	if name == "" || name == "default" {
 		return Address{}, nil
 	}
@@ -132,15 +125,14 @@ func (d Detector) activeContext() (string, error) {
 	}
 
 	if d.ConfigDir == "" {
-		// No home directory and no DOCKER_CONFIG. Joining onto "" would make
-		// the path relative and read whatever config.json happens to sit in
-		// the working directory, so there is nothing to consult here.
+		// Joining onto "" would produce a relative path and read a stray
+		// config.json from the working directory.
 		return "", nil
 	}
 
 	blob, err := os.ReadFile(filepath.Join(d.ConfigDir, "config.json"))
 	if errors.Is(err, fs.ErrNotExist) {
-		// A machine that has never run the docker CLI has no config at all.
+		// The docker CLI has never run here; there is no config.
 		return "", nil
 	}
 	if err != nil {
@@ -156,8 +148,8 @@ func (d Detector) activeContext() (string, error) {
 	return cfg.CurrentContext, nil
 }
 
-// contextEndpoint reads the docker endpoint out of a stored context. The
-// docker CLI names each context's directory for the SHA-256 of its name.
+// contextEndpoint reads the endpoint from a stored context; the docker CLI
+// names each context's directory for the SHA-256 of its name.
 func (d Detector) contextEndpoint(name string) (string, error) {
 	sum := sha256.Sum256([]byte(name))
 	path := filepath.Join(d.ConfigDir, "contexts", "meta", hex.EncodeToString(sum[:]), "meta.json")
@@ -201,17 +193,15 @@ func dockerConfigDir(lookupEnv func(string) (string, bool)) string {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		// No home means no docker config to read; detection falls through to
-		// probing, which is the right answer rather than a hard failure.
+		// No home, no config to read; detection falls through to probing.
 		return ""
 	}
 	return filepath.Join(home, ".docker")
 }
 
-// endpointExists reports whether a candidate endpoint is present. Both unix
-// sockets and Windows named pipes answer to a plain stat, and a stat neither
-// connects nor wakes a stopped daemon — tamp wants "the socket is there",
-// which is a different fact from "Docker answers" and is reported separately.
+// endpointExists stats a unix socket or Windows named pipe. Deliberately a
+// stat, not a connect: "the socket is there" and "Docker answers" are
+// reported as separate facts.
 func endpointExists(host string) bool {
 	path, ok := strings.CutPrefix(host, "unix://")
 	if !ok {

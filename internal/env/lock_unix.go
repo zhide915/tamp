@@ -9,9 +9,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// tryLock takes a non-blocking exclusive flock. A second attempt from within
-// the same process still conflicts — flock is held per open file description —
-// which is what lets the lock be tested without spawning a second tamp.
+// tryLock takes a non-blocking exclusive flock. flock is held per open file
+// description, so a second in-process attempt conflicts — the lock is testable
+// without a second tamp.
 func tryLock(f *os.File) (bool, error) {
 	err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 	if errors.Is(err, unix.EWOULDBLOCK) {

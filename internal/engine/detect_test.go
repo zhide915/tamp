@@ -15,14 +15,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Detection is the whole reason tamp can claim to find Docker and tell the
-// truth about what it found, so these tests pin the documented order —
-// DOCKER_HOST, then the active docker context, then the known sockets — and
-// the source tamp reports for each, since a user debugging a broken setup
-// needs to know which of the three answered.
-
-// detector builds a Detector over a temp docker config dir. present names the
-// candidate endpoints that exist on this imaginary machine.
+// detector builds a Detector over a temp config dir; present names the
+// candidate endpoints that exist on the imaginary machine.
 func detector(t *testing.T, env map[string]string, present ...string) engine.Detector {
 	t.Helper()
 	exists := make(map[string]bool, len(present))
@@ -37,8 +31,8 @@ func detector(t *testing.T, env map[string]string, present ...string) engine.Det
 	}
 }
 
-// writeContext lays out a docker context the way the docker CLI does: the
-// metadata lives under a directory named for the SHA-256 of the context name.
+// writeContext mirrors the docker CLI's layout: context metadata lives under
+// a directory named for the SHA-256 of the context name.
 func writeContext(t *testing.T, configDir, name, host string) {
 	t.Helper()
 	sum := sha256.Sum256([]byte(name))
@@ -89,8 +83,6 @@ func TestDockerHostWinsOverEverythingElse(t *testing.T) {
 	}
 }
 
-// An exported-but-empty DOCKER_HOST is how a shell leaves a variable that was
-// cleared by assigning ""; it must not shadow a working context.
 func TestEmptyDockerHostIsIgnored(t *testing.T) {
 	d := detector(t, map[string]string{"DOCKER_HOST": ""}, "unix:///var/run/docker.sock")
 
@@ -118,8 +110,7 @@ func TestActiveContextIsUsedWhenDockerHostIsUnset(t *testing.T) {
 	if addr.Source != engine.SourceContext {
 		t.Errorf("Source = %q, want %q", addr.Source, engine.SourceContext)
 	}
-	// doctor prints the name, because "which context?" is the first question a
-	// user with two engines asks.
+	// doctor prints the context name.
 	if addr.Context != "desktop-linux" {
 		t.Errorf("Context = %q, want %q", addr.Context, "desktop-linux")
 	}
@@ -143,9 +134,8 @@ func TestDockerContextEnvOverridesTheConfiguredContext(t *testing.T) {
 	}
 }
 
-// "default" is docker's own name for "no context — use the platform socket",
-// and it has no metadata directory. Treating it as a missing context would
-// break every machine that has never run `docker context use`.
+// "default" is not a stored context and has no metadata directory; treating
+// it as missing would break every machine that never ran `docker context use`.
 func TestDefaultContextFallsThroughToProbing(t *testing.T) {
 	d := detector(t, nil, "unix:///var/run/docker.sock")
 	writeConfig(t, d.ConfigDir, "default")
@@ -162,8 +152,6 @@ func TestDefaultContextFallsThroughToProbing(t *testing.T) {
 	}
 }
 
-// The named pipe is probed before the unix socket, so a machine that somehow
-// answers on both is reported as the Docker Desktop engine it is.
 func TestProbingHonoursCandidateOrder(t *testing.T) {
 	d := detector(t, nil, "unix:///var/run/docker.sock", "npipe:////./pipe/docker_engine")
 
@@ -176,7 +164,6 @@ func TestProbingHonoursCandidateOrder(t *testing.T) {
 	}
 }
 
-// Nothing found is the exit-4 case the whole engine boundary exists to report.
 func TestNoEngineAnywhereIsAnEngineUnavailableError(t *testing.T) {
 	d := detector(t, nil)
 
@@ -194,8 +181,7 @@ func TestNoEngineAnywhereIsAnEngineUnavailableError(t *testing.T) {
 	if e.Fix == "" {
 		t.Error("error carries no fix; tamp errors always name the fix")
 	}
-	// The message must name where tamp looked — otherwise "no engine found"
-	// is unactionable on a machine with an unusual socket path.
+	// The message must say where detection looked.
 	for _, want := range []string{"DOCKER_HOST", "unix:///var/run/docker.sock"} {
 		if !strings.Contains(e.Msg, want) {
 			t.Errorf("message %q does not mention %q", e.Msg, want)
@@ -203,8 +189,6 @@ func TestNoEngineAnywhereIsAnEngineUnavailableError(t *testing.T) {
 	}
 }
 
-// A context that config.json points at but that no longer exists is a real
-// misconfiguration: say so rather than silently probing something else.
 func TestUnknownContextIsReportedRatherThanIgnored(t *testing.T) {
 	d := detector(t, nil, "unix:///var/run/docker.sock")
 	writeConfig(t, d.ConfigDir, "gone")
@@ -221,9 +205,6 @@ func TestUnknownContextIsReportedRatherThanIgnored(t *testing.T) {
 	}
 }
 
-// NewDetector is what production uses, so its two environment overrides need
-// pinning too: without them a user with a non-standard DOCKER_CONFIG would be
-// diagnosed against the wrong contexts.
 func TestNewDetectorHonoursDockerConfigEnv(t *testing.T) {
 	dir := t.TempDir()
 	d := engine.NewDetector(func(k string) (string, bool) {
@@ -241,9 +222,8 @@ func TestNewDetectorHonoursDockerConfigEnv(t *testing.T) {
 	}
 }
 
-// Every other test injects its own candidate list, so without this one nothing
-// holds production to the documented probe order — the Docker Desktop pipe
-// first, then the unix socket.
+// Every other test injects candidates; only this pins production's probe
+// order.
 func TestNewDetectorProbesTheDocumentedSocketsInOrder(t *testing.T) {
 	d := engine.NewDetector(func(string) (string, bool) { return "", false })
 
@@ -253,11 +233,6 @@ func TestNewDetectorProbesTheDocumentedSocketsInOrder(t *testing.T) {
 	}
 }
 
-// Exists is the one part of detection that differs per OS, and every test
-// above replaces it. These pin the real thing: tamp must strip the scheme,
-// and must answer for an endpoint that is absent as surely as for one that is
-// there. A stat is deliberately all it does — "the socket exists" is a
-// different fact from "Docker answers", and tamp reports them separately.
 func TestRealExistsStripsTheSchemeAndStatsThePath(t *testing.T) {
 	exists := engine.NewDetector(os.LookupEnv).Exists
 
@@ -273,8 +248,7 @@ func TestRealExistsStripsTheSchemeAndStatsThePath(t *testing.T) {
 		{"unix://" + filepath.ToSlash(present), true},
 		{"unix:///no/such/socket/anywhere", false},
 		{`npipe:////./pipe/tamp_no_such_pipe`, false},
-		// tamp only knows how to look for a socket on this machine; a remote
-		// endpoint cannot be probed, only connected to.
+		// Remote endpoints cannot be probed, only connected to.
 		{"tcp://10.0.0.5:2375", false},
 		{"ssh://build.example", false},
 	} {
@@ -284,10 +258,8 @@ func TestRealExistsStripsTheSchemeAndStatsThePath(t *testing.T) {
 	}
 }
 
-// With no home directory and no DOCKER_CONFIG there is nowhere to look for
-// docker's config. Joining onto an empty dir would make the path relative and
-// read whatever config.json happened to be in the working directory — tamp
-// would then diagnose against a file it has no business reading.
+// An empty ConfigDir must not become a relative path that picks up a stray
+// config.json from the working directory.
 func TestEmptyConfigDirDoesNotReadTheWorkingDirectory(t *testing.T) {
 	d := detector(t, nil, "unix:///var/run/docker.sock")
 	d.ConfigDir = ""

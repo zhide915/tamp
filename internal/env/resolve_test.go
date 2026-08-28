@@ -9,8 +9,7 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// plant writes a valid environment into dir and registers it, the way create
-// would, so resolution can be tested without the whole lifecycle.
+// plant writes and registers a valid environment the way create would.
 func plant(t *testing.T, home, dir, name string) {
 	t.Helper()
 	n, err := ParseName(name)
@@ -43,7 +42,6 @@ func plant(t *testing.T, home, dir, name string) {
 	}
 }
 
-// Inside an environment the name is optional, found by walking up like git.
 func TestResolveFindsTheEnvironmentTheCwdIsInside(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()
 	dir := filepath.Join(root, "erp15")
@@ -62,8 +60,6 @@ func TestResolveFindsTheEnvironmentTheCwdIsInside(t *testing.T) {
 	}
 }
 
-// Naming it explicitly must work from anywhere — that is what the registry is
-// for.
 func TestResolveByNameWorksFromAnUnrelatedDirectory(t *testing.T) {
 	home, root, elsewhere := t.TempDir(), t.TempDir(), t.TempDir()
 	plant(t, home, filepath.Join(root, "erp15"), "erp15")
@@ -80,8 +76,6 @@ func TestResolveByNameWorksFromAnUnrelatedDirectory(t *testing.T) {
 	}
 }
 
-// The name wins over the cwd: standing in one environment and naming another
-// acts on the one that was named.
 func TestAnExplicitNameBeatsTheCurrentDirectory(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()
 	plant(t, home, filepath.Join(root, "erp15"), "erp15")
@@ -96,7 +90,7 @@ func TestAnExplicitNameBeatsTheCurrentDirectory(t *testing.T) {
 	}
 }
 
-// The registry is an index, not the truth: a directory can vanish behind it.
+// The registry is an index; a directory can vanish behind it.
 func TestARegisteredEnvironmentWhoseDirectoryIsGoneSaysSo(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()
 	dir := filepath.Join(root, "erp15")

@@ -11,7 +11,7 @@ func newVersionCommand(p *ui.Printer) *cobra.Command {
 		Short: "Print the tamp version, commit and build date",
 		Args:  noArgs,
 		RunE: func(*cobra.Command, []string) error {
-			// A result, not progress: --quiet must not swallow it.
+			// Results, so --quiet must not swallow them.
 			p.Print("tamp " + version)
 			p.Print("commit:     " + commit)
 			p.Print("build date: " + buildDate)

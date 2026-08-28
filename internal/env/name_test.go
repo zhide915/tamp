@@ -16,8 +16,8 @@ func TestParseNameAcceptsValidDNSLabels(t *testing.T) {
 	}
 }
 
-// Every rejection below is a name that would otherwise reach a hostname or a
-// Docker resource name and fail there instead.
+// Each of these would otherwise fail later, inside a hostname or a Docker
+// resource name.
 func TestParseNameRejectsNamesThatCannotBeHostnames(t *testing.T) {
 	cases := map[string]string{
 		"empty":            "",
@@ -40,8 +40,7 @@ func TestParseNameRejectsNamesThatCannotBeHostnames(t *testing.T) {
 	}
 }
 
-// The command words are reserved so that grammar like `tamp snapshot restore`
-// stays parseable however many environments exist.
+// Reserved so grammar like `tamp snapshot restore` stays parseable.
 func TestParseNameRejectsCommandWords(t *testing.T) {
 	for _, s := range []string{"create", "list", "ls", "rm", "site", "mail", "help"} {
 		_, err := ParseName(s)
@@ -55,7 +54,8 @@ func TestParseNameRejectsCommandWords(t *testing.T) {
 	}
 }
 
-// tamp's error contract: an invalid name is exit 1, and always names the fix.
+// assertFailedWithFix pins tamp's error contract: exit 1, and a fix is always
+// named.
 func assertFailedWithFix(t *testing.T, err error) {
 	t.Helper()
 	if got := exitcode.Of(err); got != exitcode.CodeFailed {

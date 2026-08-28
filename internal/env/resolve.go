@@ -8,22 +8,20 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Environment is one resolved environment: where it is, what it says about
-// itself, and the Docker names it owns.
+// Environment is one resolved environment.
 type Environment struct {
 	Dir       string
 	Config    *Config
 	Resources Resources
-	// Warnings are things tamp noticed while loading the config — unknown
-	// keys, so far. The caller prints them; this package has no terminal.
+	// Warnings were noticed while loading the config. The caller prints them;
+	// this package has no terminal.
 	Warnings []string
 }
 
-// Name is the environment's name, as validated by ParseName.
 func (e *Environment) Name() Name { return e.Config.Name }
 
-// Open loads the environment rooted at dir. dir must already contain a
-// tamp.toml; use Resolve to find one.
+// Open loads the environment rooted at dir, which must already hold a
+// tamp.toml; Resolve finds one.
 func Open(dir string) (*Environment, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -43,12 +41,8 @@ func Open(dir string) (*Environment, error) {
 	return &Environment{Dir: abs, Config: cfg, Resources: res, Warnings: warnings}, nil
 }
 
-// Resolve finds the environment a command should act on: the one named, or —
-// when name is empty — the one the working directory is inside.
-//
-// Both routes exist because both are natural. An agent or a script names the
-// environment from anywhere; a person already sitting in the directory should
-// not have to repeat its name, any more than git makes them name the repo.
+// Resolve returns the named environment, or — when name is empty — the one
+// the working directory is inside, found the way git finds a repo.
 func Resolve(home, cwd, name string) (*Environment, error) {
 	if name != "" {
 		return resolveByName(home, name)
@@ -63,7 +57,6 @@ func Resolve(home, cwd, name string) (*Environment, error) {
 	return Open(dir)
 }
 
-// resolveByName looks the environment up in the global registry.
 func resolveByName(home, name string) (*Environment, error) {
 	reg, err := LoadRegistry(home)
 	if err != nil {
@@ -77,9 +70,8 @@ func resolveByName(home, name string) (*Environment, error) {
 	}
 
 	if _, err := os.Stat(ConfigPath(entry.Path)); err != nil {
-		// The registry is an index, not the truth: the directory it points at
-		// can be moved or deleted behind tamp's back. Saying so beats
-		// reporting whatever the next operation fails with.
+		// The registry is an index, not the truth: the directory can vanish
+		// behind it.
 		return nil, exitcode.New(exitcode.CodeNotFound,
 			fmt.Sprintf("environment %q is registered at %s, but there is no %s there", name, entry.Path, ConfigFile),
 			"run 'tamp list' to drop registry entries whose directory is gone")
@@ -87,8 +79,6 @@ func resolveByName(home, name string) (*Environment, error) {
 	return Open(entry.Path)
 }
 
-// findConfigUpward walks from dir to the filesystem root looking for the
-// nearest tamp.toml.
 func findConfigUpward(dir string) (string, bool) {
 	dir, err := filepath.Abs(dir)
 	if err != nil {
@@ -100,7 +90,7 @@ func findConfigUpward(dir string) (string, bool) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// filepath.Dir is its own fixed point at the root of a volume.
+			// filepath.Dir is its own fixed point at a volume root.
 			return "", false
 		}
 		dir = parent

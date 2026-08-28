@@ -2,6 +2,5 @@
 
 package ui
 
-// EnableColorSupport is a no-op: every other console tamp supports interprets
-// ANSI escapes without being asked.
+// EnableColorSupport is a no-op outside Windows.
 func EnableColorSupport() {}

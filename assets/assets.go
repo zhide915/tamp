@@ -1,9 +1,7 @@
-// Package assets holds the files tamp generates environments from.
-//
-// They are templates on disk rather than string literals in Go so that the
-// shape of a tamp environment can be read as the compose file it becomes, and
-// so that a future "prod" profile is a second template pack rather than a
-// second code path.
+// Package assets embeds the templates tamp generates environment files from.
+// They are .tmpl files rather than Go string literals so a generated file's
+// shape can be read directly, and another profile would be a second template
+// pack rather than a second code path.
 package assets
 
 import "embed"

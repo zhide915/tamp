@@ -5,21 +5,17 @@ import (
 	"fmt"
 )
 
-// DBHost is the address an environment's MariaDB is published on. It is
-// loopback and not the machine's own address on purpose: this is a development
-// database, and nothing outside the machine has any business reaching it.
+// DBHost is loopback on purpose: a development database, with no business
+// being reachable from outside the machine.
 const DBHost = "127.0.0.1"
 
-// DBUser is the account tamp publishes. There is one, it is the environment's
-// own root, and its password lives in the environment's secrets directory.
+// DBUser is the environment's own root; its password lives in the secrets
+// directory.
 const DBUser = "root"
 
-// DB prints how to reach an environment's MariaDB, and what is inside it.
-//
-// This is tamp's one deliberate exception to reaching everything by hostname:
-// a database GUI client speaks the MySQL protocol over TCP and has nowhere to
-// put a Host header, so the environment publishes one port and tamp says
-// which. Everything else still goes through the router.
+// DB prints how to reach an environment's MariaDB — the one deliberate
+// exception to hostname-only access, because MySQL clients speak TCP and have
+// no Host header to route on.
 func (m *Manager) DB(ctx context.Context, name string) error {
 	e, err := m.resolve(name)
 	if err != nil {
@@ -46,12 +42,9 @@ func (m *Manager) DB(ctx context.Context, name string) error {
 	return nil
 }
 
-// printDatabases lists the one database each site has.
-//
-// The name is Frappe's to invent — it derives it when the site is created and
-// never says it again — so tamp reads it from the site's own config, which is
-// where Frappe itself looks it up. A stopped environment has nothing to ask,
-// and the sites are still worth listing.
+// printDatabases lists each site's database. The name is Frappe's invention,
+// read from the site's own config where Frappe itself looks it up; a stopped
+// environment still gets its sites listed.
 func (m *Manager) printDatabases(ctx context.Context, e *Environment, hosts []string, live bool) {
 	if len(hosts) == 0 {
 		m.Out.Print("no databases yet — this bench has no sites")

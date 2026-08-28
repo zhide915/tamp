@@ -13,12 +13,10 @@ import (
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
-// init is create's sibling and rm's other half. The first of those is a
-// convenience; the second is the whole safety story — rm keeps the volumes and
-// never deletes the directory precisely so that this command can put an
+// rm keeps the volumes and the directory precisely so that init can put an
 // environment back with its data intact.
 
-// inside runs tamp from a directory beneath the sandbox, making it first.
+// inside runs tamp from a subdirectory of the sandbox, creating it first.
 func (c *cli) inside(t *testing.T, dir string, args ...string) result {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -55,8 +53,7 @@ func TestInitTakesTheNameFromTheFlagInstead(t *testing.T) {
 	r.assertStdoutContains(t, "erp15 ready")
 }
 
-// A folder tamp cannot turn into a hostname is not a reason to stop: --name
-// is, and the error has to say so rather than merely refusing.
+// The error must point at --name, not merely refuse.
 func TestInitPointsAtNameWhenTheFolderCannotBeOne(t *testing.T) {
 	c := sandbox(t)
 
@@ -76,8 +73,6 @@ func TestInitPointsAtNameWhenTheFolderNameIsTaken(t *testing.T) {
 	r.assertStderrContains(t, "already registered", "--name")
 }
 
-// Whatever is in a non-empty directory is somebody's work, and tamp will not
-// build an environment on top of it.
 func TestInitRefusesADirectoryWithSomebodyElsesThingsInIt(t *testing.T) {
 	c := sandbox(t)
 	dir := c.path("mine")
@@ -99,8 +94,6 @@ func TestInitRefusesADirectoryWithSomebodyElsesThingsInIt(t *testing.T) {
 
 // --- re-adoption -----------------------------------------------------------
 
-// The whole cycle rm was designed around: remove the environment, and put it
-// back around the source and the volumes that survived.
 func TestInitReadoptsWhatRemoveLeftBehind(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "bind")
@@ -119,17 +112,14 @@ func TestInitReadoptsWhatRemoveLeftBehind(t *testing.T) {
 	if c.registeredPath(t, "demo") != c.path("demo") {
 		t.Error("the adopted environment is not back in the registry")
 	}
-	// The site's data is in the volumes, and the volumes came back attached
-	// because the environment kept its name and its path.
+	// Same name and path, so the volumes reattach with the site's data.
 	c.run(t, "site", "list", "demo").assertStdoutContains(t, "shop.localhost")
 	if !strings.Contains(c.caddyfile(t), "http://shop.localhost {") {
 		t.Error("the adopted environment's site is not routed again")
 	}
 }
 
-// The source is the one thing tamp never destroys, so adopting must not
-// re-clone over it — bench refuses that interactively, which in a container is
-// a command that aborts.
+// bench init over existing source prompts, which in a container aborts.
 func TestInitRebuildsAroundTheSourceRatherThanCloningOverIt(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "bind")
@@ -150,8 +140,7 @@ func TestInitRebuildsAroundTheSourceRatherThanCloningOverIt(t *testing.T) {
 	}
 }
 
-// tamp.toml is the authority for an environment being adopted: the volumes
-// about to reattach were built for what it records.
+// When adopting, tamp.toml rules: the reattaching volumes match what it records.
 func TestInitIgnoresTheFlagsWhenAdopting(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--frappe", "version-15", "--sync", "bind")
@@ -163,17 +152,15 @@ func TestInitIgnoresTheFlagsWhenAdopting(t *testing.T) {
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStdoutContains(t, "demo adopted")
 	r.assertStderrContains(t, "--name is ignored")
-	// Every ignored flag is named: a user pinning --frappe version-16 must
-	// not walk away believing they upgraded.
+	// Each ignored flag is named, or the user believes the upgrade happened.
 	r.assertStderrContains(t, "--frappe is ignored")
 	if config := c.read(t, "demo", env.ConfigFile); !strings.Contains(config, `version = "version-15"`) {
 		t.Errorf("adopting changed the environment's Frappe version:\n%s", config)
 	}
 }
 
-// init exists for what rm left behind. A directory that is still a registered
-// environment has nothing to adopt — and adopting it anyway would re-run the
-// build against a live bench, whose failure path tears the environment down.
+// Adopting a live environment would re-run the build, whose failure path
+// tears the environment down.
 func TestInitRefusesADirectoryThatIsStillARegisteredEnvironment(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "bind")
@@ -188,8 +175,7 @@ func TestInitRefusesADirectoryThatIsStillARegisteredEnvironment(t *testing.T) {
 	}
 }
 
-// A directory holding nothing but a tamp.toml is fresh, not foreign: there is
-// nothing in it to lose, and tamp is about to write that file itself.
+// A lone tamp.toml holds nothing to lose; tamp writes that file anyway.
 func TestInitTreatsAConfigOnlyDirectoryAsFresh(t *testing.T) {
 	c := sandbox(t)
 	dir := c.path("shopfloor")
@@ -208,10 +194,8 @@ func TestInitTreatsAConfigOnlyDirectoryAsFresh(t *testing.T) {
 	}
 }
 
-// Under Mutagen, fresh volumes mean bench init runs first and the session then
-// mirrors the host's apps back in — apps bench did not clone and knows nothing
-// about. They have to be registered, or the environment comes back with its
-// source present but unloadable.
+// With fresh volumes the sync mirrors host apps in after bench init — apps
+// bench never cloned, which must still be registered or they stay unloadable.
 func TestReadoptWithFreshVolumesRegistersTheAppsTheSyncBringsBack(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "mutagen")
@@ -231,8 +215,6 @@ func TestReadoptWithFreshVolumesRegistersTheAppsTheSyncBringsBack(t *testing.T) 
 	}
 }
 
-// The other half of the promise: --volumes really does mean the data is gone,
-// and adopting afterwards brings back the source and nothing else.
 func TestInitAfterRemoveWithVolumesStartsWithNothingInTheDatabase(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "bind")
@@ -253,8 +235,6 @@ func TestInitAfterRemoveWithVolumesStartsWithNothingInTheDatabase(t *testing.T) 
 	}
 }
 
-// An adoption that fails must leave the data exactly as it found it: keeping
-// it is the only reason this command exists.
 func TestAFailedAdoptionKeepsTheVolumes(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "bind")
@@ -273,8 +253,8 @@ func TestAFailedAdoptionKeepsTheVolumes(t *testing.T) {
 
 // --- helpers ---------------------------------------------------------------
 
-// leaveSource puts an apps tree on the host, which is what a bind mount or a
-// sync session would have left there and what makes a directory adoptable.
+// leaveSource plants the apps tree a bind mount or sync session would have
+// left on the host — what makes a directory adoptable.
 func (c *cli) leaveSource(t *testing.T, name string) {
 	t.Helper()
 	app := filepath.Join(c.path(name, syncer.AppsDirName), "frappe")
@@ -284,11 +264,10 @@ func (c *cli) leaveSource(t *testing.T, name string) {
 	if err := os.WriteFile(filepath.Join(app, "hooks.py"), []byte("app_name = \"frappe\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The bench in the container holds it too, which is what tamp probes for.
+	// tamp probes the bench for the app, so the fake holds it too.
 	c.engine.AddApp("frappe")
 }
 
-// removedVolumes reports whether the last compose down took the volumes.
 func (c *cli) removedVolumes(t *testing.T) bool {
 	t.Helper()
 	downs := c.ops("ComposeDown")
@@ -303,7 +282,6 @@ func (c *cli) removedVolumes(t *testing.T) bool {
 	return false
 }
 
-// registeredPath is where the machine's registry says an environment lives.
 func (c *cli) registeredPath(t *testing.T, name string) string {
 	t.Helper()
 	reg, err := env.LoadRegistry(filepath.Join(c.home, env.HomeDirName))

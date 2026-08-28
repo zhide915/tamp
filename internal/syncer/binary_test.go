@@ -17,10 +17,6 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// tamp installs Mutagen so the user does not have to, which makes the
-// download tamp's responsibility: what it refuses, and what it leaves on
-// disk. These tests are about both.
-
 func TestFindReportsNoMutagenOnAMachineThatHasNone(t *testing.T) {
 	c := &CLI{Home: t.TempDir(), LookPath: nothingOnPath}
 
@@ -29,8 +25,8 @@ func TestFindReportsNoMutagenOnAMachineThatHasNone(t *testing.T) {
 	if exitcode.Of(err) != exitcode.CodeNotFound {
 		t.Fatalf("Find = %v, want a not-found error", err)
 	}
-	// Not being installed is not a problem to solve — tamp solves it — and
-	// the message has to say so rather than send the user to install anything.
+	// The error must say tamp installs it itself, not point the user at an
+	// installer.
 	if !bytes.Contains([]byte(err.Error()), []byte("tamp downloads it")) {
 		t.Errorf("Find does not say tamp handles this itself: %v", err)
 	}
@@ -50,8 +46,6 @@ func TestFindReportsTheBinaryTampAlreadyDownloaded(t *testing.T) {
 	}
 }
 
-// The refusal is the whole point of pinning a download rather than merely
-// naming one: an archive that does not match is not unpacked at all.
 func TestEnsureRefusesADownloadThatDoesNotMatchTheChecksum(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("not the release tamp pinned"))
@@ -73,8 +67,7 @@ func TestEnsureRefusesADownloadThatDoesNotMatchTheChecksum(t *testing.T) {
 	}
 }
 
-// A download tamp cannot make is not fatal: the caller falls back to a bind
-// mount. What matters is that the error says so, rather than reading as a bug.
+// A blocked download is not fatal — the error must name the bind fallback.
 func TestEnsureSaysWhatToDoWhenTheDownloadIsBlocked(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "blocked by proxy", http.StatusForbidden)
@@ -93,8 +86,7 @@ func TestEnsureSaysWhatToDoWhenTheDownloadIsBlocked(t *testing.T) {
 	}
 }
 
-// Mutagen finds the remote halves it pushes into containers by looking next to
-// its own executable, so a binary unpacked on its own can sync nothing.
+// Mutagen locates its container-side agents next to its own executable.
 func TestExtractPutsTheAgentBundleBesideTheExecutable(t *testing.T) {
 	dir := t.TempDir()
 
@@ -121,11 +113,10 @@ func TestExtractRefusesAnArchiveMissingHalfOfMutagen(t *testing.T) {
 	}
 }
 
-// nothingOnPath is a machine with no Mutagen installed, whatever the developer
-// running the tests happens to have.
+// nothingOnPath hides whatever Mutagen the test machine has.
 func nothingOnPath(string) (string, error) { return "", fmt.Errorf("not found") }
 
-// install puts a managed binary where tamp would have downloaded one.
+// install plants a managed binary where a download would land.
 func install(t *testing.T, c *CLI) {
 	t.Helper()
 	if err := os.MkdirAll(c.binDir(), 0o755); err != nil {

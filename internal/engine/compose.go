@@ -14,18 +14,14 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// composeProjectLabel and composeServiceLabel are how compose marks what it
-// owns. tamp reads them rather than parsing `docker compose ps`, so that
-// finding an environment's containers does not depend on a CLI output format.
+// Labels compose stamps on what it owns; read instead of parsing CLI output.
 const (
 	composeProjectLabel = "com.docker.compose.project"
 	composeServiceLabel = "com.docker.compose.service"
 )
 
 func (d *Docker) ComposeUp(ctx context.Context, p ComposeProject, out io.Writer) error {
-	// --wait holds until every healthcheck in the generated file passes, so a
-	// create that returns has actually produced a working environment rather
-	// than five containers that are still deciding.
+	// --wait blocks until every declared healthcheck passes.
 	return d.compose(ctx, p, out, "up", "--detach", "--wait")
 }
 
@@ -33,18 +29,12 @@ func (d *Docker) ComposeStop(ctx context.Context, p ComposeProject, out io.Write
 	return d.compose(ctx, p, out, "stop")
 }
 
-// ComposeRestart restarts one service in place. The container keeps the
-// command it was created with, which is the point: tamp's bench container
-// decides at boot whether there is a bench to run, and restarting it is how
-// that decision gets taken again once tamp has made one.
 func (d *Docker) ComposeRestart(ctx context.Context, p ComposeProject, service string, out io.Writer) error {
 	return d.compose(ctx, p, out, "restart", service)
 }
 
 func (d *Docker) ComposeDown(ctx context.Context, p ComposeProject, removal Removal, out io.Writer) error {
-	// --remove-orphans clears containers left behind by an older generated
-	// file: tamp's compose file is rewritten on every start, and a service
-	// that has since been dropped is otherwise never cleaned up.
+	// --remove-orphans cleans up services dropped from the regenerated file.
 	args := []string{"down", "--remove-orphans"}
 	if removal == RemoveVolumes {
 		args = append(args, "--volumes")
@@ -52,10 +42,9 @@ func (d *Docker) ComposeDown(ctx context.Context, p ComposeProject, removal Remo
 	return d.compose(ctx, p, out, args...)
 }
 
-// compose runs the real `docker compose` v2 binary against the detected
-// endpoint. All state-changing orchestration goes through it and the
-// generated file, so what tamp does to an environment is exactly what the
-// user could do by hand in that directory.
+// compose shells out to the docker compose v2 binary. All state-changing
+// orchestration goes through it and the generated file, so tamp's actions
+// match what the user could do by hand.
 func (d *Docker) compose(ctx context.Context, p ComposeProject, out io.Writer, args ...string) error {
 	addr, _, err := d.connect()
 	if err != nil {
@@ -65,12 +54,10 @@ func (d *Docker) compose(ctx context.Context, p ComposeProject, out io.Writer, a
 	full := append([]string{"compose", "--project-name", p.Name, "--file", p.File}, args...)
 	cmd := exec.CommandContext(ctx, "docker", full...)
 	cmd.Dir = p.Dir
-	// Compose resolves the endpoint itself unless told; tamp tells it, so
-	// that the socket it acts on is the one tamp reported in doctor.
+	// Pin compose to the endpoint tamp detected, not whatever it would pick.
 	cmd.Env = append(os.Environ(), "DOCKER_HOST="+addr.Host)
 	if out != nil {
-		// Compose reports progress on stderr and results on stdout; tamp
-		// wants the whole narration in one place.
+		// Merge streams: compose puts progress on stderr, results on stdout.
 		cmd.Stdout, cmd.Stderr = out, out
 	}
 
@@ -80,9 +67,8 @@ func (d *Docker) compose(ctx context.Context, p ComposeProject, out io.Writer, a
 	return nil
 }
 
-// composeError separates "compose is not installed" from "compose ran and the
-// operation failed", because those are different exit codes and different
-// fixes.
+// composeError distinguishes a missing compose plugin from a failed
+// operation; they carry different exit codes and fixes.
 func composeError(args []string, err error) error {
 	if errors.Is(err, exec.ErrNotFound) {
 		return exitcode.New(exitcode.CodeEngineUnavailable,

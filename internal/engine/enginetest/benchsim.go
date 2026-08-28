@@ -11,50 +11,39 @@ import (
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// benchSim models the Frappe bench behind the recorded engine: which apps a
-// fetch produced, which sites exist, and what each site has installed. It is
-// a module of its own so that the recording half of the Fake and the bench
-// model change for different reasons — the recorder tracks the engine's
-// interface, this tracks tamp's bench choreography.
-//
-// A recording alone would not do: tamp fetches an app or creates a site and
-// then reads the bench back to find out what it now holds, so a fake that
-// forgot the write would let a broken round trip pass.
+// benchSim models the Frappe bench behind the fake: apps, sites, per-site
+// installs. Separate from the recorder because tamp writes to the bench and
+// then reads it back — recording alone would let a broken round trip pass.
 type benchSim struct {
 	sites    map[string]bool
 	apps     map[string]bool
 	siteApps map[string][]string
 
-	// aliases, put and drop reach back into the Fake: the alias table is the
-	// test's to script, and site configs land in the same container
-	// filesystem every other write does.
+	// Hooks back into the Fake: the alias table is the test's to script,
+	// and site configs land in the shared container filesystem.
 	aliases func() map[string]string
 	put     func(path, body string)
 	drop    func(path string)
 }
 
-// reset is what removing the volumes does to a bench: everything it held
-// lived in them.
+// reset models volume removal: everything the bench held lived there.
 func (s *benchSim) reset() {
 	s.sites, s.apps, s.siteApps = nil, nil, nil
 }
 
-// answer keeps the bench model in step with the command tamp just ran, and
-// answers the ones that ask. Arguments travel beside the script rather than
-// inside it, which is what makes the hostname and the app name readable at a
-// fixed position.
+// answer updates the model for the command just run and replies to the ones
+// that ask. Script arguments sit beside the script at fixed positions.
 func (s *benchSim) answer(exec Exec, stdout io.Writer) error {
 	if strings.Contains(exec.Line(), "bench init") {
 		s.put(frappe.CommonSiteConfigPath, BenchInitConfig)
-		// bench init clones frappe, which is what makes a second run of it
-		// against the same bench a different code path.
+		// bench init clones frappe; a second run against the same bench is a
+		// different code path.
 		s.addApp(frappe.FrappeApp)
 		return nil
 	}
 
-	// The probe tamp uses to decide whether a bench already has a source
-	// tree. It has to answer no for a bench the fake has never initialized,
-	// or every create would take the rebuild path.
+	// The source-tree probe must answer no for a never-initialized bench, or
+	// every create would take the rebuild path.
 	if strings.Contains(exec.Line(), `test -d "`+frappe.AppsDir) {
 		if !s.apps[scriptArg(exec.Cmd, 0)] {
 			return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 1}
@@ -69,7 +58,7 @@ func (s *benchSim) answer(exec Exec, stdout io.Writer) error {
 		host := siteArg(exec.Cmd, "drop-site")
 		delete(s.sites, host)
 		s.drop(frappe.SiteConfigPath(host))
-	// The listing script names a site by the config file every site has.
+	// The listing script identifies sites by the config file every site has.
 	case strings.Contains(exec.Line(), "site_config.json"):
 		for _, host := range s.sitesSorted() {
 			fmt.Fprintln(stdout, host)
@@ -87,8 +76,7 @@ func (s *benchSim) answer(exec Exec, stdout io.Writer) error {
 		}
 		s.siteApps[host] = append(s.siteApps[host], app)
 	case strings.Contains(exec.Line(), "list-apps"):
-		// Every Frappe site has frappe installed; anything else got there
-		// through an install-app above.
+		// Every site has frappe; the rest arrived via install-app.
 		fmt.Fprintln(stdout, "frappe")
 		for _, app := range s.siteApps[siteArg(exec.Cmd, "--site")] {
 			fmt.Fprintln(stdout, app)
@@ -119,19 +107,18 @@ func (s *benchSim) addSite(host string) {
 		s.sites = map[string]bool{}
 	}
 	s.sites[host] = true
-	// Creating a site writes its own config, which is where the database name
-	// Frappe invented is recorded — and the only place anything can read it.
+	// Site creation writes the site config — the only place the invented
+	// db_name can be read from.
 	s.put(frappe.SiteConfigPath(host), fmt.Sprintf(`{"db_name": %q}`, "_"+strings.ReplaceAll(host, ".", "_")))
 }
 
 func (s *benchSim) appsSorted() []string  { return slices.Sorted(maps.Keys(s.apps)) }
 func (s *benchSim) sitesSorted() []string { return slices.Sorted(maps.Keys(s.sites)) }
 
-// firstScriptArg is where the arguments tamp passes beside a script start:
-// bash -c <script> tamp <arg>...
+// Script args start after: bash -c <script> tamp.
 const firstScriptArg = 4
 
-// scriptArg is the nth argument tamp passed beside a script it ran.
+// scriptArg is the nth argument passed beside a script.
 func scriptArg(cmd []string, n int) string {
 	if len(cmd) > firstScriptArg+n {
 		return cmd[firstScriptArg+n]
@@ -139,13 +126,9 @@ func scriptArg(cmd []string, n int) string {
 	return ""
 }
 
-// siteArg is the hostname a bench site command was pointed at.
-//
-// It reads both spellings the fake sees. tamp's own scripts carry the
-// hostname beside the script as its first argument; a user reaching the same
-// bench command through 'tamp exec' types it straight after the subcommand,
-// and a fake that only understood the first would make a site created that way
-// invisible to the code that goes looking for it.
+// siteArg is the hostname a bench site command targets. Both spellings
+// occur: tamp's scripts pass it as the first script argument, while a user
+// via 'tamp exec' types it right after the subcommand.
 func siteArg(cmd []string, subcommand string) string {
 	if len(cmd) > 0 && cmd[0] == "bash" {
 		return scriptArg(cmd, 0)
@@ -158,8 +141,8 @@ func siteArg(cmd []string, subcommand string) string {
 	return ""
 }
 
-// appNameFromSource is the app directory a clone URL produces, which is the
-// last segment of its path.
+// appNameFromSource is the directory a clone URL produces: the last path
+// segment.
 func appNameFromSource(source string) string {
 	source = strings.TrimSuffix(strings.TrimSuffix(source, "/"), ".git")
 	if i := strings.LastIndexAny(source, "/:"); i >= 0 {

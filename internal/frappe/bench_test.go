@@ -9,8 +9,6 @@ import (
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// bench builds the bench under test against a healthy engine fake, wired to
-// the container names a real environment's compose project produces.
 func bench(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	t.Helper()
 	fake := enginetest.Running()
@@ -27,8 +25,8 @@ func bench(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	}, fake
 }
 
-// initialized is a bench that has been through bench init, which is the only
-// state Configure is ever called in: it merges into the config bench wrote.
+// initialized has been through bench init — the only state Configure runs in,
+// since it merges into the config init wrote.
 func initialized(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	t.Helper()
 	b, fake := bench(t)
@@ -38,19 +36,14 @@ func initialized(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	return b, fake
 }
 
-// --- the process file ------------------------------------------------------
-
-// Redis runs in containers of its own, so a bench that started its own would
-// be a second server nothing reads and a first one nothing writes to.
+// Redis runs in containers of its own; a bench-started one would fight over
+// the same dataset.
 func TestTheProcessFileStartsNoRedis(t *testing.T) {
 	if strings.Contains(frappe.Procfile(), "redis") {
 		t.Errorf("the Procfile starts a redis:\n%s", frappe.Procfile())
 	}
 }
 
-// The five processes a dev bench is: serve, sockets, assets, scheduler,
-// worker. Dropping any one of them breaks something the user will blame on
-// Frappe.
 func TestTheProcessFileRunsEveryBenchProcess(t *testing.T) {
 	for _, process := range []string{"web:", "socketio:", "watch:", "schedule:", "worker:"} {
 		if !strings.Contains(frappe.Procfile(), process) {
@@ -62,10 +55,6 @@ func TestTheProcessFileRunsEveryBenchProcess(t *testing.T) {
 	}
 }
 
-// --- the shared site config ------------------------------------------------
-
-// The keys that make a bench talk to this environment's containers rather than
-// to the localhost services a native bench would expect.
 func TestConfiguringPointsTheBenchAtTheEnvironmentsContainers(t *testing.T) {
 	b, fake := initialized(t)
 
@@ -78,8 +67,7 @@ func TestConfiguringPointsTheBenchAtTheEnvironmentsContainers(t *testing.T) {
 		"db_host":     "mariadb",
 		"redis_cache": "redis://redis-cache:6379",
 		"redis_queue": "redis://redis-queue:6379",
-		// From v15 the socketio server shares the queue instance; pointing
-		// this at a third address would start a server nothing reads.
+		// From v15 socketio shares the queue Redis.
 		"redis_socketio": "redis://redis-queue:6379",
 		"mail_server":    "mailpit",
 	}
@@ -90,8 +78,6 @@ func TestConfiguringPointsTheBenchAtTheEnvironmentsContainers(t *testing.T) {
 	}
 }
 
-// A development environment says so: this is what makes Frappe reload changed
-// Python and rebuild changed assets, which is the whole point of tamp.
 func TestConfiguringPutsTheBenchInDeveloperMode(t *testing.T) {
 	b, fake := initialized(t)
 
@@ -114,10 +100,8 @@ func TestConfiguringPutsTheBenchInDeveloperMode(t *testing.T) {
 	}
 }
 
-// Pointing the bench at the catcher is not enough on its own. Frappe builds an
-// outgoing account out of these keys when a site has none of its own, and then
-// looks up an SMTP password nobody ever set — so without the switch below every
-// mail a site sends fails on a credential the catcher does not want.
+// Without the auth switch, Frappe builds an outgoing account from these keys
+// and then fails every send on an SMTP password nobody set.
 func TestConfiguringLetsTheBenchSendToACatcherThatWantsNoPassword(t *testing.T) {
 	b, fake := initialized(t)
 
@@ -130,8 +114,7 @@ func TestConfiguringLetsTheBenchSendToACatcherThatWantsNoPassword(t *testing.T) 
 		t.Errorf("disable_mail_smtp_authentication = %v, so every send asks for a password that does not exist",
 			config["disable_mail_smtp_authentication"])
 	}
-	// use_tls is the key Frappe reads for an outgoing account. use_ssl is the
-	// incoming one, and tamp configures no incoming account at all.
+	// use_tls is the outgoing key; use_ssl belongs to incoming.
 	if config["use_tls"] != float64(0) {
 		t.Errorf("use_tls = %v, want 0", config["use_tls"])
 	}
@@ -140,8 +123,6 @@ func TestConfiguringLetsTheBenchSendToACatcherThatWantsNoPassword(t *testing.T) 
 	}
 }
 
-// bench init writes things tamp has no opinion about, and tamp adding its
-// own keys must not cost the bench them.
 func TestConfiguringKeepsTheKeysBenchInitWrote(t *testing.T) {
 	b, fake := initialized(t)
 
@@ -164,8 +145,7 @@ func TestConfiguringKeepsTheKeysBenchInitWrote(t *testing.T) {
 	}
 }
 
-// The keys tamp deliberately overwrites, which is why they are excluded from
-// the check above.
+// Keys tamp deliberately overwrites.
 var tampOwns = map[string]struct{}{"db_host": {}, "redis_cache": {}}
 
 func siteConfig(t *testing.T, fake *enginetest.Fake) map[string]any {
@@ -181,11 +161,6 @@ func siteConfig(t *testing.T, fake *enginetest.Fake) map[string]any {
 	return config
 }
 
-// --- initializing ----------------------------------------------------------
-
-// The flags that make bench init produce a bench tamp can run: no Redis
-// config and no Procfile, because tamp owns both, and the branch and Python
-// its version matrix chose.
 func TestInitLeavesRedisAndTheProcessFileToTamp(t *testing.T) {
 	b, fake := bench(t)
 
@@ -199,8 +174,7 @@ func TestInitLeavesRedisAndTheProcessFileToTamp(t *testing.T) {
 			t.Errorf("bench init was run without %s:\n%s", flag, init.Line())
 		}
 	}
-	// The interpreter is whichever one uv installed, resolved in the
-	// container: tamp pins a version, and only uv knows the path.
+	// Only uv knows where the pinned interpreter landed.
 	if !strings.Contains(init.Line(), "uv python find") {
 		t.Errorf("bench init did not take the Python tamp provisioned:\n%s", init.Line())
 	}
@@ -209,9 +183,8 @@ func TestInitLeavesRedisAndTheProcessFileToTamp(t *testing.T) {
 	}
 }
 
-// The bench directory already exists — tamp's volumes made it — and without
-// --ignore-exist bench init reports that and returns success without doing
-// anything, which would leave tamp with an empty bench it believes in.
+// The volumes pre-create the bench directory; without --ignore-exist bench
+// init exits successfully having done nothing.
 func TestInitIsToldTheBenchDirectoryAlreadyExists(t *testing.T) {
 	b, fake := bench(t)
 
@@ -224,11 +197,8 @@ func TestInitIsToldTheBenchDirectoryAlreadyExists(t *testing.T) {
 	}
 }
 
-// --- provisioning ----------------------------------------------------------
-
-// Docker creates a named volume's mount point owned by root, and the bench
-// runs as someone else. Without this first pass nothing tamp does afterwards
-// can write a single file.
+// Docker creates volume mount points root-owned; the bench user cannot write
+// anywhere until they are chowned.
 func TestProvisioningMakesTheVolumeMountPointsWritableFirst(t *testing.T) {
 	b, fake := bench(t)
 
@@ -247,11 +217,7 @@ func TestProvisioningMakesTheVolumeMountPointsWritableFirst(t *testing.T) {
 	}
 }
 
-// --- waiting ---------------------------------------------------------------
-
-// "Created" has to mean "serving". honcho starting is not the same thing: the
-// first request imports every app on the bench, and a create that returned
-// before that would hand back an environment that is not ready.
+// honcho starting is not serving: the first request imports every app.
 func TestWaitingPollsTheWebServerInsideTheContainer(t *testing.T) {
 	b, fake := bench(t)
 
@@ -263,8 +229,7 @@ func TestWaitingPollsTheWebServerInsideTheContainer(t *testing.T) {
 	if !strings.Contains(wait.Line(), "curl") {
 		t.Errorf("tamp did not ask the web server for anything:\n%s", wait.Line())
 	}
-	// Inside the container, because in router mode nothing publishes 8000 to
-	// the host — there is nowhere else to ask from.
+	// In router mode nothing publishes 8000 to the host.
 	if !strings.Contains(wait.Line(), "127.0.0.1") {
 		t.Errorf("tamp polled something other than the container itself:\n%s", wait.Line())
 	}
@@ -281,12 +246,7 @@ func lastExec(t *testing.T, fake *enginetest.Fake) enginetest.Exec {
 	return fake.Execs[len(fake.Execs)-1]
 }
 
-// --- handing git to the host -----------------------------------------------
-
-// A repository cloned in the container and read on Windows is misread three
-// ways, all of them tamp's doing. Each setting answers one, and the three of
-// them together are the difference between a clean host-side git status and a
-// tree that looks modified everywhere it is not.
+// Each setting answers one way a container-made clone misreads on Windows.
 func TestGitIsSettledForAHostThatCannotDescribeWhatLinuxWrote(t *testing.T) {
 	b, fake := bench(t)
 
@@ -295,14 +255,11 @@ func TestGitIsSettledForAHostThatCannotDescribeWhatLinuxWrote(t *testing.T) {
 	}
 
 	settings := map[string]string{
-		// NTFS cannot store the executable bit, so comparing it calls every
-		// such file modified with nothing changed in it.
+		// NTFS has no executable bit.
 		"core.fileMode false": "the executable bit",
-		// Git for Windows rewrites line endings on checkout, which would put
-		// CRLF into files the Linux container is about to execute.
+		// Checkout conversion would put CRLF into files the container executes.
 		"core.autocrlf false": "line endings",
-		// Frappe's own paths go past the 260 characters Windows allows, and
-		// git reports what it cannot read as changed.
+		// Frappe paths exceed Windows' 260-character default.
 		"core.longpaths true": "long paths",
 	}
 	for setting, what := range settings {
@@ -312,9 +269,7 @@ func TestGitIsSettledForAHostThatCannotDescribeWhatLinuxWrote(t *testing.T) {
 	}
 }
 
-// It runs over the apps directory rather than one named app, because tamp
-// does not know which repositories are there: one arrived with bench init and
-// the rest were fetched, some of them through the exec bridge.
+// tamp cannot know which repos are there — some arrive through the exec bridge.
 func TestGitIsSettledForEveryAppOnTheBench(t *testing.T) {
 	b, fake := bench(t)
 

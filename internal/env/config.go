@@ -13,23 +13,19 @@ import (
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
-// ConfigFile is the marker that makes a directory an environment. Every
-// command that takes an optional <env> finds it by walking up from the cwd,
-// the way git finds .git.
+// ConfigFile marks a directory as an environment; commands find it by walking
+// up from the cwd, like git finds .git.
 const ConfigFile = "tamp.toml"
 
-// SchemaVersion is the tamp.toml schema tamp writes and understands.
-// It is a public contract from the first release: a file tamp cannot read is
-// a tamp that needs upgrading, never a file tamp quietly reinterprets.
+// SchemaVersion is the tamp.toml schema this build reads and writes. A
+// mismatch is an error to upgrade past, never a file to reinterpret.
 const SchemaVersion = 1
 
-// ProfileDev selects the template pack the environment is generated from.
-// Only "dev" is valid today; "prod" is reserved and rejected until it exists.
+// ProfileDev is the only profile tamp v1 accepts; "prod" is reserved.
 const ProfileDev = "dev"
 
-// configHeader opens every generated tamp.toml. The second line is the whole
-// of that rule in one sentence, printed where the person about to hand-edit
-// compose.yaml will actually read it.
+// configHeader warns hand-editors that the generated files are rewritten from
+// this one.
 const configHeader = `# tamp environment. This file is the source of truth.
 # compose.yaml and the other generated files are rewritten from it on every
 # 'tamp start' — edit this, not them.
@@ -49,11 +45,11 @@ type Config struct {
 	Ports     PortsSection  `toml:"ports"`
 }
 
-// FrappeSection is the bench's Frappe release and the apps fetched onto it.
+// FrappeSection is the bench's Frappe release and its apps.
 type FrappeSection struct {
 	Version FrappeVersion `toml:"version"`
-	// Apps are fetched onto the bench, not installed to any site. Branch
-	// is empty when the repo's default branch was taken.
+	// Apps are fetched onto the bench, not installed to any site. An empty
+	// Branch means the repo's default branch.
 	Apps []App `toml:"apps"`
 }
 
@@ -64,9 +60,8 @@ type App struct {
 	Branch string `toml:"branch,omitempty"`
 }
 
-// EngineSection records which container engine the environment was built for.
-// Docker is the only one; the field exists so a future engine is a
-// migration rather than a guess.
+// EngineSection exists so a future engine is a migration rather than a guess;
+// Docker is the only kind today.
 type EngineSection struct {
 	Kind string `toml:"kind"`
 }
@@ -81,17 +76,14 @@ type RouterSection struct {
 	Mode string `toml:"mode"`
 }
 
-// PortsSection holds the only host port an environment publishes: MariaDB, the
-// deliberate exception to hostname-only access, because database GUI clients
-// need a real TCP port.
+// PortsSection holds the MariaDB host port — the one port an environment
+// publishes, because database GUI clients need real TCP.
 type PortsSection struct {
 	DB int `toml:"db"`
 }
 
-// EngineDocker is the only supported [engine].kind.
 const EngineDocker = "docker"
 
-// NewConfig builds the tamp.toml a fresh environment starts life with.
 func NewConfig(name Name, version FrappeVersion, apps []App, tc Toolchain, dbPort int) *Config {
 	if apps == nil {
 		apps = []App{}
@@ -109,14 +101,11 @@ func NewConfig(name Name, version FrappeVersion, apps []App, tc Toolchain, dbPor
 	}
 }
 
-// ConfigPath is the tamp.toml inside an environment directory.
 func ConfigPath(dir string) string { return filepath.Join(dir, ConfigFile) }
 
-// LoadConfig reads and validates an environment's tamp.toml.
-//
-// The returned warnings are keys tamp did not recognise. They are handed back
-// rather than printed because this package has no terminal: the caller decides
-// where a warning goes, which is what keeps every command testable.
+// LoadConfig reads and validates an environment's tamp.toml. warnings are
+// unrecognised keys, returned rather than printed — this package has no
+// terminal, and the caller decides where they go.
 func LoadConfig(path string) (cfg *Config, warnings []string, err error) {
 	cfg = &Config{}
 	md, err := toml.DecodeFile(path, cfg)
@@ -131,8 +120,8 @@ func LoadConfig(path string) (cfg *Config, warnings []string, err error) {
 			"fix the file's syntax, or delete the environment and create it again")
 	}
 
-	// The schema check comes before every other one: a file from a newer tamp
-	// may use keys this build would otherwise reject as invalid values.
+	// Checked first: a newer schema may use keys this build would misread as
+	// invalid values.
 	if cfg.Schema != SchemaVersion {
 		return nil, nil, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s has schema %d, and this tamp understands schema %d", path, cfg.Schema, SchemaVersion),
@@ -180,13 +169,9 @@ func (c *Config) validate(path string) error {
 	return nil
 }
 
-// Save writes tamp.toml.
-//
-// It encodes only the fields tamp owns, so it is called where there is
-// nothing to lose: at create, and at re-adoption of a directory whose config
-// tamp is regenerating anyway. Rewriting a user's existing file in place —
-// which has to preserve their unknown keys — is a separate job, and this is
-// deliberately not it.
+// Save writes tamp.toml. It encodes only the fields tamp owns — unknown keys
+// are lost — so call it only where nothing needs preserving: create, and
+// re-adoption of a config tamp is regenerating anyway.
 func (c *Config) Save(path string) error {
 	var buf strings.Builder
 	buf.WriteString(configHeader)

@@ -12,9 +12,7 @@ import (
 	"testing"
 )
 
-// The pin is tamp's whole supply chain for uv: a version with no checksum
-// beside it, or a checksum that is not a SHA-256, is a download nothing
-// actually verifies.
+// A missing or malformed checksum would leave the download unverified.
 func TestEverySupportedArchitectureHasAPinnedChecksum(t *testing.T) {
 	for _, arch := range []string{"x86_64", "aarch64", "arm64"} {
 		target, err := uvTarget(arch)
@@ -31,8 +29,6 @@ func TestEverySupportedArchitectureHasAPinnedChecksum(t *testing.T) {
 	}
 }
 
-// A container architecture tamp has no build for has to say so, rather than
-// download something that will not run.
 func TestAnUnknownArchitectureIsRefused(t *testing.T) {
 	_, err := uvTarget("riscv64")
 	if err == nil {
@@ -43,8 +39,6 @@ func TestAnUnknownArchitectureIsRefused(t *testing.T) {
 	}
 }
 
-// The point of pinning: what comes off the network is used only if it is
-// exactly the bytes tamp was built against.
 func TestADownloadIsUsedOnlyWhenItMatchesThePinnedChecksum(t *testing.T) {
 	release := uvTarball(t, "uv-x86_64-unknown-linux-gnu", "#!/uv\n")
 	digest := sha256.Sum256(release)
@@ -72,7 +66,6 @@ func TestADownloadIsUsedOnlyWhenItMatchesThePinnedChecksum(t *testing.T) {
 	})
 }
 
-// The release carries uvx alongside uv, and only one of them is tamp's.
 func TestOnlyTheUVBinaryIsTakenFromTheRelease(t *testing.T) {
 	release := uvTarball(t, "uv-x86_64-unknown-linux-gnu", "the real uv")
 	body, err := extractUV(release, "uv.tar.gz")
@@ -84,8 +77,7 @@ func TestOnlyTheUVBinaryIsTakenFromTheRelease(t *testing.T) {
 	}
 }
 
-// uvTarball builds a stand-in for a uv release: the directory, uvx, and uv, in
-// the order the real one has them.
+// uvTarball mimics a real release: the directory, then uvx, then uv.
 func uvTarball(t *testing.T, dir, uv string) []byte {
 	t.Helper()
 
@@ -116,8 +108,7 @@ func uvTarball(t *testing.T, dir, uv string) []byte {
 	return buf.Bytes()
 }
 
-// serveRelease stands in for the release host, so the test never reaches the
-// network. It returns the URL of the tarball it is serving.
+// serveRelease keeps the test off the network.
 func serveRelease(t *testing.T, body []byte) string {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -1,10 +1,7 @@
-// Package env is tamp's environment model: the tamp.toml on disk, the global
-// registry that indexes every environment on the machine, the names tamp
-// gives Docker resources, and the lifecycle operations built on top of them.
-//
-// Nothing here touches Docker directly — the engine is passed in — so the
-// whole environment lifecycle is exercised in tests against a temp HOME and a
-// recording fake.
+// Package env models tamp environments: tamp.toml on disk, the machine-global
+// registry, the Docker resource names, and the lifecycle operations over
+// them. The engine is injected — nothing here touches Docker directly — so
+// the whole lifecycle runs in tests against a temp HOME and a recording fake.
 package env
 
 import (
@@ -22,24 +19,18 @@ import (
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-// Manager performs tamp's environment lifecycle operations.
-//
-// It holds the four things every one of them needs — the machine's tamp home,
-// the directory the user ran tamp in, the engine, and somewhere to narrate to
-// — so that cmd/ stays a translation from flags to one call, and so that the
-// whole lifecycle runs in a test against a temp home and the recording fake.
+// Manager runs the lifecycle operations, holding what all of them need so
+// cmd/ stays a translation from flags to one call.
 type Manager struct {
 	Home   string
 	Cwd    string
 	Engine engine.Engine
-	// Sync is the agent that mirrors an environment's source to the host. It
-	// is tamp's second external process after the engine, and so its second
-	// seam: nothing here runs Mutagen itself.
+	// Sync mirrors an environment's source to the host — tamp's second
+	// external-process seam after the engine.
 	Sync syncer.Mutagen
 	Out  *ui.Printer
 }
 
-// NewManager resolves the machine-global paths a lifecycle operation needs.
 func NewManager(eng engine.Engine, sync syncer.Mutagen, out *ui.Printer) (*Manager, error) {
 	home, err := Home()
 	if err != nil {
@@ -54,8 +45,6 @@ func NewManager(eng engine.Engine, sync syncer.Mutagen, out *ui.Printer) (*Manag
 	return &Manager{Home: home, Cwd: cwd, Engine: eng, Sync: sync, Out: out}, nil
 }
 
-// resolve finds the environment a command was pointed at, and reports anything
-// noticed while reading its config.
 func (m *Manager) resolve(name string) (*Environment, error) {
 	e, err := Resolve(m.Home, m.Cwd, name)
 	if err != nil {
@@ -67,7 +56,6 @@ func (m *Manager) resolve(name string) (*Environment, error) {
 	return e, nil
 }
 
-// project describes an environment to the compose runner.
 func (e *Environment) project() engine.ComposeProject {
 	return engine.ComposeProject{
 		Name: e.Resources.Project(),
@@ -76,7 +64,6 @@ func (e *Environment) project() engine.ComposeProject {
 	}
 }
 
-// bench addresses the environment's bench through its container.
 func (e *Environment) bench(eng engine.Engine, out io.Writer) *frappe.Bench {
 	return &frappe.Bench{
 		Engine:    eng,
@@ -84,8 +71,7 @@ func (e *Environment) bench(eng engine.Engine, out io.Writer) *frappe.Bench {
 		Branch:    string(e.Config.Frappe.Version),
 		Python:    e.Config.Toolchain.Python,
 		Node:      e.Config.Toolchain.Node,
-		// Every other container answers to its service name on the
-		// environment's own network, so these are what the bench is told.
+		// Peers answer to their service names on the environment's network.
 		DBHost:     MariaDBService,
 		RedisCache: RedisCacheService,
 		RedisQueue: RedisQueueService,
@@ -94,13 +80,10 @@ func (e *Environment) bench(eng engine.Engine, out io.Writer) *frappe.Bench {
 	}
 }
 
-// SharedVolumes are the volumes every environment on this machine has in
-// common: the toolchain, and the two package caches.
-//
-// The generated compose file declares them external, which is what stops
-// `tamp rm --volumes` on one environment from emptying them for all the
-// others. External volumes are nobody's to create, so tamp creates them
-// before it brings anything up.
+// SharedVolumes are common to every environment: the toolchain and the two
+// package caches. The compose file declares them external so `tamp rm
+// --volumes` on one environment cannot empty them for the rest — which means
+// tamp must create them itself.
 func SharedVolumes() []string {
 	return []string{toolchain.Volume, frappe.PipCacheVolume, frappe.YarnCacheVolume}
 }
@@ -114,13 +97,8 @@ func (m *Manager) ensureSharedVolumes(ctx context.Context) error {
 	return nil
 }
 
-// requireRunning refuses an operation that needs the bench container up, in
-// tamp's own words rather than in whatever the engine would have said several
-// steps later.
-//
-// The bench container is the one every such operation happens in, so it is the
-// one that has to be up: an environment missing something else is still worth
-// a shell. because completes the sentence "<env> is not running, ...".
+// requireRunning refuses in tamp's own words rather than whatever the engine
+// would say steps later. because completes "<env> is not running, ...".
 func (m *Manager) requireRunning(ctx context.Context, e *Environment, because string) error {
 	running, err := m.benchRunning(ctx, e)
 	if err != nil {
@@ -134,11 +112,8 @@ func (m *Manager) requireRunning(ctx context.Context, e *Environment, because st
 	return nil
 }
 
-// benchRunning asks the engine whether an environment's bench container is up.
-//
-// It is separate from requireRunning because not every caller refuses: listing
-// an environment's sites falls back to what tamp last recorded rather than
-// failing, which is the reason that record is kept.
+// benchRunning is separate from requireRunning because not every caller
+// refuses: some fall back to what tamp last recorded.
 func (m *Manager) benchRunning(ctx context.Context, e *Environment) (bool, error) {
 	if _, err := m.Engine.Ping(ctx); err != nil {
 		return false, err
@@ -154,19 +129,16 @@ func (m *Manager) benchRunning(ctx context.Context, e *Environment) (bool, error
 type State string
 
 const (
-	// StateRunning — every container is up.
 	StateRunning State = "running"
-	// StateStopped — the environment has no containers, or none are running.
+	// StateStopped — no containers, or none running.
 	StateStopped State = "stopped"
-	// StateDegraded — some containers are running and some are not. It is a
-	// state of its own rather than a rounding of the other two because it is
-	// the one that needs looking at.
+	// StateDegraded — some running, some not: the state that needs looking at,
+	// so it is not rounded to either of the others.
 	StateDegraded State = "degraded"
-	// StateUnknown — tamp could not ask, because the engine is unreachable.
+	// StateUnknown — the engine was unreachable.
 	StateUnknown State = "unknown"
 )
 
-// stateOf reads an environment's containers and reduces them to one word.
 func stateOf(containers []engine.Container) State {
 	running := 0
 	for _, c := range containers {
@@ -176,8 +148,7 @@ func stateOf(containers []engine.Container) State {
 	}
 	switch running {
 	case 0:
-		// Also the answer for an environment with no containers at all, which
-		// is what a removed or never-created project looks like.
+		// No containers at all also reads as stopped.
 		return StateStopped
 	case len(containers):
 		return StateRunning
@@ -186,11 +157,9 @@ func stateOf(containers []engine.Container) State {
 	}
 }
 
-// Start brings an environment up, regenerating its generated files first.
-//
-// The regeneration is the point, not a detail: tamp.toml is the source
-// of truth, so every start reconciles the containers with it — including after
-// tamp itself was upgraded and the templates underneath changed.
+// Start brings an environment up, regenerating the generated files first —
+// tamp.toml is the source of truth on every start, including after a tamp
+// upgrade changed the templates.
 func (m *Manager) Start(ctx context.Context, name string) error {
 	e, err := m.resolve(name)
 	if err != nil {
@@ -200,11 +169,10 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 		return err
 	}
 
-	// The sync mode is settled before anything is written, because it decides
-	// what is written: a bind mount is a line in the compose file. And the
-	// regeneration below comes before the running check, not after it —
-	// tamp.toml is the source of truth on every start, so a hand-edited
-	// compose.yaml has to disappear whether or not the environment is up.
+	// The sync mode decides what is written (a bind mount is a compose line),
+	// so it is settled first; and regeneration precedes the running check so
+	// a hand-edited compose.yaml disappears whether or not the environment is
+	// up.
 	sync := m.syncMode(ctx, e.Config.Sync.Mode)
 
 	m.Out.Step(1, startSteps, "regenerating "+ComposeFile+" from "+ConfigFile)
@@ -216,10 +184,9 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	// Starting a running environment is a no-op for its containers, with a
-	// notice and exit 0: scripts and agents run start defensively, and that
-	// must not fail. The routing below still happens — the router is
-	// machine-global, and it may have been stopped since.
+	// Starting a running environment exits 0 with a notice — scripts run
+	// start defensively. The routing still happens: the router is
+	// machine-global and may have been stopped since.
 	running := stateOf(containers) == StateRunning
 
 	if running {
@@ -238,9 +205,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err := m.startSync(ctx, e, sync, m.Out.Stream()); err != nil {
 		return err
 	}
-	// Silently, and on every start: an app added through the exec bridge since
-	// the last one has a repository the host's git still misreads, and this is
-	// the same reconciliation the regenerated compose file is.
+	// Reconciles apps added through the exec bridge since the last start.
 	if err := m.handGitToHost(ctx, e, sync); err != nil {
 		return err
 	}
@@ -260,11 +225,8 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	return nil
 }
 
-// startSteps is how many numbered steps a start prints. It grows alongside
-// create's, as tamp learns to revive more of an environment.
 const startSteps = 4
 
-// regenerate rewrites the environment's generated files from tamp.toml.
 func (m *Manager) regenerate(e *Environment, sync syncer.Effective) error {
 	if err := EnsureDBRootPassword(e.Dir); err != nil {
 		return err
@@ -275,16 +237,15 @@ func (m *Manager) regenerate(e *Environment, sync syncer.Effective) error {
 	return e.Generate(sync)
 }
 
-// Stop stops an environment's containers. Volumes always survive it — there is
-// no flag on stop that destroys data, deliberately.
+// Stop stops the containers. Volumes always survive — there is deliberately
+// no flag on stop that destroys data.
 func (m *Manager) Stop(ctx context.Context, name string) error {
 	return m.stop(ctx, name, true)
 }
 
-// stop does the work for both Stop and Restart. final says whether stopping is
-// the whole of what the user asked for: mid-restart, "tamp start brings it
-// back" is a next step tamp is about to take itself, and printing it there
-// would read as the end of an operation that has not finished.
+// stop serves Stop and Restart. final gates the closing hint: mid-restart,
+// "tamp start brings it back" would read as the end of an unfinished
+// operation.
 func (m *Manager) stop(ctx context.Context, name string, final bool) error {
 	e, err := m.resolve(name)
 	if err != nil {
@@ -303,9 +264,8 @@ func (m *Manager) stop(ctx context.Context, name string, final bool) error {
 		return nil
 	}
 
-	// Paused before the containers go, not after: the far end of the session
-	// is a container, and Mutagen would spend the teardown reporting that it
-	// had gone away.
+	// Paused before the containers go, or Mutagen spends the teardown
+	// reporting its far end vanished.
 	m.pauseSync(ctx, e)
 
 	if err := m.Engine.ComposeStop(ctx, e.project(), m.Out.Stream()); err != nil {
@@ -318,8 +278,8 @@ func (m *Manager) stop(ctx context.Context, name string, final bool) error {
 	return nil
 }
 
-// Restart is stop then start. It is spelled out rather than delegating so that
-// an environment which is already stopped still starts.
+// Restart is spelled out rather than delegating so an already-stopped
+// environment still starts.
 func (m *Manager) Restart(ctx context.Context, name string) error {
 	if err := m.stop(ctx, name, false); err != nil {
 		return err

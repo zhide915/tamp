@@ -14,44 +14,32 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// Terminal is the console tamp itself is attached to, when it is attached to
-// one.
-//
-// It is an interface because driving a real console is a process-level concern
-// with no place below cmd/: everything here only ever asks it how big it is
-// and to stand aside for the duration of a command.
+// Terminal is the console tamp is attached to. An interface because driving a
+// real console belongs to cmd/, not here.
 type Terminal interface {
 	// Size reports the console's dimensions in character cells.
 	Size() (width, height uint)
-	// Raw switches the console into raw mode — no local echo, no line
-	// buffering, no signal keys — so that every keystroke reaches the command
-	// rather than the shell tamp was started from. The returned function puts
-	// the console back the way it was.
+	// Raw switches the console into raw mode so every keystroke reaches the
+	// command; the returned function restores it.
 	Raw() (restore func(), err error)
 }
 
 // ExecRequest is one command to run inside an environment's bench.
 type ExecRequest struct {
 	Name string
-	// Cmd is the command line, exactly as the user wrote it after --.
+	// Cmd is the command line exactly as written after --.
 	Cmd []string
-	// Raw drops every refusal, warning and hint below. It is the escape hatch
-	// for a caller who means what they typed.
-	Raw bool
-	// Stdin is the caller's own input, attached to the command.
+	// Raw skips advise: no refusals, no warnings.
+	Raw   bool
 	Stdin io.Reader
-	// Terminal is the console to hand the command, or nil when tamp is not
-	// attached to one — a pipe, a CI job, a test.
+	// Terminal is nil when tamp is not attached to a console — a pipe, CI, a
+	// test.
 	Terminal Terminal
 }
 
-// Exec runs a command inside the environment's bench container.
-//
-// It is the bridge an agent drives tamp through, so its contract is narrow
-// and unchanging: the command lands on the bench as the bench's own user, its
-// output is tamp's output, and its exit code is tamp's exit code. tamp
-// never starts a stopped environment to serve it — that would hide minutes of
-// containers coming up inside a command that promises to be boring.
+// Exec runs a command in the bench container as the bench user; its output
+// and exit code become tamp's. A stopped environment is never auto-started —
+// that would hide minutes of startup inside a command meant to be boring.
 func (m *Manager) Exec(ctx context.Context, req ExecRequest) error {
 	e, err := m.resolve(req.Name)
 	if err != nil {
@@ -73,8 +61,7 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) error {
 		WorkDir:   frappe.BenchDir,
 		User:      toolchain.User,
 		Stdin:     req.Stdin,
-		// The command's own output is the whole point of exec, so it goes to
-		// tamp's streams unchanged — --quiet has no business dropping it.
+		// The command's output is the point of exec — --quiet must not drop it.
 		Stdout: m.Out.Out,
 		Stderr: m.Out.Err,
 	}
@@ -87,18 +74,15 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) error {
 		if err != nil {
 			return err
 		}
-		// The console is back to normal before tamp prints anything of its
-		// own, including the error this call may return.
+		// Restore before tamp prints anything, including this call's error.
 		defer restore()
 	}
 
 	if err := m.Engine.Exec(ctx, exec); err != nil {
 		var exited *engine.ExitError
 		if errors.As(err, &exited) {
-			// The command's exit code is tamp's, whatever it is: a caller on
-			// the other side of the bridge branches on what it asked for, not
-			// on tamp. And the command has already said why on its own
-			// streams, so tamp adds nothing to them.
+			// Pass the exit code through unchanged; the command already said
+			// why on its own streams.
 			return exitcode.Reported(exitcode.Code(exited.Status))
 		}
 		return err
@@ -106,7 +90,6 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) error {
 	return nil
 }
 
-// isRunning reports whether one of the environment's services is up.
 func isRunning(containers []engine.Container, service string) bool {
 	for _, c := range containers {
 		if c.Service == service {
@@ -116,14 +99,9 @@ func isRunning(containers []engine.Container, service string) bool {
 	return false
 }
 
-// advise says what tamp has to say about a command before running it, and
-// returns an error for the ones it will not run at all.
-//
-// These rules are a courtesy rather than a sandbox: they read the command line
-// tamp was handed, so anything wrapped in a shell passes untouched. That is
-// the right trade for a bridge whose contract is to be boring — tamp catches
-// the mistakes that are easy to make by accident and otherwise gets out of the
-// way, and --raw removes even that.
+// advise warns about or refuses commands that fight tamp's model. It reads
+// only the literal command line — a courtesy, not a sandbox — and --raw skips
+// it entirely.
 func (m *Manager) advise(e *Environment, cmd []string) error {
 	apps := syncer.AppsDir(e.Dir)
 	switch sub := benchSubcommand(cmd); {
@@ -133,12 +111,9 @@ func (m *Manager) advise(e *Environment, cmd []string) error {
 			"use 'tamp restart' if they need reviving")
 
 	case sub == "update":
-		// A pull inside the container would write to the same .git the host is
-		// writing to, from the far side of the sync.
-		//
-		// The rebuild is one bash -c rather than three commands joined by &&,
-		// because && binds in the shell the user is typing at: written the
-		// other way, only the first of the three would reach the container.
+		// A container-side pull writes to the same .git the host is syncing.
+		// The hint is one bash -c so the && chain runs in the container rather
+		// than binding in the user's shell.
 		return exitcode.New(exitcode.CodeFailed,
 			"'bench update' is refused: git belongs to the host, and a container-side pull would fight it",
 			fmt.Sprintf(`pull in %s yourself, then run: tamp exec %s -- bash -c "bench setup requirements && bench build && bench migrate"`, apps, e.Name()))
@@ -146,22 +121,16 @@ func (m *Manager) advise(e *Environment, cmd []string) error {
 	case sub == "new-site":
 		m.Out.Warn("'tamp site new' creates the site and its route together — 'bench new-site' leaves the routing to you")
 
-	// Every git command, not only the ones that write: which files a git
-	// command touches is a question tamp would have to ask the container to
-	// answer, and a warning that is occasionally redundant beats one that
-	// misses the pull it exists to catch.
+	// All git commands, not only writers: telling which files git touches
+	// would mean asking the container.
 	case len(cmd) > 0 && cmd[0] == "git":
 		m.Out.Warn(fmt.Sprintf("the host owns git — run it in %s instead, so only one side of the sync ever writes to .git", apps))
 	}
 	return nil
 }
 
-// benchSubcommand names what a bench command line asks bench to do, or "" when
-// it is not a bench command at all.
-//
-// The subcommand is taken to be the word straight after bench, which is where
-// all four of the commands above put it. bench's own options follow their
-// subcommand rather than precede it.
+// benchSubcommand returns the word after "bench", or "" for a non-bench
+// command; bench's options follow their subcommand.
 func benchSubcommand(cmd []string) string {
 	if len(cmd) < 2 || cmd[0] != "bench" {
 		return ""

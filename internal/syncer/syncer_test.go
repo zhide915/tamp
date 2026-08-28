@@ -9,16 +9,9 @@ import (
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
-// "No sync session" is a mode rather than a failure, and which mode a machine
-// is in is decided here. These tests are about that decision and the two
-// warnings that come with it.
-
 func TestAutoIsABindMountOnLinuxAndASessionEverywhereElse(t *testing.T) {
 	cases := map[string]syncer.Effective{
-		// Native speed, working inotify: there is nothing for Mutagen to add.
-		"linux": syncer.UseBind,
-		// A bind-mounted host path is slow and delivers no file events, so
-		// the dev server never reloads — which is the whole reason to mirror.
+		"linux":   syncer.UseBind,
 		"windows": syncer.UseMutagen,
 		"darwin":  syncer.UseMutagen,
 	}
@@ -31,8 +24,6 @@ func TestAutoIsABindMountOnLinuxAndASessionEverywhereElse(t *testing.T) {
 	}
 }
 
-// A mode the user asked for is the mode they get, on every platform: bind is
-// the documented fallback on Windows, and off is a deliberate choice.
 func TestAModeThatIsNotAutoIsTakenAtItsWord(t *testing.T) {
 	for _, mode := range []syncer.Mode{syncer.ModeMutagen, syncer.ModeBind, syncer.ModeOff} {
 		for _, goos := range []string{"linux", "windows", "darwin"} {
@@ -59,8 +50,6 @@ func TestParseModeNamesTheOnesItAccepts(t *testing.T) {
 	}
 }
 
-// Both warnings describe a setup that works until it does not, which is why
-// they are warnings: where the environment goes is the user's call.
 func TestPathWarningsCatchTheTwoPlacesSyncGoesWrong(t *testing.T) {
 	cases := map[string]string{
 		filepath.Join("C:", "Users", "sam", "OneDrive", "work", "erp15"): "OneDrive",
@@ -84,9 +73,7 @@ func TestPathWarningsCatchTheTwoPlacesSyncGoesWrong(t *testing.T) {
 	}
 }
 
-// The virtualenv and the build outputs are the container's to make, and the
-// host's copies of them would be the wrong architecture anyway. .git is the
-// deliberate exception: it syncs, which is what lets git work on the host.
+// Syncing .git is what lets git run on the host.
 func TestGitIsSyncedAndBuildOutputIsNot(t *testing.T) {
 	for _, want := range []string{"env/", "node_modules/", "__pycache__/", "*.pyc"} {
 		if !slices.Contains(syncer.Ignores, want) {

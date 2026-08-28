@@ -8,17 +8,15 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// HomeDirName is tamp's machine-global state directory, under the user's home.
+// HomeDirName is tamp's machine-global state directory, under the user's
+// home.
 const HomeDirName = ".tamp"
 
-// StateDirName is the per-environment state directory. It holds what tamp
-// generated and the user should not commit: the create log, and later the
-// secrets and snapshots — which is why it heads the generated .gitignore.
+// StateDirName is the per-environment state directory: generated files the
+// user should not commit, which is why it heads the generated .gitignore.
 const StateDirName = ".tamp"
 
-// Home resolves ~/.tamp, creating it if it is not there yet. Every piece of
-// machine-global state — the registry, the lock, later the template and seed
-// caches — lives under it.
+// Home resolves ~/.tamp, creating it on first use.
 func Home() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {

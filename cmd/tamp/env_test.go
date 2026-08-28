@@ -13,7 +13,6 @@ import (
 	"github.com/zhide915/tamp/internal/router"
 )
 
-// path names a file inside the sandbox's working directory.
 func (c *cli) path(parts ...string) string {
 	return filepath.Join(append([]string{c.dir}, parts...)...)
 }
@@ -32,28 +31,22 @@ func (c *cli) exists(parts ...string) bool {
 	return err == nil
 }
 
-// create makes an environment and fails the test if it did not work, so that
-// tests about start, stop and rm are not also tests about create.
+// create fails the test on error, so callers are not also testing create.
 func (c *cli) create(t *testing.T, name string, args ...string) {
 	t.Helper()
 	r := c.run(t, append([]string{"create", name, "--frappe", "version-15"}, args...)...)
 	r.assertCode(t, exitcode.CodeOK)
 }
 
-// ops returns the compose operations tamp asked the engine for on some
-// environment, by method.
-//
-// The global router's own project is left out: it is not part of any
-// environment, and a test asking "what did create do to demo" would otherwise
-// have to subtract it every time. routerOps is where it is asked about.
+// ops returns the engine's compose operations by method, excluding the
+// global router's project (routerOps covers that).
 func (c *cli) ops(method string) []enginetest.Op {
 	return filterOps(c.engine.Ops, method, func(project string) bool {
 		return project != router.Project
 	})
 }
 
-// routerOps returns the compose operations tamp asked for on the global
-// router, by method.
+// routerOps returns the compose operations on the global router, by method.
 func (c *cli) routerOps(method string) []enginetest.Op {
 	return filterOps(c.engine.Ops, method, func(project string) bool {
 		return project == router.Project
@@ -97,7 +90,6 @@ func TestCreateWritesTheEnvironmentsFiles(t *testing.T) {
 	}
 }
 
-// The ways a name can be unusable, each exit 1 with something to do.
 func TestCreateRejectsUnusableNames(t *testing.T) {
 	cases := map[string]struct{ name, wantIn string }{
 		"not a DNS label": {"Demo_Env", "not a valid environment name"},
@@ -126,9 +118,7 @@ func TestCreateRejectsUnusableNames(t *testing.T) {
 
 		r.assertCode(t, exitcode.CodeFailed)
 		r.assertStderrContains(t, "already registered", "tamp rm demo")
-		// A create rejected before it built anything must leave nothing —
-		// not even the create.log, whose directory would be the whole trace
-		// of an environment that was never made.
+		// Rejected before building anything: not even create.log may remain.
 		assertEmptyDir(t, elsewhere)
 	})
 }
@@ -168,7 +158,6 @@ func TestCreateNeedsDockerAndSaysSoWithExitFour(t *testing.T) {
 
 // --- environment resolution -----------------------------------------------
 
-// Both routes failing is exit 3 — the environment does not exist.
 func TestNeitherRouteResolvingIsExitThree(t *testing.T) {
 	c := sandbox(t)
 
@@ -198,8 +187,6 @@ func TestStopThenStartBringsTheEnvironmentBack(t *testing.T) {
 	c.run(t, "list").assertStdoutContains(t, "running")
 }
 
-// Stopping an environment must never be a way to lose data, so no compose
-// operation on the stop path may ask for volume removal.
 func TestStopNeverRemovesVolumes(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -216,7 +203,7 @@ func TestStopNeverRemovesVolumes(t *testing.T) {
 	}
 }
 
-// tamp.toml is the source of truth, and every start proves it.
+// tamp.toml is the source of truth; hand-edits to generated files do not survive.
 func TestStartRegeneratesTheComposeFile(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -235,8 +222,7 @@ func TestStartRegeneratesTheComposeFile(t *testing.T) {
 	}
 }
 
-// Agents and scripts run start defensively; it must not fail on an environment
-// that is already up.
+// Scripts run start defensively; it must succeed on a running environment.
 func TestStartingARunningEnvironmentIsANoOp(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -251,9 +237,7 @@ func TestStartingARunningEnvironmentIsANoOp(t *testing.T) {
 	}
 }
 
-// "no-op" is about the containers, not about tamp.toml's authority: the rule is
-// the generated files are rewritten on every start, and an environment that
-// happens to be up is not an exception.
+// The no-op covers the containers only; generated files are still rewritten.
 func TestStartRegeneratesEvenWhenTheEnvironmentIsAlreadyRunning(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -288,7 +272,7 @@ func TestRestartStopsAndStartsAgain(t *testing.T) {
 
 // --- rm --------------------------------------------------------------------
 
-// The exit-5 contract: never act, and say exactly what --yes would do.
+// Exit 5: act on nothing, state exactly what --yes would do.
 func TestRemoveWithoutYesExplainsItselfAndChangesNothing(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -298,7 +282,6 @@ func TestRemoveWithoutYesExplainsItselfAndChangesNothing(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeConfirmationRequired)
 	r.assertStdoutContains(t, "would destroy", "containers", "network", "registry")
-	// The full-deletion recipe belongs here, where it is still runnable.
 	r.assertStdoutContains(t, "tamp rm demo --volumes --yes")
 	if len(c.engine.Ops) != 0 {
 		t.Errorf("rm without --yes touched the engine: %v", c.engine.Ops)
@@ -306,7 +289,6 @@ func TestRemoveWithoutYesExplainsItselfAndChangesNothing(t *testing.T) {
 	c.run(t, "list").assertStdoutContains(t, "demo")
 }
 
-// Volumes survive by default, and the directory always survives.
 func TestRemoveKeepsTheVolumesAndTheDirectory(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -349,8 +331,6 @@ func TestRemoveWithVolumesDestroysTheDataLayer(t *testing.T) {
 
 // --- coexistence -----------------------------------------------------------
 
-// Two environments on one machine share nothing: not a project name, not
-// a network, not a volume, and not the one host port either publishes.
 func TestTwoEnvironmentsShareNoResources(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -375,11 +355,8 @@ func TestTwoEnvironmentsShareNoResources(t *testing.T) {
 	r.assertStdoutContains(t, "demo", "other", "version-15", "version-16", "10.11", "11.8")
 }
 
-// The exception to the rule above, and the reason a second create is fast: the
-// toolchain and the package caches are one set of volumes for the whole
-// machine. They are shared on purpose, so both environments must name the same
-// ones — and must declare them external, which is what stops either
-// environment's teardown from destroying what the other still needs.
+// Toolchain and cache volumes are shared machine-wide on purpose, and must be
+// declared external so one environment's teardown cannot destroy them.
 func TestEveryEnvironmentSharesTheMachinesToolchainAndCaches(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -397,8 +374,7 @@ func TestEveryEnvironmentSharesTheMachinesToolchainAndCaches(t *testing.T) {
 		}
 	}
 
-	// Compose refuses to start a project whose external volumes are missing,
-	// so tamp has to have created them before it brought anything up.
+	// Compose refuses missing external volumes; tamp must create them first.
 	created := map[string]bool{}
 	for _, volume := range c.engine.Volumes {
 		created[volume] = true
@@ -410,12 +386,8 @@ func TestEveryEnvironmentSharesTheMachinesToolchainAndCaches(t *testing.T) {
 	}
 }
 
-// sharedResources reports the resource-name and published-port lines two
-// generated compose files have in common — the declarations that must differ.
-//
-// The machine-wide volumes are excluded: they are the one thing two
-// environments are supposed to have in common, and the test above is where
-// that is checked.
+// sharedResources returns resource-name and published-port lines both compose
+// files declare, ignoring the deliberately shared machine-wide volumes.
 func sharedResources(a, b string) []string {
 	machineWide := map[string]bool{}
 	for _, volume := range env.SharedVolumes() {
@@ -448,8 +420,7 @@ func sharedResources(a, b string) []string {
 
 // --- locking ---------------------------------------------------------------
 
-// Two tamp commands mutating machine-global state at once would otherwise
-// lose one of the writes; the loser has to say so rather than half-succeed.
+// Concurrent registry mutations would lose a write; the loser must fail loudly.
 func TestASecondRegistryMutationIsRefusedWhileTheFirstHoldsTheLock(t *testing.T) {
 	c := sandbox(t)
 	home, err := env.Home()
@@ -468,13 +439,9 @@ func TestASecondRegistryMutationIsRefusedWhileTheFirstHoldsTheLock(t *testing.T)
 	r.assertStderrContains(t, "another tamp command is running")
 }
 
-// --- rollback --------------------------------------------------------------
-
 // --- list -------------------------------------------------------------------
 
-// The registry is an index, not the truth: a directory the user deleted or
-// moved would otherwise stay in it forever, breaking every command that names
-// the environment.
+// The registry is an index; entries for deleted directories must not persist.
 func TestListPrunesEntriesWhoseDirectoryIsGone(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -492,7 +459,6 @@ func TestListPrunesEntriesWhoseDirectoryIsGone(t *testing.T) {
 		t.Errorf("list still shows the pruned environment:\n%s", r.stdout)
 	}
 
-	// Pruned means gone: a second list must not report it again.
 	again := c.run(t, "list")
 	if strings.Contains(again.stderr, "pruned") {
 		t.Errorf("the entry was not actually removed from the registry:\n%s", again.stderr)
@@ -510,8 +476,7 @@ func TestListReportsWhatEachEnvironmentIs(t *testing.T) {
 	r.assertStdoutContains(t, "demo", "running", "version-15", "3.11", "18", "10.11", c.path("demo"))
 }
 
-// list is mostly a report on tamp's own registry: a stopped Docker costs the
-// state column and nothing else.
+// list reads tamp's own registry; Docker down costs only the state column.
 func TestListStillWorksWithDockerDown(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

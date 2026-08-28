@@ -11,7 +11,7 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// TailAll asks for a container's whole log rather than the end of it.
+// TailAll requests the whole log rather than a trailing slice.
 const TailAll = 0
 
 func (d *Docker) Logs(ctx context.Context, req LogRequest) error {
@@ -37,8 +37,7 @@ func (d *Docker) Logs(ctx context.Context, req LogRequest) error {
 	}
 	defer func() { _ = stream.Close() }()
 
-	// Nothing tamp runs has a pseudo-terminal, so the daemon frames the two
-	// streams and they have to be taken apart again.
+	// tamp's containers have no TTY, so the daemon frames the two streams.
 	stdout, stderr := req.Stdout, req.Stderr
 	if stdout == nil {
 		stdout = io.Discard
@@ -47,8 +46,7 @@ func (d *Docker) Logs(ctx context.Context, req LogRequest) error {
 		stderr = io.Discard
 	}
 	if _, err := stdcopy.StdCopy(stdout, stderr, stream); err != nil {
-		// Following ends when the caller cancels — a Ctrl-C at the prompt —
-		// and that is the command doing what it was asked, not failing.
+		// Cancellation ends a follow; that is success, not failure.
 		if ctx.Err() != nil {
 			return nil
 		}

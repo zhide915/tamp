@@ -20,42 +20,31 @@ import (
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-// CreateLogFile records what happened during a create. It is left behind by a
-// create that failed, next to the tamp.toml, so the user can see how far
-// tamp got and what the engine said.
+// CreateLogFile survives a failed create in .tamp/, showing how far tamp got
+// and what the engine said.
 const CreateLogFile = "create.log"
 
-// buildSteps is how many numbered steps turning a written-out environment into
-// a running bench prints, before its apps are counted in — one step each. It
-// grows as tamp learns to do more at create time — a bench, a toolchain, a
-// sync session, a router.
+// buildSteps is build's numbered step count, before the per-app steps.
 const buildSteps = 7
 
-// createSteps is buildSteps plus the three a create does first.
+// createSteps adds the three steps a create runs before build.
 const createSteps = 3 + buildSteps
 
-// CreateRequest is what `tamp create` was asked for.
+// CreateRequest carries `tamp create`'s flags, unvalidated.
 type CreateRequest struct {
-	// Name is the environment name, still unvalidated.
 	Name string
-	// Parent is the directory <name>/ is created inside. Empty means the
-	// directory tamp was run in (there is no mandatory root).
+	// Parent is where <name>/ goes; empty means the cwd — there is no
+	// mandatory root.
 	Parent string
-	// Frappe is the --frappe value, still unvalidated.
 	Frappe string
-	// Apps is the --apps value, still unvalidated: a comma-separated list of
-	// app specs, each a name or a git URL, optionally with a branch after it.
+	// Apps is a comma-separated list of app specs.
 	Apps string
-	// Sync is the --sync value, still unvalidated.
 	Sync string
 }
 
-// Create provisions a new environment and brings its containers up.
-//
-// Everything it makes outside the environment directory — the registry entry,
-// the containers, the volumes — is undone if any step fails; the directory
-// itself is left with tamp.toml and create.log, because the one thing tamp
-// must never destroy is a directory the user might have put something in.
+// Create provisions a new environment and brings it up. On failure everything
+// outside the directory is undone; the directory keeps tamp.toml and
+// create.log — tamp never destroys a directory the user may have touched.
 func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	plan, err := m.newPlan(req.Name, req.Frappe, req.Apps, req.Sync)
 	if err != nil {
@@ -73,9 +62,8 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	return nil
 }
 
-// plan is a new environment as its flags describe it, with every one of them
-// already validated. It is what create and init have in common: two ways of
-// saying where the directory is, and one way of filling it.
+// plan is a new environment with every flag validated — what create and init
+// share.
 type plan struct {
 	Name      Name
 	Version   FrappeVersion
@@ -84,10 +72,8 @@ type plan struct {
 	Sync      syncer.Mode
 }
 
-// newPlan validates the flags create and init share.
-//
-// All of them, before anything is made: a misspelled Frappe version has to
-// fail before tamp has claimed a name, made a directory or pulled an image.
+// newPlan validates everything up front: a misspelled flag must fail before
+// tamp has claimed a name, made a directory or pulled an image.
 func (m *Manager) newPlan(name, version, apps, sync string) (plan, error) {
 	parsedName, err := ParseName(name)
 	if err != nil {
@@ -114,22 +100,18 @@ func (m *Manager) newPlan(name, version, apps, sync string) (plan, error) {
 	}, nil
 }
 
-// raise writes a new environment into a directory and brings it up.
-//
-// It is the whole of create, and the whole of init in a directory that holds
-// nothing yet. A failure at any step undoes everything tamp made outside the
-// directory — including the volumes, which is safe here and only here: this
-// environment has never held anything.
+// raise writes a new environment into dir and brings it up — the whole of
+// create, and of init in an empty directory. A failed step undoes everything
+// outside dir, volumes included, which is safe only because this environment
+// never held data.
 func (m *Manager) raise(ctx context.Context, dir string, p plan) error {
-	// Warnings, not refusals: where the environment goes is the user's call,
-	// and both of these describe a setup that works until it does not.
+	// Warnings, not refusals: where the environment lives is the user's call.
 	for _, warning := range syncer.PathWarnings(dir) {
 		m.Out.Warn(warning)
 	}
 
-	// One numbered step per app: fetching one is minutes of cloning and
-	// pip-installing, and a create that spent them under a single line would
-	// look stuck.
+	// One numbered step per app: a fetch is minutes of cloning and installing,
+	// and would look stuck under a single line.
 	log := &createLog{out: m.Out, steps: m.Out.Steps(createSteps + len(p.Apps))}
 	defer log.save(dir)
 
@@ -142,9 +124,8 @@ func (m *Manager) raise(ctx context.Context, dir string, p plan) error {
 	log.note(fmt.Sprintf("python %s · node %s · mariadb %s",
 		p.Toolchain.Python, p.Toolchain.Node, p.Toolchain.MariaDB))
 
-	// Settled before the environment is written, because it decides what is
-	// written: a bind mount is a line in the compose file, and a machine that
-	// cannot get Mutagen falls back to one.
+	// Settled before anything is written, because it decides what is written:
+	// a bind mount is a line in the compose file.
 	sync := m.syncMode(ctx, p.Sync)
 
 	log.step("writing the environment")
@@ -174,11 +155,10 @@ func (m *Manager) raise(ctx context.Context, dir string, p plan) error {
 	return nil
 }
 
-// requireFreshVolumes refuses to raise a new environment on top of data
-// volumes an earlier one left behind. Reattaching them silently would hand
-// this environment a database it knows nothing about — initialized under a
-// root password it does not hold — and the rollback a failed build performs
-// would then destroy data the earlier `tamp rm` deliberately kept.
+// requireFreshVolumes refuses to raise a new environment on leftover data
+// volumes: attaching them silently would hand it a database initialized under
+// a root password it does not hold, and a failed build's rollback would then
+// destroy data an earlier `tamp rm` deliberately kept.
 func (m *Manager) requireFreshVolumes(ctx context.Context, e *Environment) error {
 	held, err := m.Engine.HasVolumes(ctx, e.Resources.Project())
 	if err != nil {
@@ -193,15 +173,13 @@ func (m *Manager) requireFreshVolumes(ctx context.Context, e *Environment) error
 			ConfigFile, e.Resources.Project()))
 }
 
-// build turns a written-out environment into a running bench.
-//
-// Everything from here on happens inside containers, and every step of it is
-// undone by the rollback its one caller performs: an environment that got a
-// toolchain but no bench is not half-created, it is failed.
+// build turns a written-out environment into a running bench. It runs
+// entirely inside containers, and its one caller's rollback undoes every
+// step: an environment with a toolchain but no bench is failed, not
+// half-created.
 func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effective, log *createLog) (router.Status, error) {
-	// Whether the host held source before anything ran: the mark of an
-	// adoption, read now because a Mutagen session below will mirror the
-	// container's tree out and make it true for fresh creates too.
+	// Read before the sync session runs: a Mutagen session below mirrors the
+	// container's tree out and would make this true for fresh creates too.
 	adopted := hasSource(e.Dir)
 
 	log.step("starting containers")
@@ -214,9 +192,8 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 
 	bench := e.bench(m.Engine, log.stream())
 
-	// Slow once per machine, near-instant every time after: the Python, the
-	// Node and the package caches all live in volumes shared by every
-	// environment, so this is where a second create stops being expensive.
+	// Slow once per machine, near-instant after: the toolchain and package
+	// caches live in volumes shared by every environment.
 	log.step(fmt.Sprintf("provisioning python %s and node %s", bench.Python, bench.Node))
 	if err := bench.Provision(ctx); err != nil {
 		return router.Status{}, err
@@ -228,19 +205,16 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 		return router.Status{}, err
 	}
 
-	// Before the apps, not after. A session started here mirrors whatever the
-	// host already holds into the bench first, so an environment being
-	// re-adopted round its own source finds those apps present and skips
-	// re-cloning them — and a fresh create syncs out an app as it arrives.
+	// Before the apps: the session mirrors the host's tree into the bench
+	// first, so a re-adoption finds its apps present and skips re-cloning.
 	log.step("starting the sync session")
 	if err := m.startSync(ctx, e, sync, log.stream()); err != nil {
 		return router.Status{}, err
 	}
 
-	// The one path where bench init and the host's source both exist: fresh
-	// volumes under Mutagen. bench initialized empty, the session has now
-	// mirrored the host's apps in, and bench knows nothing about them —
-	// without this they stay off apps.txt, requirements uninstalled.
+	// Fresh volumes, Mutagen, adopted source: bench initialized empty, the
+	// session mirrored the host's apps in, and bench knows nothing of them —
+	// without this they stay off apps.txt with requirements uninstalled.
 	if initialized && adopted && sync == syncer.UseMutagen {
 		log.note("registering the apps the sync session brought back")
 		if err := bench.Rebuild(ctx); err != nil {
@@ -263,8 +237,8 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 		return router.Status{}, err
 	}
 
-	// The container decides at boot whether it has a bench to run. It did not
-	// when it first started, and it does now, so it is asked again.
+	// The container decides at boot whether it has a bench to run; now it
+	// does, so it is asked again.
 	log.step("starting the bench processes")
 	if err := m.Engine.ComposeRestart(ctx, e.project(), FrappeService, log.stream()); err != nil {
 		return router.Status{}, err
@@ -273,17 +247,13 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 		return router.Status{}, err
 	}
 
-	// Last, because the router can only join a network that exists, and the
-	// environment's network is made by the compose up above.
+	// Last: the router can only join a network that now exists.
 	log.step("routing " + router.MailHost(string(e.Name())))
 	return m.applyRoutes(ctx, log.stream())
 }
 
-// fetchApps clones each of the environment's apps onto the bench.
-//
-// Onto the bench and onto no site: an app is fetched once and installed per
-// site, so a create that installed them everywhere would be deciding something
-// 'tamp site new --apps' exists to let the user decide.
+// fetchApps clones each app onto the bench and onto no site — installation is
+// per site, and `tamp site new --apps` is where the user decides.
 func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.Bench, log *createLog) error {
 	onBench, err := bench.Apps(ctx)
 	if err != nil {
@@ -293,9 +263,8 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 	renamed := false
 	for i := range e.Config.Frappe.Apps {
 		app := &e.Config.Frappe.Apps[i]
-		// Re-adopting an environment runs this against a bench that already
-		// holds its apps, and bench get-app on one of those fails rather than
-		// quietly doing nothing.
+		// A re-adopted bench already holds its apps, and bench get-app fails
+		// on one rather than doing nothing.
 		if slices.Contains(onBench, app.Name) {
 			log.step(app.Name + " is already on the bench")
 			continue
@@ -303,14 +272,13 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 
 		log.step("fetching " + app.Name)
 		if app.Branch == "" {
-			// The one predictable way this goes wrong: most Frappe apps
-			// default to develop, which does not run on a pinned bench. tamp
-			// says so rather than picking a branch, because plenty of apps
-			// have no version-15 branch to pick.
+			// Most apps default to develop, which breaks a pinned bench; tamp
+			// warns rather than guessing, since many apps have no matching
+			// release branch.
 			pin := app.Name
 			if app.Source != defaultAppOwner+app.Name {
-				// The hint has to repeat a URL-sourced app's URL: the bare
-				// name would resolve to the frappe organisation instead.
+				// A URL-sourced app must be pinned by URL — the bare name
+				// would resolve to the frappe organisation.
 				pin = app.Source
 			}
 			m.Out.Warn(fmt.Sprintf("fetching default branch of %s — pin with %s:%s if you meant a release branch",
@@ -320,14 +288,10 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 			return err
 		}
 
-		// The recorded name came from the URL, but the app a repository
-		// declares can differ from the repository's name — frappe/health
-		// clones as healthcare. The bench is the authority: whatever just
-		// appeared on it is what this app is called everywhere tamp needs
-		// the name again, the already-on-the-bench check above included.
-		// Renaming is safe only when the fetch produced exactly one new app;
-		// more than one and tamp cannot tell which is which, so the record
-		// stands and the bench remains the authority at install time.
+		// The app a repository declares can differ from the repository's name
+		// (frappe/health clones as healthcare), and the bench is the
+		// authority. Rename the record only when exactly one new app
+		// appeared — with more, tamp cannot tell which is which.
 		now, err := bench.Apps(ctx)
 		if err != nil {
 			return err
@@ -346,7 +310,7 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 	return nil
 }
 
-// newApps names the apps that appeared between two listings of the bench.
+// newApps names the apps that appeared between two bench listings.
 func newApps(now, before []string) []string {
 	var fresh []string
 	for _, name := range now {
@@ -357,13 +321,10 @@ func newApps(now, before []string) []string {
 	return fresh
 }
 
-// handGitToHost makes the apps' repositories usable by the host's git.
-//
-// Only where the host's filesystem cannot describe what Linux wrote. On Linux
-// the source is bind-mounted and every mode is real; on macOS the executable
-// bit stores fine and turning the check off would hide changes the user made
-// themselves. Windows can do neither, and the repositories are in that state
-// because tamp cloned them in a container — so tamp is the one to settle it.
+// handGitToHost repairs the apps' repositories for the host's git, only where
+// the host cannot store what Linux wrote: Windows under Mutagen. Elsewhere
+// modes are real, and turning the check off would hide the user's own
+// changes.
 func (m *Manager) handGitToHost(ctx context.Context, e *Environment, sync syncer.Effective) error {
 	if sync != syncer.UseMutagen || runtime.GOOS != "windows" {
 		return nil
@@ -371,11 +332,8 @@ func (m *Manager) handGitToHost(ctx context.Context, e *Environment, sync syncer
 	return e.bench(m.Engine, m.Out.Stream()).HandGitToHost(ctx)
 }
 
-// announceDBPassword prints the environment's generated MariaDB credential.
-//
-// Once, here, and nowhere else: it is on disk in the environment's own secrets
-// directory, and reprinting it on every start would scatter it through
-// terminal scrollback nobody asked to keep it in.
+// announceDBPassword prints the credential once, here only: it is on disk,
+// and reprinting on every start would scatter it through scrollback.
 func (m *Manager) announceDBPassword(e *Environment) {
 	password, err := ReadDBRootPassword(e.Dir)
 	if err != nil {
@@ -386,8 +344,8 @@ func (m *Manager) announceDBPassword(e *Environment) {
 	m.Out.Note("kept in " + DBRootPasswordPath(e.Dir) + " — tamp prints it this once")
 }
 
-// createDir settles where the environment goes and refuses to build on top of
-// anything that is already there.
+// createDir settles where the environment goes, refusing to build on anything
+// already there.
 func (m *Manager) createDir(req CreateRequest, name Name) (string, error) {
 	parent := req.Parent
 	if parent == "" {
@@ -412,8 +370,8 @@ func (m *Manager) createDir(req CreateRequest, name Name) (string, error) {
 	return dir, nil
 }
 
-// provision claims the name, writes the environment's files, and returns it
-// ready to start. Everything here is undoable by rollback.
+// provision claims the name and builds the environment in memory; rollback
+// can undo all of it.
 func (m *Manager) provision(dir string, p plan) (*Environment, error) {
 	name := p.Name
 	res, err := NewResources(name, dir)
@@ -431,7 +389,6 @@ func (m *Manager) provision(dir string, p plan) (*Environment, error) {
 	return &Environment{Dir: dir, Config: cfg, Resources: res}, nil
 }
 
-// writeEnvironment lays down the directory and everything in it.
 func (m *Manager) writeEnvironment(e *Environment, sync syncer.Effective) error {
 	if err := os.MkdirAll(StateDir(e.Dir), 0o755); err != nil {
 		return exitcode.New(exitcode.CodeFailed,
@@ -447,25 +404,17 @@ func (m *Manager) writeEnvironment(e *Environment, sync syncer.Effective) error 
 	return m.regenerate(e, sync)
 }
 
-// rollback undoes what a failed provisioning put outside the environment
-// directory.
-//
-// The removal is the caller's to decide, and it is the difference between a
-// tidy failure and a disaster: a new environment's volumes have never held
-// anything and go with it, while one being re-adopted is standing on volumes
-// that survived a previous life.
-//
-// Its own failures are reported and then dropped: the user is about to be
-// told why the operation failed, and burying that under "and the cleanup
-// failed too" would replace the actionable error with a less useful one.
+// rollback undoes a failed provisioning outside the environment directory.
+// removal is the caller's call: a new environment's volumes go with it, while
+// a re-adopted one stands on volumes from a previous life. Its own failures
+// are warnings — the original error is the one the user needs.
 func (m *Manager) rollback(ctx context.Context, e *Environment, removal engine.Removal, log *createLog) {
 	m.Out.Warn(fmt.Sprintf("create failed — rolling back %s", e.Name()))
 
-	// Before the containers, because the far end of the session is one of them.
+	// The session's far end is one of the containers.
 	m.terminateSync(ctx, e)
 
-	// The router joins the environment's network at the last step of a create,
-	// and Docker refuses to remove a network that still has something on it.
+	// Docker refuses to remove a network the router is still joined to.
 	if err := m.router().Detach(ctx, e.Resources.Network()); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not detach the router: %v", err))
 	}
@@ -474,8 +423,7 @@ func (m *Manager) rollback(ctx context.Context, e *Environment, removal engine.R
 		m.Out.Warn(fmt.Sprintf("remove them by hand with: docker compose -p %s down", e.Resources.Project()))
 	}
 	m.unregister(e.Name())
-	// The registry no longer names this environment, so nothing may still
-	// route to it.
+	// Nothing may still route to a deregistered environment.
 	if _, err := m.refreshRoutes(ctx); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not update the router's routes: %v", err))
 	}
@@ -490,12 +438,9 @@ func (m *Manager) unregister(name Name) {
 	}
 }
 
-// createLog narrates a create to the terminal and, at the same time, into the
-// buffer that becomes create.log.
-//
-// It is a buffer rather than an open file because the environment directory
-// does not exist yet when the first step is printed, and a create that fails
-// before the directory exists has nowhere to write anyway.
+// createLog narrates to the terminal and into a buffer that becomes
+// create.log — a buffer because the directory may not exist yet when the
+// first step prints.
 type createLog struct {
 	buf   bytes.Buffer
 	out   *ui.Printer
@@ -512,20 +457,14 @@ func (l *createLog) note(msg string) {
 	fmt.Fprintln(&l.buf, msg)
 }
 
-// stream is where the engine's own output goes: to the terminal as it happens,
-// and into the log so a failed create can be read afterwards.
+// stream tees the engine's output to the terminal and the log.
 func (l *createLog) stream() io.Writer {
 	return io.MultiWriter(l.out.Stream(), &l.buf)
 }
 
-// save writes the log into an environment directory that already exists.
-//
-// It never creates that directory: a create rejected before it got that far —
-// a name already registered, an unreachable engine — must leave nothing behind
-// at all, and a log of a create that made nothing is not worth a directory.
-//
-// A failure here is silent on purpose: it happens while tamp is already
-// reporting something the user cares about more.
+// save never creates the directory: a create rejected before making anything
+// must leave nothing behind. Its failures are silent — a bigger error is
+// already being reported.
 func (l *createLog) save(dir string) {
 	if _, err := os.Stat(dir); err != nil {
 		return

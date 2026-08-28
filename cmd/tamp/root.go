@@ -13,22 +13,19 @@ import (
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-// deps is everything a command needs, built once at the root so that no
-// constructor threads it through piece by piece.
+// deps is the shared wiring handed to every command constructor.
 type deps struct {
 	p    *ui.Printer
 	eng  engine.Engine
 	sync syncer.Mutagen
 }
 
-// manager opens the environment Manager every environment-facing command
-// starts with.
 func (d deps) manager() (*env.Manager, error) {
 	return env.NewManager(d.eng, d.sync, d.p)
 }
 
-// newRootCommand assembles the tamp command tree. Every command in it shares
-// one Printer, so --quiet and --no-color are applied in exactly one place.
+// newRootCommand builds the command tree; one shared Printer applies
+// --quiet and --no-color in a single place.
 func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin io.Reader) *cobra.Command {
 	d := deps{p: p, eng: eng, sync: sync}
 	var noColor, quiet bool
@@ -39,16 +36,13 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 		Long: "tamp — environment manager for Frappe Framework.\n\n" +
 			"tamp creates and manages containerized Frappe environments,\n" +
 			"each with its own pinned toolchain, reachable by hostname.",
-		// tamp owns its own error and usage output: one "error:" line with the
-		// fix, never cobra's "Error:" plus a wall of usage text.
+		// tamp formats its own errors; cobra's default adds usage noise.
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		// Take the args ourselves so an unknown command is a tamp usage error
-		// rather than cobra's default phrasing.
+		// Handle unknown commands ourselves so they get tamp's usage error.
 		Args: cobra.ArbitraryArgs,
-		// Colour and terminal-ness were already decided in ui.NewPrinter; the
-		// flags below can only narrow that, so a command line that fails to
-		// parse still errors with sane output.
+		// These flags can only narrow what ui.NewPrinter already decided, so
+		// output stays sane even when parsing fails.
 		PersistentPreRun: func(*cobra.Command, []string) {
 			if noColor {
 				p.DisableColor()
@@ -90,9 +84,8 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 	return root
 }
 
-// newHelpCommand replaces cobra's built-in help command, which reports an
-// unknown topic as a note and still exits 0. Naming a command that does not
-// exist is a usage error however it is spelled.
+// newHelpCommand replaces cobra's help, which exits 0 on an unknown topic;
+// here that is a usage error like any other misspelled command.
 func newHelpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [command]",
@@ -114,8 +107,7 @@ func unknownCommand(name string) error {
 	)
 }
 
-// noArgs rejects surplus positional arguments as a usage error. Commands use
-// it instead of cobra.NoArgs so the failure carries tamp's exit code and fix.
+// noArgs replaces cobra.NoArgs so the failure carries tamp's exit code and hint.
 func noArgs(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
 		return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[0]), usageHint(cmd))

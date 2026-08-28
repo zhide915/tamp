@@ -12,29 +12,23 @@ import (
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// siteSteps is how many numbered steps creating a site prints before its apps
-// are counted in — one step each.
+// siteSteps is the numbered step count before the per-app steps.
 const siteSteps = 3
 
 // SiteNewRequest is what `tamp site new` was asked for.
 type SiteNewRequest struct {
-	// Env names the environment, or is empty for the one the user is inside.
-	Env string
-	// Host is the site's hostname, still unvalidated.
+	// Env is empty for the environment the user is inside.
+	Env  string
 	Host string
-	// Apps is the --apps value, still unvalidated: a comma-separated list of
-	// apps to install, each already fetched onto the bench.
+	// Apps names apps already fetched onto the bench, comma-separated.
 	Apps string
-	// AdminPassword is what --admin-password supplied. Empty means tamp
-	// generates one and prints it.
+	// AdminPassword empty means tamp generates one and prints it.
 	AdminPassword string
 }
 
-// SiteNew creates a site on an environment's bench and routes it.
-//
-// The hostname is the whole design: it is the site's name, its directory on
-// the bench, and the route the router matches on, so it has to be unique
-// across every environment on the machine rather than only within this one.
+// SiteNew creates a site and routes it. The hostname is the site's name, its
+// directory on the bench and the route the router matches, so it must be
+// unique across every environment on the machine.
 func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	e, err := m.resolve(req.Env)
 	if err != nil {
@@ -52,9 +46,8 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		return err
 	}
 	bench := e.bench(m.Engine, m.Out.Stream())
-	// Before the site exists, before the hostname is claimed, before anything
-	// at all: an app that is not on the bench is a create that would fail
-	// halfway and leave a site with some of the apps asked for.
+	// Checked before anything exists: an app missing from the bench would
+	// fail the create halfway, leaving a site with only some of its apps.
 	if err := m.requireApps(ctx, e, bench, apps); err != nil {
 		return err
 	}
@@ -66,14 +59,14 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	admin := req.AdminPassword
 	generated := admin == ""
 	if generated {
-		// The same generator the database credential uses: alphanumeric, so
-		// that nothing between here and a browser's login form mangles it.
+		// Alphanumeric, like the DB credential, so nothing between here and a
+		// login form mangles it.
 		admin = rand.Text()
 	}
 
-	// The hostname is claimed before the site is made, under the machine lock,
-	// so that two tamps creating the same site at once cannot both find it
-	// free. A create that then fails gives the claim back.
+	// Claimed under the machine lock before the site is made, so two
+	// concurrent creates cannot both find the hostname free. A failed create
+	// gives the claim back.
 	if err := m.claimHost(e, host); err != nil {
 		return err
 	}
@@ -96,9 +89,9 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		}
 	}
 
-	// The bench-wide config already says this, and the site says it again for
-	// itself: a per-site key survives whatever later happens to the shared
-	// file, and this is the setting that makes Frappe reload changed code.
+	// Set per-site as well as bench-wide: the per-site key survives whatever
+	// later happens to the shared file, and it is what makes Frappe reload
+	// changed code.
 	steps.Step("turning on developer mode")
 	if err := bench.SetSiteConfig(ctx, host.String(), "developer_mode", "1"); err != nil {
 		return m.salvageSite(ctx, generated, admin, err)
@@ -118,9 +111,8 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	return nil
 }
 
-// revealAdmin prints a generated Administrator password. Only a password tamp
-// invented is worth printing: echoing back the one the user typed puts it in a
-// second place for no one's benefit.
+// revealAdmin prints only a password tamp generated — echoing back a typed
+// one puts it in a second place for no one's benefit.
 func (m *Manager) revealAdmin(generated bool, admin string) {
 	if !generated {
 		return
@@ -129,11 +121,10 @@ func (m *Manager) revealAdmin(generated bool, admin string) {
 	m.Out.Note("tamp generated it and prints it this once — it is not stored anywhere")
 }
 
-// salvageSite is the error path for a failure after `bench new-site` has
-// succeeded: the site exists and keeps its hostname claim, so the one thing
-// only this run knows — the generated password — is printed anyway, and the
-// routes are reassembled so that the site the user is about to repair is at
-// least reachable.
+// salvageSite handles a failure after `bench new-site` succeeded: the site
+// exists and keeps its claim, so print the generated password — only this run
+// knows it — and route what is there, so the site being repaired is
+// reachable.
 func (m *Manager) salvageSite(ctx context.Context, generated bool, admin string, err error) error {
 	m.revealAdmin(generated, admin)
 	if _, rerr := m.applyRoutes(ctx, m.Out.Stream()); rerr != nil {
@@ -142,13 +133,9 @@ func (m *Manager) salvageSite(ctx context.Context, generated bool, admin string,
 	return err
 }
 
-// requireApps refuses a site whose apps the bench does not have.
-//
-// It refuses rather than fetching, and it refuses before anything has been
-// done: tamp has no way to know which branch of an app this bench wants, so
-// guessing one would be the difference between a working site and a broken
-// one. The hint is the command that settles it, with the branch left for the
-// user to fill in because that is exactly the part tamp cannot supply.
+// requireApps refuses rather than fetches: tamp cannot know which branch of
+// an app this bench wants, and the hint leaves the branch for the user —
+// exactly the part tamp cannot supply.
 func (m *Manager) requireApps(ctx context.Context, e *Environment, bench *frappe.Bench, apps []string) error {
 	if len(apps) == 0 {
 		return nil
@@ -178,13 +165,9 @@ func (m *Manager) requireApps(ctx context.Context, e *Environment, bench *frappe
 		"fetch the apps above onto the bench first — tamp will not guess a branch")
 }
 
-// warnUnresolvable says what a hostname outside .localhost still needs.
-//
-// *.localhost resolves to loopback in every evergreen browser with no
-// configuration at all; anything else resolves to whatever the internet says,
-// which is not this machine. tamp will manage the hosts file itself in a
-// later release — until then the user is given the exact line to add, because
-// a warning that does not say what to type is a warning that wastes a search.
+// warnUnresolvable covers hostnames outside .localhost, which resolve to
+// whatever the internet says. Until tamp manages the hosts file, the warning
+// gives the exact line to add.
 func (m *Manager) warnUnresolvable(host Host) {
 	if host.IsLocal() {
 		return
@@ -194,7 +177,6 @@ func (m *Manager) warnUnresolvable(host Host) {
 	m.Out.Note("  127.0.0.1  " + host.String())
 }
 
-// hostsFile is where the OS keeps its static name resolution.
 func hostsFile() string {
 	if runtime.GOOS == "windows" {
 		return `C:\Windows\System32\drivers\etc\hosts`
@@ -202,18 +184,12 @@ func hostsFile() string {
 	return "/etc/hosts"
 }
 
-// claimHost records the hostname against this environment in the machine's
-// claims ledger, which refuses one already given out.
 func (m *Manager) claimHost(e *Environment, host Host) error {
 	return ClaimHost(m.Home, e.Name(), host.String())
 }
 
-// unclaimHost takes a hostname back — because the site it was claimed for
-// could not be made, or because that site has just been dropped.
-//
-// Its own failure is a warning rather than an error: it runs at the end of an
-// operation whose outcome the user is already being told, and replacing that
-// with a bookkeeping failure would bury the more useful message.
+// unclaimHost failure is a warning, not an error: it runs while a more useful
+// outcome is already being reported.
 func (m *Manager) unclaimHost(e *Environment, host Host) {
 	if err := ReleaseHost(m.Home, e.Name(), host.String()); err != nil {
 		m.Out.Warn(fmt.Sprintf("could not take %s back out of the registry: %v", host, err))
@@ -224,8 +200,8 @@ func (m *Manager) unclaimHost(e *Environment, host Host) {
 type SiteRemoveRequest struct {
 	Env  string
 	Host string
-	// Yes confirms a destructive action. tamp never prompts: agents run these
-	// commands, so confirmation is a flag, not a question.
+	// Yes replaces a prompt — agents run these commands, so confirmation is a
+	// flag.
 	Yes bool
 }
 
@@ -240,8 +216,8 @@ func (m *Manager) SiteRemove(ctx context.Context, req SiteRemoveRequest) error {
 		return err
 	}
 
-	// The bench is asked whenever it is up, so a site created through 'tamp
-	// exec' can still be dropped by name rather than reported as missing.
+	// Asked of the bench when up, so a site created through 'tamp exec' is
+	// still removable by name.
 	known, _, err := m.sites(ctx, e)
 	if err != nil {
 		return err
@@ -271,8 +247,7 @@ func (m *Manager) SiteRemove(ctx context.Context, req SiteRemoveRequest) error {
 	}
 
 	m.unclaimHost(e, host)
-	// The registry is what the routes are assembled from, so this is what
-	// takes the site's route away and leaves every other one in place.
+	// Routes come from the registry, so this removes only this site's route.
 	if _, err := m.refreshRoutes(ctx); err != nil {
 		return err
 	}
@@ -283,9 +258,8 @@ func (m *Manager) SiteRemove(ctx context.Context, req SiteRemoveRequest) error {
 	return nil
 }
 
-// previewSiteRemoval prints exactly what --yes would destroy. This is the
-// whole value of the exit-5 contract: the answer to "what am I confirming" has
-// to be on screen before the user retypes the command.
+// previewSiteRemoval prints exactly what --yes would destroy — the point of
+// the exit-5 contract.
 func (m *Manager) previewSiteRemoval(e *Environment, host Host) {
 	m.Out.Print(fmt.Sprintf("tamp site rm would destroy, in %s:", e.Name()))
 	m.Out.Print("  database  the one database behind " + host.String())
@@ -300,7 +274,7 @@ func (m *Manager) previewSiteRemoval(e *Environment, host Host) {
 type siteRow struct {
 	Host string
 	URL  string
-	// Apps is what the site has installed, or nil when tamp could not ask.
+	// Apps is nil when tamp could not ask.
 	Apps []string
 }
 
@@ -315,10 +289,8 @@ func (m *Manager) SiteList(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	// The router's port is tamp's own record, and Status carries it back even
-	// when the engine could not be reached — so the URLs below are right with
-	// Docker stopped. Only a port tamp cannot read at all leaves nothing to
-	// build a URL from, and that is the failure worth stopping for.
+	// Status carries tamp's recorded port even when the engine is down, so
+	// the URLs stay right; only no port at all leaves nothing to build from.
 	status, err := m.router().Status(ctx)
 	if err != nil && status.Port == 0 {
 		return err
@@ -347,13 +319,10 @@ func (m *Manager) SiteList(ctx context.Context, name string) error {
 	return nil
 }
 
-// sites lists an environment's sites, and says whether the bench answered.
-//
-// A running bench is the authority — its sites/ directory is what Frappe
-// itself resolves against — and what it says is written back to the registry,
-// so a site created behind tamp's back through 'tamp exec' still ends up
-// routed. A stopped environment is answered from that cache instead, which is
-// the reason the cache exists.
+// sites prefers the running bench — its sites/ directory is what Frappe
+// resolves against — and writes its answer back to the registry, so a site
+// created through 'tamp exec' still gets routed. A stopped environment
+// answers from the cache, which is why the cache exists.
 func (m *Manager) sites(ctx context.Context, e *Environment) (hosts []string, live bool, err error) {
 	cached, err := m.knownSites(e)
 	if err != nil {
@@ -382,7 +351,6 @@ func (m *Manager) sites(ctx context.Context, e *Environment) (hosts []string, li
 	return hosts, true, nil
 }
 
-// knownSites is the site list tamp last recorded for an environment.
 func (m *Manager) knownSites(e *Environment) ([]string, error) {
 	reg, err := LoadRegistry(m.Home)
 	if err != nil {
@@ -391,8 +359,7 @@ func (m *Manager) knownSites(e *Environment) ([]string, error) {
 	return reg[e.Name().String()].Sites, nil
 }
 
-// recordSites replaces an environment's cached site list with what its bench
-// actually holds, and says which sites the ledger refused to route and why.
+// recordSites also reports the hostnames the ledger refused to route.
 func (m *Manager) recordSites(e *Environment, hosts []string) error {
 	skipped, err := RecordSites(m.Home, e.Name(), hosts)
 	for _, c := range skipped {

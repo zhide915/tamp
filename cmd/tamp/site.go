@@ -115,13 +115,9 @@ func newSiteRemoveCommand(d deps) *cobra.Command {
 	return cmd
 }
 
-// envAndOneArg is the argument rule for the site commands that name a site:
-// the hostname, optionally preceded by the environment.
-//
-// The hostname goes last rather than first so that the optional environment
-// sits where it does on every other tamp command, and so `tamp site new
-// shop.localhost` inside an environment reads as the same grammar with the
-// same piece left out.
+// envAndOneArg accepts a hostname optionally preceded by the environment —
+// hostname last, so the optional environment sits where every other command
+// puts it.
 func envAndOneArg(missing string) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, args []string) error {
 		switch {
@@ -134,8 +130,6 @@ func envAndOneArg(missing string) cobra.PositionalArgs {
 	}
 }
 
-// splitEnvArg reads the grammar envAndOneArg accepted: the last argument is
-// the hostname, and an environment name may precede it.
 func splitEnvArg(args []string) (name, host string) {
 	if len(args) == 1 {
 		return "", args[0]

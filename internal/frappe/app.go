@@ -6,32 +6,25 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// AppsDir is where the bench keeps the apps fetched onto it. It is the source
-// layer: the one directory tamp syncs to the host and never deletes.
+// AppsDir is the source layer: synced to the host, never deleted by tamp.
 const AppsDir = BenchDir + "/apps"
 
-// GetAppRequest is one app to fetch onto the bench.
+// GetAppRequest describes an app to fetch onto the bench.
 type GetAppRequest struct {
 	// Source is the app's clone URL.
 	Source string
-	// Branch is the branch to fetch, or empty for the repository's default —
-	// which tamp takes as an answer rather than filling in itself.
+	// Branch to fetch; empty means the repository's default.
 	Branch string
 }
 
-// GetApp fetches an app onto the bench. It installs the app to no site: apps
-// are fetched once per bench and installed per site, which is what lets two
-// sites on one bench run different sets of them.
+// GetApp fetches an app onto the bench without installing it anywhere:
+// apps are fetched per bench and installed per site.
 func (b *Bench) GetApp(ctx context.Context, req GetAppRequest) error {
 	return b.run(ctx, getAppScript, req.Source, req.Branch)
 }
 
-// getAppScript clones the app and installs its Python requirements.
-//
-// The branch flag is passed only when there is a branch, because bench reads
-// an empty --branch as the literal branch name "" and fails to clone. No
-// branch means the repository's own default, which is git's behaviour and so
-// needs nothing said at all.
+// bench treats an empty --branch as the literal name "", so the flag is
+// passed only when a branch was given.
 const getAppScript = `
 set -eo pipefail
 . ` + toolchain.EnvScript + `
@@ -42,11 +35,8 @@ else
 fi
 `
 
-// Apps lists the apps fetched onto the bench.
-//
-// The bench is the authority rather than tamp.toml: an app fetched through
-// 'tamp exec ... -- bench get-app' is as present as one tamp fetched itself,
-// and a site install that refused it would be refusing something that is there.
+// Apps lists the apps fetched onto the bench. The apps directory, not
+// tamp.toml, is the authority: it also holds apps fetched through 'tamp exec'.
 func (b *Bench) Apps(ctx context.Context) ([]string, error) {
 	out, err := b.capture(ctx, listBenchAppsScript)
 	if err != nil {
@@ -55,9 +45,8 @@ func (b *Bench) Apps(ctx context.Context) ([]string, error) {
 	return lines(out), nil
 }
 
-// listBenchAppsScript names the directories under apps/, which is where
-// bench get-app puts every app it clones. The glob matching nothing leaves the
-// literal pattern in place, and the directory test rejects it like anything else.
+// An unmatched glob leaves the literal pattern in place; the -d test
+// rejects it.
 const listBenchAppsScript = `
 cd ` + AppsDir + ` 2>/dev/null || exit 0
 for entry in */; do
@@ -68,21 +57,11 @@ done
 exit 0
 `
 
-// HandGitToHost settles the three git settings an app needs once it is cloned
-// on Linux and read on a filesystem that cannot describe what Linux wrote.
-//
-// All three are tamp's mess to clean up. The clone happens in the container,
-// so git records filemode = true; the host then compares an executable bit
-// NTFS cannot store and calls every such file modified with nothing changed in
-// it. Git for Windows converts line endings on checkout by default, which
-// would put CRLF into files the Linux container is about to execute. And
-// Frappe's own paths are long enough that an app a few directories down runs
-// past the 260 characters Windows allows by default — which git reports the
-// same way, as files it could not read and so assumes have changed.
-//
-// They are set in the container because that is where the repository is made
-// and where git already is, and because .git syncs — so the host reads a
-// config that is right for it before it ever runs a git command of its own.
+// HandGitToHost configures each app repo so a clone made in the Linux
+// container reads cleanly on Windows: filemode off (NTFS has no executable
+// bit), autocrlf off (the container executes these files), longpaths on
+// (Frappe paths exceed the 260-char default). .git syncs, so config written
+// here reaches the host before its git ever runs.
 func (b *Bench) HandGitToHost(ctx context.Context) error {
 	return b.run(ctx, handGitToHostScript)
 }
@@ -100,7 +79,7 @@ for entry in */; do
 done
 `
 
-// InstallApp installs one of the bench's apps onto one site.
+// InstallApp installs an already-fetched app on the given site.
 func (b *Bench) InstallApp(ctx context.Context, host, app string) error {
 	return b.run(ctx, installAppScript, host, app)
 }

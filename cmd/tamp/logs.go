@@ -9,9 +9,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// defaultTail is how much of a log tamp starts with when told nothing.
-// Everything is rarely what anyone wants from a bench that has been up for a
-// week, and it is what --tail 0 is for.
+// defaultTail keeps a long-running bench from dumping its whole log;
+// --tail 0 asks for everything.
 const defaultTail = 200
 
 func newLogsCommand(d deps) *cobra.Command {
@@ -54,7 +53,6 @@ func newLogsCommand(d deps) *cobra.Command {
 	return cmd
 }
 
-// logsArgs accepts an optional environment followed by an optional service.
 func logsArgs(cmd *cobra.Command, args []string) error {
 	if len(args) > 2 {
 		return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[2]), usageHint(cmd))

@@ -1,11 +1,8 @@
-// Package syncer is how an environment's source reaches its container.
-//
-// There are two answers and both are first class. On Linux the host's apps/
-// directory is bind-mounted straight in, which is native speed and native
-// inotify; on Windows and macOS a bind mount is neither, so the code lives in
-// a container volume and Mutagen mirrors it to a real folder on the host for
-// the agent to edit. "No sync session" is a mode, not a failure — every code
-// path here has to treat it as one.
+// Package syncer moves an environment's source between host and container.
+// Linux bind-mounts the host's apps/ directory into the container; Windows
+// and macOS get a Mutagen session instead, because bind mounts there are slow
+// and deliver no inotify events. Having no sync session is a mode, not an
+// error.
 package syncer
 
 import (
@@ -18,24 +15,22 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Mode is the value of [sync].mode in tamp.toml.
+// Mode is a [sync].mode / --sync value.
 type Mode string
 
 const (
-	// ModeAuto lets tamp pick per operating system. It is the default and
-	// what nearly every environment stays on.
+	// ModeAuto picks per operating system; the default.
 	ModeAuto Mode = "auto"
-	// ModeMutagen forces a sync session, even where a bind mount would do.
+	// ModeMutagen forces a sync session.
 	ModeMutagen Mode = "mutagen"
-	// ModeBind forces a bind mount. On Windows and macOS this is the degraded
-	// fallback: it works, it is slow, and inotify does not fire — which means
-	// no hot reload.
+	// ModeBind forces a bind mount. On Windows and macOS it is slow and gets
+	// no file events, so no hot reload.
 	ModeBind Mode = "bind"
-	// ModeOff leaves the source in the container and puts nothing on the host.
+	// ModeOff keeps the source container-only.
 	ModeOff Mode = "off"
 )
 
-// Modes lists every value of --sync, in the order the error message names them.
+// Modes holds every mode, in the order error messages list them.
 var Modes = []Mode{ModeAuto, ModeMutagen, ModeBind, ModeOff}
 
 // ParseMode validates a --sync value.
@@ -50,7 +45,7 @@ func ParseMode(s string) (Mode, error) {
 		"modes: "+strings.Join(ModeNames(), ", "))
 }
 
-// ModeNames lists the values --sync and [sync].mode accept.
+// ModeNames lists the strings --sync and [sync].mode accept.
 func ModeNames() []string {
 	names := make([]string, len(Modes))
 	for i, mode := range Modes {
@@ -59,32 +54,22 @@ func ModeNames() []string {
 	return names
 }
 
-// Effective is what a mode means on this machine: one of mutagen, bind or off,
-// with auto already decided.
+// Effective is a Mode with auto already resolved: mutagen, bind, or off.
 type Effective Mode
 
-// There is no UseAuto: auto is a question, and these are the three answers.
-// Every one of them is a working environment, which is why nothing downstream
-// may treat two of them as failures of the first.
+// All three are working environments; none may be treated as a failure of
+// another.
 const (
-	// UseMutagen mirrors the source; there is a session to manage.
 	UseMutagen = Effective(ModeMutagen)
-	// UseBind mounts the host's source; there is nothing to manage.
-	UseBind = Effective(ModeBind)
-	// UseOff leaves the source in the container; there is no host side.
-	UseOff = Effective(ModeOff)
+	UseBind    = Effective(ModeBind)
+	UseOff     = Effective(ModeOff)
 )
 
 func (e Effective) String() string { return string(e) }
 
-// Resolve settles what auto means on an operating system.
-//
-// Linux gets a bind mount because there a bind mount is the whole answer:
-// the container reads the host's filesystem directly, at full speed, with
-// inotify working. Windows and macOS get Mutagen because there it is not —
-// bind-mounted host paths are slow enough to have made bench commands take
-// hours, and file events do not arrive at all, so the dev server never
-// reloads.
+// Resolve decides what auto means on goos: bind on Linux, where it is native
+// speed with working inotify; Mutagen elsewhere, where bind mounts are slow
+// and file events never arrive.
 func Resolve(mode Mode, goos string) Effective {
 	if mode != ModeAuto {
 		return Effective(mode)
@@ -95,22 +80,16 @@ func Resolve(mode Mode, goos string) Effective {
 	return UseMutagen
 }
 
-// AppsDirName is the source layer's directory inside an environment. It is the
-// one thing tamp puts on the host for a person or an agent to edit.
+// AppsDirName is the one directory tamp puts on the host for editing.
 const AppsDirName = "apps"
 
 // AppsDir is an environment's host-side source directory.
 func AppsDir(envDir string) string { return filepath.Join(envDir, AppsDirName) }
 
-// Ignores are the paths a sync session leaves alone.
-//
-// They are build outputs and caches: things each side regenerates for itself,
-// and things whose contents differ legitimately between a Linux container and
-// the host. Syncing them would be pure cost and, for the virtualenv, actively
-// wrong — the container's Python is not the host's.
-//
-// .git is deliberately absent. It syncs, which is what lets git work on the
-// host, and it is safe only because exactly one side ever writes to it.
+// Ignores are the paths a sync session skips: build outputs and caches each
+// side regenerates, and the virtualenv, whose contents are platform-specific.
+// .git deliberately syncs — that is what lets git run on the host, and it is
+// safe because only one side ever writes it.
 var Ignores = []string{
 	"env/",
 	"node_modules/",
@@ -121,76 +100,62 @@ var Ignores = []string{
 	"*.egg-info/",
 }
 
-// Session is one environment's sync, described in full.
+// Session describes one environment's sync.
 type Session struct {
-	// Name identifies the session to Mutagen. It is the environment's own
-	// resource name, so a session is traceable to the environment that owns it.
+	// Name is the environment's own resource name, so sessions trace back to
+	// their environment.
 	Name string
-	// Alpha is the host directory — the side that wins conflicts, because it
-	// is the side a person or an agent is editing.
+	// Alpha is the host directory. It wins conflicts, being the edited side.
 	Alpha string
-	// Beta is the container endpoint, in Mutagen's docker transport form.
+	// Beta is the container endpoint in Mutagen's docker transport form.
 	Beta string
-	// DockerHost is the engine endpoint Mutagen's docker transport should use.
-	// It is passed rather than left to Mutagen's own detection so that the
-	// session acts on the same Docker tamp does.
+	// DockerHost pins Mutagen's docker transport to the engine tamp resolved,
+	// not whatever Mutagen would detect.
 	DockerHost string
 }
 
-// BetaURL is the Mutagen endpoint for a bench's apps directory inside its
-// container.
+// BetaURL is the Mutagen docker endpoint for a bench's in-container apps
+// directory.
 func BetaURL(user, container, appsDir string) string {
 	return fmt.Sprintf("docker://%s@%s%s", user, container, appsDir)
 }
 
-// Binary is the Mutagen tamp drives, and where it came from.
+// Binary is a Mutagen executable and its provenance.
 type Binary struct {
 	Path string
-	// Version is the release, without the leading v.
+	// Version has no leading v.
 	Version string
-	// Managed says tamp downloaded this one itself, rather than finding it on
-	// the machine's PATH.
+	// Managed marks a binary tamp downloaded, as opposed to one found on PATH.
 	Managed bool
 }
 
-// Mutagen is the sync agent tamp drives.
-//
-// It is an interface for the same reason the container engine is: everything
-// above it — when a session is made, paused, resumed or destroyed — is tamp's
-// own logic and has to be testable without a Mutagen binary on the machine.
+// Mutagen abstracts the Mutagen binary so session lifecycle logic is testable
+// on machines without one.
 type Mutagen interface {
-	// Find reports the Mutagen already on this machine, and returns an error
-	// carrying CodeNotFound when there is none. It downloads nothing: it is
-	// what a diagnosis asks.
+	// Find reports an existing Mutagen without downloading anything, with
+	// CodeNotFound when there is none.
 	Find(ctx context.Context) (Binary, error)
-	// Ensure reports the Mutagen tamp will drive, downloading the pinned
-	// release if the machine has none.
+	// Ensure returns a usable Mutagen, downloading the pinned release if
+	// needed.
 	Ensure(ctx context.Context) (Binary, error)
 
 	// Create starts a two-way session and waits for its first full pass, so
-	// that a command which returns has actually put the source on the host.
+	// a successful return means the source is on the host.
 	Create(ctx context.Context, s Session, out io.Writer) error
-	// Pause stops a session without forgetting it.
 	Pause(ctx context.Context, name string) error
-	// Resume restarts a paused session.
 	Resume(ctx context.Context, name string) error
-	// Terminate forgets a session for good.
 	Terminate(ctx context.Context, name string) error
-	// Sessions names the sessions Mutagen currently holds for tamp.
 	Sessions(ctx context.Context) ([]string, error)
 }
 
-// cloudFolders are the directory names that mean a third party is also syncing
-// this path. Matching is on a whole path segment, case-folded.
+// cloudFolders are path segments (matched whole, case-folded) that mean a
+// third-party synchronizer also owns the tree.
 var cloudFolders = []string{"onedrive", "dropbox", "google drive", "googledrive"}
 
-// PathWarnings reports what about an environment's location will bite later.
-//
-// Both are warnings rather than refusals: they describe a setup that works
-// until it does not, and where the environment goes is the user's call. A
-// cloud-sync folder means two synchronizers writing the same files, each
-// undoing the other; a space in the path is a quoting bug waiting somewhere in
-// the chain of shells a bench command passes through.
+// PathWarnings flags locations that will cause trouble later: a cloud-sync
+// folder means two synchronizers undoing each other, and a space in the path
+// trips quoting somewhere in the shells a bench command crosses. Warnings,
+// not refusals — where the environment lives is the user's call.
 func PathWarnings(dir string) []string {
 	var warnings []string
 	for _, segment := range strings.Split(filepath.ToSlash(dir), "/") {

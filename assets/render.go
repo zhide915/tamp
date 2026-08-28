@@ -9,22 +9,18 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Write renders the named template to path.
-//
-// It lives beside the templates rather than in either caller because two
-// packages generate files from them — an environment's compose file, and the
-// router's — and a template that will not parse is the same broken tamp build
-// whichever one asked for it.
+// Write renders the named template to path. It lives with the templates
+// because both environment and router generation use them.
 func Write(name, path string, data any) error {
 	tmpl, err := template.ParseFS(FS, name)
 	if err != nil {
-		// The templates are compiled into the binary, so this is a broken
-		// build rather than anything the user did.
+		// Templates are embedded, so failing to parse is a broken build, not
+		// user error.
 		return broken(name, err)
 	}
 
-	// Rendered whole before anything is written: a template that fails halfway
-	// must not leave a truncated file where the old one was.
+	// Render fully before writing, so a mid-template failure cannot leave a
+	// truncated file.
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
 		return broken(name, err)

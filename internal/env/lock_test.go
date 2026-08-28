@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-// The second command waits briefly, then says plainly what is wrong
-// rather than corrupting the registry the first one is rewriting.
 func TestSecondLockHolderIsToldAnotherCommandIsRunning(t *testing.T) {
 	home := t.TempDir()
 
@@ -26,8 +24,8 @@ func TestSecondLockHolderIsToldAnotherCommandIsRunning(t *testing.T) {
 	if !strings.Contains(err.Error(), "another tamp command is running") {
 		t.Errorf("error = %q, want it to name the cause", err)
 	}
-	// It has to actually wait: a command that loses a one-millisecond race
-	// should end up queued behind the winner, not rejected.
+	// A command losing a one-millisecond race should queue behind the winner,
+	// not fail instantly.
 	if waited := time.Since(start); waited < lockWait {
 		t.Errorf("gave up after %v, want at least %v", waited, lockWait)
 	}

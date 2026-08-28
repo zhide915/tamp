@@ -7,9 +7,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// An app spec says three things at most — which app, from where, on which
-// branch — and tamp never invents the third. What is tested here is that the
-// branch tamp fetches is the one the user wrote, or nothing at all.
+// tamp never invents a branch: what is fetched is the branch the user wrote,
+// or the repo's default.
 
 func TestAnAppSpecSaysWhichBranch(t *testing.T) {
 	cases := map[string]env.App{
@@ -37,8 +36,8 @@ func TestAnAppSpecSaysWhichBranch(t *testing.T) {
 		"git@github.com:frappe/hrms.git:develop": {
 			Name: "hrms", Source: "git@github.com:frappe/hrms.git", Branch: "develop",
 		},
-		// A branch is allowed to look like a path; the colon that separates it
-		// is the one after the repository, not the one inside the URL.
+		// The branch colon is the one after the repository, so a branch may
+		// itself contain a slash.
 		"https://github.com/frappe/hrms:feature/x": {
 			Name: "hrms", Source: "https://github.com/frappe/hrms", Branch: "feature/x",
 		},
@@ -58,9 +57,8 @@ func TestAnAppSpecSaysWhichBranch(t *testing.T) {
 }
 
 func TestAnAppSpecTampRefuses(t *testing.T) {
-	// "frappe/erpnext" is a spelling bench accepts and tamp does not: glued
-	// onto the frappe organisation's URL it names a repository that does not
-	// exist, and the clone would only fail after the environment is built.
+	// bench accepts owner/repo; tamp refuses it — glued onto the frappe org
+	// URL it would name a repository that does not exist.
 	for _, spec := range []string{"", ":version-15", "frappe/erpnext", "frappe/erpnext:version-15"} {
 		if _, err := env.ParseApp(spec); err == nil {
 			t.Errorf("ParseApp(%q) = nil, want an error", spec)
@@ -70,8 +68,7 @@ func TestAnAppSpecTampRefuses(t *testing.T) {
 	}
 }
 
-// The second fetch of a duplicated app would fail against the app the first
-// one put on the bench — minutes in, taking the whole create with it.
+// A duplicate would only fail at the second fetch, minutes in.
 func TestParseAppsRefusesADuplicate(t *testing.T) {
 	for _, spec := range []string{
 		"erpnext:version-15,erpnext",
@@ -83,9 +80,8 @@ func TestParseAppsRefusesADuplicate(t *testing.T) {
 	}
 }
 
-// "erpnext:" carries an empty branch, so the branch rejection has no reason to
-// fire — but the colon must not reach the comparison against bench directory
-// names, where it can never match.
+// "erpnext:" carries an empty branch; the colon must not reach the comparison
+// against bench directory names.
 func TestParseInstallAppsDropsATrailingColon(t *testing.T) {
 	names, err := env.ParseInstallApps("erpnext:")
 	if err != nil {
@@ -110,8 +106,7 @@ func TestParseAppsSplitsTheFlagAndKeepsItsOrder(t *testing.T) {
 	}
 }
 
-// An empty --apps is no apps, not one app with no name: the flag defaults to
-// the empty string and every create would otherwise fail on it.
+// The flag defaults to "": that is no apps, not one nameless app.
 func TestParseAppsAcceptsNothing(t *testing.T) {
 	apps, err := env.ParseApps("")
 	if err != nil {

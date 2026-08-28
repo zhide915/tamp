@@ -50,9 +50,8 @@ func newCreateCommand(d deps) *cobra.Command {
 	return cmd
 }
 
-// exactlyOneName is create's argument rule: the environment name, and nothing
-// else. Unlike every other environment command, create cannot fall back to the
-// current directory — there is nothing there yet to fall back to.
+// exactlyOneName requires the name: create alone cannot fall back to the
+// current directory, since nothing exists there yet.
 func exactlyOneName(cmd *cobra.Command, args []string) error {
 	switch {
 	case len(args) == 0:

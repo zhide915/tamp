@@ -1,9 +1,6 @@
-// Package doctor is tamp's self-diagnosis: a list of checks, each reporting
-// pass, warn or fail with the fix, and the exit code that follows from them.
-//
-// It answers questions rather than performing actions, so it never stops at
-// the first problem — a user whose Docker is down still deserves to hear
-// whether compose is installed.
+// Package doctor runs tamp's health checks and folds them into a report and
+// an exit code. It only diagnoses, so it never stops at the first problem —
+// every check reports regardless of the ones before it.
 package doctor
 
 import (
@@ -22,12 +19,9 @@ import (
 type Status int
 
 const (
-	// Pass — tamp can work with what it found.
-	Pass Status = iota
-	// Warn — tamp can work, but something will bite the user later.
-	Warn
-	// Fail — tamp cannot work until this is fixed.
-	Fail
+	Pass Status = iota // tamp can work
+	Warn               // tamp can work, but something will bite later
+	Fail               // tamp cannot work until this is fixed
 )
 
 func (s Status) String() string {
@@ -42,19 +36,14 @@ func (s Status) String() string {
 	return "unknown"
 }
 
-// Check is one diagnosis: what was checked, what tamp found, and — when that
-// is not good enough — what to do about it.
+// Check is one diagnosis.
 type Check struct {
 	Name   string
 	Status Status
-	// Detail is what tamp found, in the user's terms: a version and an
-	// address when things are well, the reason when they are not.
 	Detail string
-	// Fix is the action to take. Empty on a passing check, never on a failing
-	// one — a diagnosis without a remedy is just bad news.
+	// Fix is empty on a pass and required on a fail.
 	Fix string
-	// Code is the exit code a failure here produces, so tamp reports the
-	// specific thing that is broken rather than a blanket "failed".
+	// Code is the exit code a failure here produces.
 	Code exitcode.Code
 }
 
@@ -63,7 +52,7 @@ type Report struct {
 	Checks []Check
 }
 
-// Run performs every check tamp currently knows how to make.
+// Run performs every check tamp knows.
 func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutagen) Report {
 	return Report{Checks: []Check{
 		dockerCheck(ctx, e),
@@ -73,8 +62,7 @@ func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutage
 	}}
 }
 
-// OK reports whether tamp can work. Warnings are deliberately not failures:
-// they exist so tamp can mention something without breaking a script.
+// OK reports no failures. Warnings never fail a script.
 func (r Report) OK() bool {
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -84,8 +72,7 @@ func (r Report) OK() bool {
 	return true
 }
 
-// ExitCode is 0 when nothing failed, and otherwise the code carried by the
-// first failing check — the first thing the user has to fix.
+// ExitCode is CodeOK, or the code of the first failing check.
 func (r Report) ExitCode() exitcode.Code {
 	for _, c := range r.Checks {
 		if c.Status == Fail {
@@ -119,20 +106,14 @@ func composeCheck(ctx context.Context, e engine.Engine) Check {
 	}
 }
 
-// routerCheck reports the one container every environment depends on.
-//
-// A router that is not running is a warning rather than a failure, twice over:
-// a machine with no environments has no reason to run one, and tamp starts it
-// itself on the next create or start. What it is not is silence — with the
-// router down nothing on the machine answers to a hostname, and that is the
-// answer to the question the user came to doctor with.
+// routerCheck warns rather than fails when the router is down: a machine with
+// no environments needs none, and tamp starts it on demand. It still speaks
+// up — with the router down nothing answers to a hostname.
 func routerCheck(ctx context.Context, r *router.Router) Check {
 	status, err := r.Status(ctx)
 	if err != nil {
-		// An engine tamp cannot reach is already the Docker check's answer,
-		// and repeating it here as a second failure tells the user nothing.
-		// Anything else — tamp's own state, unreadable — is tamp's fault and
-		// deserves to be a failure of its own.
+		// An unreachable engine is already the Docker check's failure; only
+		// tamp's own unreadable state fails here.
 		if exitcode.Of(err) != exitcode.CodeEngineUnavailable {
 			return failed("Router", err)
 		}
@@ -158,13 +139,9 @@ func routerCheck(ctx context.Context, r *router.Router) Check {
 	}
 }
 
-// syncCheck reports the state of the Mutagen tamp manages.
-//
-// Nothing here is ever a failure. On Linux there is no Mutagen to have: the
-// source is bind-mounted, at native speed, and a check that failed for a
-// missing binary would be reporting the absence of something tamp would never
-// use. Elsewhere a missing binary is a download tamp has not needed yet, and
-// a download it cannot make is a bind mount — degraded, and working.
+// syncCheck never fails: Linux bind-mounts the source and has no Mutagen to
+// miss, and elsewhere a missing binary is downloaded on first sync — or, if
+// that is blocked, replaced by a bind mount.
 func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
 	const name = "Sync"
 
@@ -197,9 +174,7 @@ func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
 	}
 }
 
-// failed turns an engine error into a check. tamp's errors already carry both
-// halves a check needs — what happened, and the fix — so this splits rather
-// than reinvents them.
+// failed splits an *exitcode.Error's message and fix into a check's fields.
 func failed(name string, err error) Check {
 	c := Check{Name: name, Status: Fail, Code: exitcode.Of(err), Detail: err.Error()}
 

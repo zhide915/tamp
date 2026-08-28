@@ -12,13 +12,10 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Docker is the one type in tamp that a test cannot fully run, so what can be
-// exercised is: point the real client at a stub daemon over tcp:// — the one
-// transport every OS shares — and check tamp reports what the daemon said,
-// through the address it actually resolved.
+// Docker cannot be fully exercised in tests; these point the real client at
+// a stub daemon over tcp://, the one transport every OS shares.
 
-// stubDaemon serves the two endpoints Ping touches: the version negotiation
-// ping, and /version itself.
+// stubDaemon serves the endpoints Ping touches.
 func stubDaemon(t *testing.T, version string) string {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -31,7 +28,7 @@ func stubDaemon(t *testing.T, version string) string {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"Version":"` + version + `","ApiVersion":"1.51"}`))
 	})
-	// The client requests /v1.51/version once negotiation has happened.
+	// After version negotiation the client requests /v1.51/version.
 	mux.HandleFunc("/v1.51/version", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"Version":"` + version + `","ApiVersion":"1.51"}`))
@@ -53,9 +50,6 @@ func TestPingReportsTheDaemonVersionAndTheAddressItUsed(t *testing.T) {
 	if info.Version != "29.7.2" {
 		t.Errorf("Version = %q, want %q", info.Version, "29.7.2")
 	}
-	// The address travels with the result because doctor prints it; a Ping
-	// that reported only a version would leave the user guessing which of
-	// their two engines answered.
 	if info.Address.Host != host {
 		t.Errorf("Address.Host = %q, want %q", info.Address.Host, host)
 	}
@@ -64,8 +58,6 @@ func TestPingReportsTheDaemonVersionAndTheAddressItUsed(t *testing.T) {
 	}
 }
 
-// A socket tamp can name but nothing answers on is the everyday "Docker
-// Desktop is not running" case, and it must be exit 4 with a fix.
 func TestPingIsEngineUnavailableWhenNothingAnswers(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://"+closedAddress(t))
 
@@ -81,8 +73,8 @@ func TestPingIsEngineUnavailableWhenNothingAnswers(t *testing.T) {
 	}
 }
 
-// closedAddress returns a host:port that was listening a moment ago and is not
-// any more, which is the closest thing to a guaranteed-refused connection.
+// closedAddress returns a host:port that just stopped listening — the
+// closest thing to a guaranteed-refused connection.
 func closedAddress(t *testing.T) string {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -96,7 +88,6 @@ func closedAddress(t *testing.T) string {
 	return addr
 }
 
-// The interface is tamp's single fake point, so the real engine must satisfy
-// it — otherwise every test above the boundary would be faking a shape that
-// production does not have.
+// The real engine must satisfy the interface every test above the boundary
+// fakes.
 var _ engine.Engine = (*engine.Docker)(nil)

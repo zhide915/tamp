@@ -12,38 +12,31 @@ import (
 
 // listing is one row of `tamp list`.
 type listing struct {
-	Name string
-	// Mail is where this environment's mail UI is reached through the router.
+	Name  string
 	Mail  string
 	State State
 	Cfg   *Config
 	Path  string
 }
 
-// List reports every environment on the machine.
-//
-// It is the one command that reads the whole registry rather than a single
-// environment, which makes it the natural place to notice entries whose
-// directory is gone — and to drop them, so the index does not accumulate
-// environments that no longer exist.
+// List reports every environment. As the one command that reads the whole
+// registry, it is also the place that prunes entries whose directory is gone.
 func (m *Manager) List(ctx context.Context) error {
 	reg, err := LoadRegistry(m.Home)
 	if err != nil {
 		return err
 	}
 
-	// An unreachable engine costs the state column and nothing else. Refusing
-	// to list would be worse than listing without it: the registry, the paths
-	// and the versions are all still true with Docker stopped.
+	// Docker being down costs the state column and nothing else — the rest of
+	// the row is still true.
 	engineUp := true
 	if _, err := m.Engine.Ping(ctx); err != nil {
 		engineUp = false
 		m.Out.Warn("Docker is unreachable, so tamp cannot tell which environments are running")
 	}
 
-	// The router's own port is tamp's to remember, so the URLs below are
-	// still right with Docker down — only "is it up" needs the engine, and the
-	// status comes back carrying the port either way.
+	// The router's port is tamp's own record, so the URLs stay right with
+	// Docker down; the status carries the port either way.
 	status, err := m.router().Status(ctx)
 	if err != nil && engineUp {
 		return err
@@ -62,9 +55,8 @@ func (m *Manager) List(ctx context.Context) error {
 		row := listing{Name: name, Mail: MailURL(Name(name), status), State: StateUnknown, Path: entry.Path}
 		cfg, warnings, err := LoadConfig(ConfigPath(entry.Path))
 		if err != nil {
-			// A config tamp cannot read is still an environment that exists;
-			// saying so beats hiding the row and leaving the user wondering
-			// where it went.
+			// An unreadable config is still an environment that exists — it
+			// keeps its row.
 			m.Out.Warn(err.Error())
 		} else {
 			row.Cfg = cfg
@@ -97,9 +89,8 @@ func (m *Manager) List(ctx context.Context) error {
 	return nil
 }
 
-// printRouter says whether hostname access works at all. It leads the listing
-// because it is the answer to "why does none of this respond" whenever the one
-// container every environment depends on is down.
+// printRouter leads the listing: a stopped router is why nothing on the
+// machine responds.
 func (m *Manager) printRouter(status router.Status, engineUp bool) {
 	switch {
 	case !engineUp:
@@ -113,19 +104,15 @@ func (m *Manager) printRouter(status router.Status, engineUp bool) {
 	m.Out.Print("")
 }
 
-// prune drops registry entries whose directory no longer holds a tamp.toml.
-//
-// The registry is an index, not the truth: directories get moved and
-// deleted without tamp's knowledge, and an entry that outlives its directory
-// only ever produces confusing errors somewhere else.
+// prune drops registry entries whose directory no longer holds a tamp.toml —
+// they only ever produce confusing errors elsewhere.
 func (m *Manager) prune(gone []string) {
 	if len(gone) == 0 {
 		return
 	}
 
-	// The stats that produced gone ran outside the lock, so each entry is
-	// checked again under it: a concurrent create may have re-registered one of
-	// these names at a live path, and that entry must survive.
+	// Re-checked under the lock: a concurrent create may have re-registered
+	// one of these names at a live path.
 	type pruned struct{ name, path string }
 	var dropped []pruned
 	err := UpdateRegistry(m.Home, func(reg Registry) error {
@@ -164,6 +151,5 @@ func (m *Manager) printListing(rows []listing) {
 	m.Out.Table([]string{"NAME", "STATE", "FRAPPE", "PYTHON", "NODE", "MARIADB", "MAIL", "PATH"}, table)
 }
 
-// unknownField stands in for a column tamp could not fill — an environment
-// whose config would not load still gets a row, because it still exists.
+// unknownField fills a column tamp could not read.
 const unknownField = "?"

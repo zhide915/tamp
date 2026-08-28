@@ -13,9 +13,6 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// A create that returns has produced a bench that is serving: the toolchain is
-// in place, bench init has run against it, tamp's own process file and site
-// config are on the bench, and the web server has answered.
 func TestCreateEndsWithABenchThatIsServing(t *testing.T) {
 	c := sandbox(t)
 
@@ -32,8 +29,7 @@ func TestCreateEndsWithABenchThatIsServing(t *testing.T) {
 			t.Errorf("create did not write %s; it wrote %v", path, c.engine.Written())
 		}
 	}
-	// The bench container is idle until there is a bench to run, so tamp has
-	// to ask it again once there is.
+	// The bench container idles until a bench exists; a restart picks it up.
 	if len(c.ops("ComposeRestart")) != 1 {
 		t.Errorf("create restarted the bench service %d times, want 1", len(c.ops("ComposeRestart")))
 	}
@@ -42,8 +38,6 @@ func TestCreateEndsWithABenchThatIsServing(t *testing.T) {
 	}
 }
 
-// The numbered steps are what makes a create that takes minutes legible, and
-// the toolchain tamp resolved is the answer to "which Python is in there".
 func TestCreateStreamsItsStepsAndNamesTheToolchain(t *testing.T) {
 	c := sandbox(t)
 
@@ -57,8 +51,6 @@ func TestCreateStreamsItsStepsAndNamesTheToolchain(t *testing.T) {
 	)
 }
 
-// The version matrix is tamp's answer to a question the user should not have
-// to ask, and a release tamp does not carry has to say what it does.
 func TestCreateRejectsAFrappeVersionTampDoesNotCarry(t *testing.T) {
 	c := sandbox(t)
 
@@ -71,9 +63,8 @@ func TestCreateRejectsAFrappeVersionTampDoesNotCarry(t *testing.T) {
 	}
 }
 
-// The database credential is generated per environment and shown once, at the
-// moment it comes into existence. It lives on disk from then on; reprinting it
-// on every start would scatter it through scrollback nobody asked to keep.
+// The credential lives on disk after create; reprinting on every start would
+// scatter it through scrollback.
 func TestCreatePrintsTheDatabaseRootPasswordExactlyOnce(t *testing.T) {
 	c := sandbox(t)
 
@@ -97,9 +88,8 @@ func TestCreatePrintsTheDatabaseRootPasswordExactlyOnce(t *testing.T) {
 	}
 }
 
-// A create that fails while building the bench is a failed create, not a
-// half-made environment: everything outside the directory goes, and the
-// directory stays with enough in it to see what happened.
+// A failed create removes everything outside the directory; the directory
+// stays as the trace of what happened.
 func TestAFailureWhileBuildingTheBenchRollsBackTheEnvironment(t *testing.T) {
 	c := sandbox(t)
 	c.engine.ExecFails = map[string]error{
@@ -119,8 +109,6 @@ func TestAFailureWhileBuildingTheBenchRollsBackTheEnvironment(t *testing.T) {
 		t.Error("rollback left the failed environment's volumes behind")
 	}
 
-	// The directory is the one thing tamp never destroys — the user may have
-	// put something in it — and what is left in it says how far tamp got.
 	for _, file := range []string{env.ConfigFile, filepath.Join(env.StateDirName, env.CreateLogFile)} {
 		if !c.exists("demo", file) {
 			t.Errorf("rollback removed %s", file)
@@ -130,15 +118,12 @@ func TestAFailureWhileBuildingTheBenchRollsBackTheEnvironment(t *testing.T) {
 		t.Errorf("the create log does not show how far tamp got:\n%s", log)
 	}
 
-	// The name has to be free again, or the user who fixes what broke cannot
-	// simply run the same command.
+	// The name must be free again for a retry.
 	c.engine.ExecFails = nil
 	c.run(t, "create", "demo", "--dir", t.TempDir(), "--frappe", "version-15").assertCode(t, exitcode.CodeOK)
 }
 
-// Starting a stopped environment revives its processes without rebuilding
-// anything: the bench is in the volumes, and the container works out at boot
-// that it has one to run.
+// The bench survives in the volumes; start only revives the containers.
 func TestStartingAnEnvironmentDoesNotInitializeItAgain(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

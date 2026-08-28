@@ -9,9 +9,8 @@ import (
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-// The router knows nothing about tamp.toml or the registry; this is the
-// translation, and it is where a wrong container name would send every request
-// for a site into the void.
+// A wrong container name here would send every request for a site into the
+// void.
 func TestRoutesAddressEachEnvironmentsOwnContainers(t *testing.T) {
 	reg := Registry{
 		"demo": {Path: "/work/demo", Hash: "ab12cd", Sites: []string{"shop.localhost"}},
@@ -40,9 +39,6 @@ func TestRoutesAddressEachEnvironmentsOwnContainers(t *testing.T) {
 	}
 }
 
-// The cached site list is what lets the routes of a stopped environment be
-// assembled at all, so an environment with no sites yet is a normal case
-// rather than a missing one — its mail UI is still routed.
 func TestAnEnvironmentWithNoSitesStillHasRoutes(t *testing.T) {
 	got := routes(Registry{"demo": {Path: "/work/demo", Hash: "ab12cd"}})
 
@@ -67,9 +63,7 @@ func TestTheMailURLIsPrintedWithoutAPortOnTheDefaultOne(t *testing.T) {
 	}
 }
 
-// A user whose port 80 was taken has to be told twice over: once that it
-// happened, and once in every URL — a URL missing the port points at whatever
-// else is on 80.
+// A URL missing the fallback port would point at whatever else is on 80.
 func TestTheFallbackPortIsAnnouncedAndCarriedByTheURLs(t *testing.T) {
 	got := announced(t, router.Status{Running: true, Port: router.FallbackPort})
 

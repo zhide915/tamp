@@ -12,13 +12,10 @@ import (
 	"github.com/zhide915/tamp/internal/syncer/synctest"
 )
 
-// The sync layer is what makes an agent on the host able to edit a bench
-// running in a container. Every test here names the mode explicitly rather
-// than leaving it to auto, because auto means different things on different
-// machines and these must say the same thing on all of them.
+// Every test names the sync mode explicitly: auto differs per machine, and
+// these must not.
 
-// session is the Mutagen session name tamp gives an environment: its own
-// resource name, so a session is traceable to what owns it.
+// session is the Mutagen session name tamp derives for an environment.
 func (c *cli) session(t *testing.T, name string) string {
 	t.Helper()
 	res, err := env.NewResources(env.Name(name), c.path(name))
@@ -28,8 +25,6 @@ func (c *cli) session(t *testing.T, name string) string {
 	return res.Project()
 }
 
-// hostOS is the platform these tests are running on, which decides what the
-// sync check has to say.
 func hostOS() string { return runtime.GOOS }
 
 func TestCreateStartsASyncSessionBetweenTheHostAndTheBench(t *testing.T) {
@@ -46,22 +41,20 @@ func TestCreateStartsASyncSessionBetweenTheHostAndTheBench(t *testing.T) {
 	if made.Name != c.session(t, "demo") {
 		t.Errorf("session name = %q, want %q", made.Name, c.session(t, "demo"))
 	}
-	// Alpha is the host, which is what makes the host win a conflict — it is
-	// the side a person or an agent is editing.
+	// Alpha is the host side — the side being edited, and the conflict winner.
 	if made.Alpha != c.path("demo", syncer.AppsDirName) {
 		t.Errorf("session alpha = %q, want the host's apps directory", made.Alpha)
 	}
 	if !strings.HasPrefix(made.Beta, "docker://") || !strings.HasSuffix(made.Beta, "/apps") {
 		t.Errorf("session beta = %q, want the bench's apps directory in its container", made.Beta)
 	}
-	// The directory has to be there before anything mirrors into it.
+	// The host directory must exist before anything mirrors into it.
 	if !c.exists("demo", syncer.AppsDirName) {
 		t.Error("tamp started a session with nowhere on the host to sync to")
 	}
 }
 
-// The Linux answer, and the documented fallback everywhere else: the container
-// reads the host's filesystem directly, and there is no session at all.
+// Bind is the Linux answer and the documented fallback elsewhere.
 func TestBindModeMountsTheHostSourceAndRunsNoSession(t *testing.T) {
 	c := sandbox(t)
 
@@ -79,8 +72,7 @@ func TestBindModeMountsTheHostSourceAndRunsNoSession(t *testing.T) {
 	}
 }
 
-// A machine that cannot download Mutagen still gets a working environment.
-// It has to be told, though: the fallback is slow and nothing hot-reloads.
+// The fallback works but is slow and does not hot-reload, so it is announced.
 func TestABlockedDownloadFallsBackToABindMountAndSaysSo(t *testing.T) {
 	c := sandbox(t)
 	c.sync = synctest.Blocked()
@@ -97,8 +89,7 @@ func TestABlockedDownloadFallsBackToABindMountAndSaysSo(t *testing.T) {
 	}
 }
 
-// A session survives a stop rather than being torn down and rebuilt, which is
-// what stops every start resynchronising the whole tree.
+// Pause, not teardown: a rebuilt session resynchronises the whole tree.
 func TestStopPausesTheSessionAndStartResumesIt(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "mutagen")
@@ -117,8 +108,7 @@ func TestStopPausesTheSessionAndStartResumesIt(t *testing.T) {
 	}
 }
 
-// The far end of a session is a container rm is about to remove, so the
-// session goes with it rather than being left reporting a bench that is gone.
+// The session's far end is a container rm removes; the session goes with it.
 func TestRemoveTerminatesTheSession(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "mutagen")
@@ -130,8 +120,7 @@ func TestRemoveTerminatesTheSession(t *testing.T) {
 	}
 }
 
-// Stopping a bind-mounted environment must not be the thing that downloads a
-// Mutagen this machine has never needed.
+// Stop must not download a Mutagen this machine has never needed.
 func TestStopNeverReachesForMutagenInBindMode(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "bind")
@@ -143,8 +132,8 @@ func TestStopNeverReachesForMutagenInBindMode(t *testing.T) {
 	}
 }
 
-// Where the environment goes is the user's call, so this is a warning. It is
-// still worth saying: two synchronizers on one directory undo each other.
+// Two synchronizers on one directory undo each other; the location is still
+// the user's call, so warn rather than refuse.
 func TestCreateWarnsAboutACloudSyncedDirectory(t *testing.T) {
 	c := sandbox(t)
 	parent := c.path("OneDrive")
@@ -171,8 +160,7 @@ func TestCreateWarnsAboutASpaceInThePath(t *testing.T) {
 	r.assertStderrContains(t, "space in it")
 }
 
-// doctor answers "will syncing work here", and on a platform that needs no
-// Mutagen the honest answer is that there is nothing to have.
+// On a platform needing no Mutagen, the honest answer is the bind mount.
 func TestDoctorReportsTheStateOfTheManagedMutagen(t *testing.T) {
 	c := sandbox(t)
 

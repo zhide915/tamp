@@ -10,21 +10,18 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// ComposeFile is the compose file tamp generates. It is regenerated from
-// tamp.toml on every start — hand-edits do not survive.
+// ComposeFile is regenerated from tamp.toml on every start — hand-edits do
+// not survive.
 const ComposeFile = "compose.yaml"
 
-// GitignoreFile is written once, at create. Unlike compose.yaml it is
-// the user's file afterwards: tamp never rewrites it, because the directory
-// it lives in may well be the root of the user's own repository.
+// GitignoreFile is written once at create and never rewritten: the directory
+// may be the root of the user's own repository.
 const GitignoreFile = ".gitignore"
 
-// ComposePath is the generated compose file inside an environment directory.
 func ComposePath(dir string) string { return filepath.Join(dir, ComposeFile) }
 
-// composeData is what the compose template is rendered from. Every value in it
-// comes from tamp.toml or from the environment's resource names, which is the
-// mechanical form of "tamp.toml is the source of truth".
+// composeData feeds the compose template. Every value derives from tamp.toml
+// or the environment's resource names.
 type composeData struct {
 	Name         Name
 	Project      string
@@ -37,14 +34,11 @@ type composeData struct {
 	DBSecretName string
 	DBSecretFile string
 
-	// The environment's own storage layers.
 	DBVolume    string
 	CodeVolume  string
 	DepsVolume  string
 	SitesVolume string
 
-	// The volumes every environment on the machine shares, and where the bench
-	// container mounts them.
 	ToolchainVolume string
 	ToolchainDir    string
 	PipCacheVolume  string
@@ -52,8 +46,6 @@ type composeData struct {
 	YarnCacheVolume string
 	YarnCacheDir    string
 
-	// Where the bench lives inside the container, and the two files that
-	// decide what its container does when it boots.
 	WorkspaceDir string
 	BenchDir     string
 	EnvDir       string
@@ -63,22 +55,19 @@ type composeData struct {
 	EnvScript    string
 
 	// AppsBind is the host path bound over the bench's apps directory, or
-	// empty when the source reaches the container some other way.
+	// empty when the source reaches the container another way.
 	AppsBind string
 }
 
-// Generate rewrites every file tamp generates from tamp.toml.
+// Generate rewrites every generated file from tamp.toml. It runs at create
+// and on every start, so containers always match the config — including after
+// a tamp upgrade changes the templates.
 //
-// It runs at create and again at the start of every start, so an
-// environment's containers always match its config — including after tamp
-// itself is upgraded and the templates beneath it change.
-//
-// The sync mode is passed rather than read off the config because it is not
-// only in the config: "auto" means different things on different machines, and
-// a machine that cannot get Mutagen falls back to the bind mount this writes.
+// sync is passed rather than read off the config: "auto" resolves differently
+// per machine, and a machine without Mutagen falls back to the bind mount.
 func (e *Environment) Generate(sync syncer.Effective) error {
-	// A relative path, resolved by compose against the compose file's own
-	// directory, and with forward slashes, which compose accepts everywhere.
+	// Relative with forward slashes: compose resolves it against its own
+	// directory and accepts slashes on every platform.
 	appsBind := ""
 	if sync == syncer.UseBind {
 		appsBind = "./" + syncer.AppsDirName
@@ -94,8 +83,6 @@ func (e *Environment) Generate(sync syncer.Effective) error {
 		MailpitImage: MailpitImage,
 		DBPort:       e.Config.Ports.DB,
 		DBSecretName: DBRootPasswordFile,
-		// Compose resolves a relative secret path against the compose file's
-		// own directory, and accepts forward slashes on every platform.
 		DBSecretFile: "./" + StateDirName + "/" + SecretsDirName + "/" + DBRootPasswordFile,
 
 		DBVolume:    e.Resources.Volume(DataVolume),
@@ -122,9 +109,8 @@ func (e *Environment) Generate(sync syncer.Effective) error {
 }
 
 // WriteGitignore writes the environment's .gitignore, leaving an existing one
-// alone. tamp never runs `git init`: whether this directory is a
-// repository is the user's call, and this file is only there so that if it
-// becomes one, the secrets and the generated files stay out of it.
+// alone. Whether the directory becomes a repository is the user's call; this
+// file only keeps the secrets and generated files out if it does.
 func WriteGitignore(dir string) error {
 	path := filepath.Join(dir, GitignoreFile)
 	if _, err := os.Stat(path); err == nil {

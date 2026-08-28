@@ -12,30 +12,18 @@ import (
 	"github.com/zhide915/tamp/internal/syncer/synctest"
 )
 
-// This file is tamp's CLI test harness and the house style for every later
-// command test: drive the real cobra root in-process, against a temp HOME and
-// a temp working directory, and assert only on stdout, stderr and exit code.
-// Nothing here touches the developer's real ~/.tamp.
+// CLI test harness: drive the real cobra root in-process against a temp HOME
+// and working directory, asserting only on stdout, stderr and exit code.
 
-// cli is a sandboxed tamp installation. Create one per test with sandbox(t)
-// and call run as many times as the scenario needs — state written by an
-// earlier command is still there for the next one.
+// cli is a sandboxed tamp installation; state persists across run calls.
 type cli struct {
-	// home is the temp HOME; tamp's global state lives in <home>/.tamp.
 	home string
-	// dir is the temp working directory commands start in.
-	dir string
-	// engine is the recording fake standing in for Docker — tamp's only fake
-	// point. It starts healthy; a test about a broken engine replaces it, and
-	// afterwards reads engine.Calls to assert what tamp asked it to do.
+	dir  string
+	// engine and sync are tamp's only two fake points, both recording.
+	// They start healthy; failure tests replace them.
 	engine *enginetest.Fake
-	// sync is the recording fake standing in for Mutagen — tamp's second and
-	// last fake point. It starts as a machine that already has the pinned
-	// binary; a test about a blocked download replaces it.
-	sync *synctest.Fake
-	// stdin is what tamp reads as its standard input. It is an exhausted pipe
-	// by default — no terminal, nothing to read — which is what every command
-	// but exec sees.
+	sync   *synctest.Fake
+	// stdin defaults to an exhausted pipe: no terminal, nothing to read.
 	stdin io.Reader
 }
 
@@ -44,8 +32,8 @@ func sandbox(t *testing.T) *cli {
 	home := t.TempDir()
 	dir := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home) // os.UserHomeDir consults this on Windows
-	t.Setenv("NO_COLOR", "")      // empty reads as unset, so it neither forces nor blocks colour
+	t.Setenv("USERPROFILE", home) // what os.UserHomeDir reads on Windows
+	t.Setenv("NO_COLOR", "")      // empty counts as unset: colour neither forced nor blocked
 	t.Chdir(dir)
 	return &cli{
 		home:   home,

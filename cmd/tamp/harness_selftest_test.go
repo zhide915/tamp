@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// The harness is a contract of its own: if it ever stopped redirecting HOME,
-// every later command test would start writing to the developer's machine.
+// A harness that stopped redirecting HOME would let every test write to the
+// developer's real machine.
 func TestSandboxIsolatesHomeAndWorkingDirectory(t *testing.T) {
 	c := sandbox(t)
 
@@ -28,7 +28,7 @@ func TestSandboxIsolatesHomeAndWorkingDirectory(t *testing.T) {
 	}
 }
 
-// macOS temp dirs are symlinked (/var -> /private/var), so compare real paths.
+// resolve follows symlinks: macOS temp dirs live under /var -> /private/var.
 func resolve(t *testing.T, path string) string {
 	t.Helper()
 	real, err := filepath.EvalSymlinks(path)

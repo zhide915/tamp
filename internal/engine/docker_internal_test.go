@@ -9,12 +9,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// This is tamp's one internal test package, and the reason is worth stating:
-// the rule below — tamp refuses compose v1 — is real behaviour that must not
-// regress, but its only public route is ComposeVersion, which shells out to
-// the real docker on the very machine whose compose version is in question. A
-// test there would assert whatever that machine happens to have, which is
-// nothing. So the rule is tested where it lives instead.
+// Internal on purpose: the only public route to the v1 rejection is
+// ComposeVersion, which shells out to whatever docker this machine has.
 func TestComposeVersionAcceptsV2AndLater(t *testing.T) {
 	for _, out := range []string{"v2.39.1\n", "2.39.1", "5.4.0\n", "v2.0.0-rc.3\n"} {
 		got, err := parseComposeVersion(out)
@@ -38,8 +34,6 @@ func TestComposeVersionRejectsV1(t *testing.T) {
 	}
 }
 
-// The Docker client restates the endpoint at every layer it wraps, so tamp
-// keeps only the innermost reason — the one thing it cannot say for itself.
 func TestRootCauseKeepsOnlyTheInnermostReason(t *testing.T) {
 	inner := errors.New("connection refused")
 	wrapped := fmt.Errorf("error during connect: %w", fmt.Errorf(`Get "http://host/version": %w`, inner))
@@ -47,7 +41,6 @@ func TestRootCauseKeepsOnlyTheInnermostReason(t *testing.T) {
 	if got := rootCause(wrapped); got != inner {
 		t.Errorf("rootCause() = %v, want %v", got, inner)
 	}
-	// An error that wraps nothing is already its own cause.
 	if got := rootCause(inner); got != inner {
 		t.Errorf("rootCause() = %v, want %v", got, inner)
 	}

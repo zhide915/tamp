@@ -7,8 +7,6 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// The matrix is the whole point of --frappe: the user names a Frappe release
-// and tamp knows which Python, Node and MariaDB go with it.
 func TestParseFrappeVersionResolvesTheDocumentedToolchains(t *testing.T) {
 	cases := map[string]Toolchain{
 		"version-15": {Python: "3.11", Node: "18", MariaDB: "10.11"},
@@ -26,8 +24,7 @@ func TestParseFrappeVersionResolvesTheDocumentedToolchains(t *testing.T) {
 	}
 }
 
-// version-14 is near EOL and out of scope; the error has to name what
-// tamp does support rather than leave the user guessing.
+// version-14 is near EOL and deliberately out of scope.
 func TestUnsupportedFrappeVersionNamesTheSupportedSet(t *testing.T) {
 	for _, version := range []string{"version-14", "v15", "", "nightly"} {
 		_, _, err := ParseFrappeVersion(version)
@@ -45,7 +42,6 @@ func TestUnsupportedFrappeVersionNamesTheSupportedSet(t *testing.T) {
 	}
 }
 
-// A generated compose file that says "latest" is not a pin.
 func TestEveryImageIsPinnedToATag(t *testing.T) {
 	images := map[string]string{
 		"bench":   BenchImage,

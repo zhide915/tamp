@@ -30,9 +30,8 @@ func newRestartCommand(d deps) *cobra.Command {
 		"Stop an environment and start it again.", (*env.Manager).Restart)
 }
 
-// newLifecycleCommand builds the commands that differ only in which manager
-// method they call: they share an argument rule, an environment resolution and
-// a help shape, and writing that three times would be three chances to drift.
+// newLifecycleCommand builds start/stop/restart, which differ only in the
+// manager method they call.
 func newLifecycleCommand(
 	d deps,
 	use, short, long string,
@@ -53,12 +52,10 @@ func newLifecycleCommand(
 	}
 }
 
-// envArgHelp is the same paragraph on every command that takes an optional
-// environment, so the rule is learned once.
+// envArgHelp is shared by every command taking an optional environment.
 const envArgHelp = "The environment may be named, or left out when you are inside its\n" +
 	"directory — tamp finds the nearest tamp.toml the way git finds .git."
 
-// optionalEnvArg accepts the environment name, or nothing at all.
 func optionalEnvArg(cmd *cobra.Command, args []string) error {
 	if len(args) > 1 {
 		return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[1]), usageHint(cmd))

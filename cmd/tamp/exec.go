@@ -23,8 +23,7 @@ func newExecCommand(d deps, stdin io.Reader) *cobra.Command {
 			"The environment has to be running: tamp never starts one for you.\n\n" +
 			"tamp refuses the few commands that would fight the environment and\n" +
 			"comments on a couple more; --raw removes all of that.\n\n" + envArgHelp,
-		// Cobra would otherwise tack "[flags]" onto the end of the usage line,
-		// which is the one place in this grammar a tamp flag cannot go.
+		// Keep cobra from appending "[flags]" where the grammar forbids one.
 		DisableFlagsInUseLine: true,
 		Args:                  execArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -32,8 +31,6 @@ func newExecCommand(d deps, stdin io.Reader) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// execArgs has already checked the separator is there and has a
-			// command after it, so this splits where the user did.
 			dash := cmd.Flags().ArgsLenAtDash()
 			return m.Exec(cmd.Context(), env.ExecRequest{
 				Name:     envArg(args[:dash]),
@@ -49,12 +46,8 @@ func newExecCommand(d deps, stdin io.Reader) *cobra.Command {
 	return cmd
 }
 
-// execArgs enforces exec's grammar: an optional environment, then --, then the
-// command.
-//
-// The separator is required rather than inferred, because everything after it
-// belongs to the command — including the flags tamp would otherwise read as
-// its own. `tamp exec -- bench --version` has to reach bench intact.
+// execArgs checks for an optional environment, then --, then the command.
+// The separator is mandatory: flags after it must reach the command, not tamp.
 func execArgs(cmd *cobra.Command, args []string) error {
 	dash := cmd.Flags().ArgsLenAtDash()
 	switch {
@@ -72,13 +65,9 @@ func execArgs(cmd *cobra.Command, args []string) error {
 // console is the terminal tamp's own process is attached to.
 type console struct{ fd int }
 
-// attachedConsole reports the terminal tamp can hand an interactive command,
-// or nil when there is not one on both ends — a pipe on either side means
-// asking for a pseudo-terminal would only sprinkle escape sequences into
-// output nothing is there to interpret.
-//
-// The type assertion is the seam a test uses: proving tamp asks for a
-// terminal by allocating a pty would be a test about the pty.
+// attachedConsole returns the terminal on both ends, or nil when either side
+// is a pipe — a pty there would emit escapes nothing interprets.
+// The env.Terminal assertion is the seam tests inject a fake console through.
 func attachedConsole(stdin io.Reader, stdout io.Writer) env.Terminal {
 	if t, ok := stdin.(env.Terminal); ok {
 		return t
@@ -97,8 +86,7 @@ func attachedConsole(stdin io.Reader, stdout io.Writer) env.Terminal {
 func (c *console) Size() (width, height uint) {
 	w, h, err := term.GetSize(c.fd)
 	if err != nil {
-		// The daemon picks a default for a pseudo-terminal it is given no size
-		// for, which beats refusing to run the command over it.
+		// The daemon defaults an unsized pty; better than refusing to run.
 		return 0, 0
 	}
 	return uint(w), uint(h)

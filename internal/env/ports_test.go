@@ -18,14 +18,9 @@ func TestFirstEnvironmentGetsTheFirstPort(t *testing.T) {
 	}
 }
 
-// Allocation must be decidable from the registry alone.
-//
-// The registry entry is written under the machine lock; the environment's
-// tamp.toml is written after the lock is released. If "taken" were derived
-// from those files, a second create could hold the lock during that window,
-// see no config for the first environment, find the port unbound — nothing is
-// listening yet — and hand out the same one. The path below deliberately does
-// not exist, so a reader of tamp.toml would allocate 33061 twice.
+// Allocation must be decidable from the registry alone: tamp.toml is written
+// after the lock releases, so a reader of configs could hand out one port
+// twice. The path below deliberately does not exist.
 func TestAllocationDoesNotDependOnAnyFileOnDisk(t *testing.T) {
 	reg := Registry{"erp15": {Path: filepath.Join(t.TempDir(), "never-written"), DBPort: FirstDBPort}}
 
@@ -38,7 +33,6 @@ func TestAllocationDoesNotDependOnAnyFileOnDisk(t *testing.T) {
 	}
 }
 
-// Exhausting the range is a failure with a fix, not a hang or a zero port.
 func TestAnExhaustedRangeIsReported(t *testing.T) {
 	_, err := allocateDBPort(nil, func(int) bool { return false })
 
@@ -48,8 +42,6 @@ func TestAnExhaustedRangeIsReported(t *testing.T) {
 	assertFailedWithFix(t, err)
 }
 
-// The two rejections have to compose, or a busy machine hands out a port that
-// is already claimed.
 func TestClaimedAndBusyPortsAreBothSkipped(t *testing.T) {
 	taken := map[int]bool{FirstDBPort: true}
 	free := func(p int) bool { return p != FirstDBPort+1 }

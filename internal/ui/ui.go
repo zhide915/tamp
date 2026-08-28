@@ -1,6 +1,6 @@
-// Package ui implements tamp's terminal output conventions — numbered
-// progress steps, ✓/!/✗ result prefixes, one-line errors — in one place, so
-// that every command speaks the same way without a TTY of its own.
+// Package ui centralizes tamp's terminal output: numbered progress steps,
+// ✓/!/✗ result lines, and one-line errors, with color and quiet handled in
+// one place.
 package ui
 
 import (
@@ -14,7 +14,6 @@ import (
 	"golang.org/x/term"
 )
 
-// ANSI attributes. tamp only ever uses these four.
 const (
 	ansiReset  = "\x1b[0m"
 	ansiDim    = "\x1b[2m"
@@ -23,24 +22,21 @@ const (
 	ansiYellow = "\x1b[33m"
 )
 
-// Printer writes tamp's output. The zero value is usable once Out and Err are
-// set; it never inspects the process's real stdio, which is what makes every
-// command testable in-process.
+// Printer writes all of tamp's output. It never touches the process's real
+// stdio, so commands are testable in-process.
 type Printer struct {
 	Out io.Writer
 	Err io.Writer
-	// ColorOut and ColorErr are decided per stream, because a shell redirects
-	// stdout and stderr independently: `tamp ... > out.txt` leaves stderr on
-	// the terminal and must keep its colour.
+	// Color is per stream: a shell redirects stdout and stderr independently,
+	// and the stream still on a terminal keeps its color.
 	ColorOut bool
 	ColorErr bool
-	// Quiet drops progress and hints. Results and errors always survive it.
+	// Quiet drops progress and hints; results and errors still print.
 	Quiet bool
 }
 
-// NewPrinter builds a Printer whose colour is already decided from the
-// environment and from whether each stream is a terminal. A later --no-color
-// only ever turns that off, via DisableColor.
+// NewPrinter decides color per stream from the environment and terminal-ness.
+// --no-color is applied afterwards, via DisableColor.
 func NewPrinter(out, err io.Writer, lookupEnv func(string) (string, bool)) *Printer {
 	return &Printer{
 		Out:      out,
@@ -50,12 +46,12 @@ func NewPrinter(out, err io.Writer, lookupEnv func(string) (string, bool)) *Prin
 	}
 }
 
-// DisableColor turns colour off on both streams, whatever the terminal says.
+// DisableColor turns color off on both streams unconditionally.
 func (p *Printer) DisableColor() {
 	p.ColorOut, p.ColorErr = false, false
 }
 
-// Step prints one numbered step of a long operation: "[3/9] pulling images".
+// Step prints one "[n/total] msg" progress line.
 func (p *Printer) Step(n, total int, msg string) {
 	if p.Quiet {
 		return
@@ -63,9 +59,8 @@ func (p *Printer) Step(n, total int, msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, fmt.Sprintf("[%d/%d] %s", n, total, msg)))
 }
 
-// Stepper numbers the steps of a long operation, so that no caller ever does
-// the [n/total] arithmetic itself — hand-computed step numbers have to be
-// edited in lockstep every time a step is added.
+// Stepper counts steps itself, so callers never maintain [n/total] numbers by
+// hand.
 type Stepper struct {
 	p     *Printer
 	n     int
@@ -77,16 +72,15 @@ func (p *Printer) Steps(total int) *Stepper {
 	return &Stepper{p: p, total: total}
 }
 
-// Step prints the next numbered step, and reports the numbers it used for
-// callers that mirror the line somewhere else — create's log file.
+// Step prints the next step and returns the numbers used, for callers that
+// mirror the line elsewhere.
 func (s *Stepper) Step(msg string) (n, total int) {
 	s.n++
 	s.p.Step(s.n, s.total, msg)
 	return s.n, s.total
 }
 
-// Hint prints a dim follow-up line under a result, e.g.
-// "next: tamp site new <host>". Callers write the whole line, prefix included.
+// Hint prints a dim aside on stdout. Quiet drops it — unlike Note.
 func (p *Printer) Hint(msg string) {
 	if p.Quiet {
 		return
@@ -94,25 +88,19 @@ func (p *Printer) Hint(msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, msg))
 }
 
-// Note writes a dim line belonging to the result above it.
-//
-// It looks like Hint and differs in the one way that matters: --quiet keeps
-// it. A hint is an aside tamp can afford to drop, while a note is part of the
-// answer — doctor's fix lines are worthless if the failures they explain print
-// without them.
+// Note prints a dim line that is part of the answer — doctor's fix lines —
+// so Quiet keeps it.
 func (p *Printer) Note(msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, msg))
 }
 
-// Print writes a plain result line to stdout: data the caller asked for, with
-// no prefix and no colour. --quiet never suppresses it.
+// Print writes a plain data line to stdout, never suppressed.
 func (p *Printer) Print(msg string) {
 	fmt.Fprintln(p.Out, msg)
 }
 
-// Stream is where a long operation's own output belongs — the compose runner's
-// progress, for one. It is stdout, or nowhere under --quiet, so that a command
-// which shells out still honours the flag without every caller checking it.
+// Stream is where a subprocess's own output goes: stdout, or discarded under
+// Quiet, so shelling-out commands honor the flag automatically.
 func (p *Printer) Stream() io.Writer {
 	if p.Quiet {
 		return io.Discard
@@ -120,10 +108,7 @@ func (p *Printer) Stream() io.Writer {
 	return p.Out
 }
 
-// Table writes an aligned table to stdout, one Print per line, so the rule
-// that every line of output crosses the Printer holds for tables too.
-// tabwriter needs the whole table before it can align it, which is why the
-// rows arrive as data rather than as writes.
+// Table prints an aligned table to stdout, one Print per line.
 func (p *Printer) Table(header []string, rows [][]string) {
 	var table bytes.Buffer
 	w := tabwriter.NewWriter(&table, 0, 0, 2, ' ', 0)
@@ -140,7 +125,7 @@ func (p *Printer) Table(header []string, rows [][]string) {
 	}
 }
 
-// Mark is the ✓/!/✗ prefix on a result line.
+// Mark selects the ✓/!/✗ prefix on a result line.
 type Mark int
 
 const (
@@ -159,26 +144,23 @@ func (m Mark) render() (symbol, color string) {
 	return "✓", ansiGreen
 }
 
-// OK reports success on stdout — the thing the caller asked for.
+// OK reports success on stdout.
 func (p *Printer) OK(msg string) {
 	p.Result(MarkOK, msg)
 }
 
-// Warn reports something the user should know but that did not stop the
-// operation. Diagnostics go to stderr so a piped stdout stays clean.
+// Warn and Fail are diagnostics: they go to stderr so a piped stdout stays
+// clean.
 func (p *Printer) Warn(msg string) {
 	p.mark(p.Err, p.ColorErr, MarkWarn, msg)
 }
 
-// Fail reports a step that did not succeed.
 func (p *Printer) Fail(msg string) {
 	p.mark(p.Err, p.ColorErr, MarkFail, msg)
 }
 
-// Result writes a marked line to stdout. It is for commands whose whole output
-// is a list of outcomes — doctor's report — where a ✗ is the answer the user
-// asked for rather than a diagnostic about the command, and so belongs on the
-// stream they would redirect to keep it.
+// Result writes a marked line to stdout — for commands whose output is the
+// outcomes themselves (doctor), where a ✗ is the answer, not a diagnostic.
 func (p *Printer) Result(m Mark, msg string) {
 	p.mark(p.Out, p.ColorOut, m, msg)
 }
@@ -188,8 +170,8 @@ func (p *Printer) mark(w io.Writer, color bool, m Mark, msg string) {
 	fmt.Fprintln(w, paint(color, attr, symbol)+" "+msg)
 }
 
-// Error prints tamp's terminal error line: one line, "error:" prefix, and —
-// for errors that carry one — the fix, appended by the error itself.
+// Error prints tamp's one-line "error:" form; a fix rides along in
+// err.Error().
 func (p *Printer) Error(err error) {
 	fmt.Fprintln(p.Err, paint(p.ColorErr, ansiRed, "error:")+" "+err.Error())
 }
@@ -201,12 +183,11 @@ func paint(on bool, attr, s string) string {
 	return attr + s + ansiReset
 }
 
-// ShouldColor reports whether w may carry ANSI attributes: only on a terminal,
-// and only when NO_COLOR does not forbid it. The --no-color flag is applied
-// separately, by DisableColor, because flags are parsed after this is decided.
-// Pass os.LookupEnv for lookupEnv outside tests.
+// ShouldColor allows color only on a terminal and only when NO_COLOR permits.
+// --no-color comes later, via DisableColor, since flags parse after this runs.
+// Pass os.LookupEnv outside tests.
 func ShouldColor(w io.Writer, lookupEnv func(string) (string, bool)) bool {
-	// https://no-color.org — set and non-empty disables colour.
+	// Per https://no-color.org: set and non-empty disables color.
 	if v, ok := lookupEnv("NO_COLOR"); ok && v != "" {
 		return false
 	}
@@ -214,8 +195,7 @@ func ShouldColor(w io.Writer, lookupEnv func(string) (string, bool)) bool {
 }
 
 func isTerminal(w io.Writer) bool {
-	// Writers may declare terminal-ness themselves; that is the seam tests use
-	// instead of allocating a pty.
+	// The IsTerminal seam lets tests claim terminal-ness without a pty.
 	if tw, ok := w.(interface{ IsTerminal() bool }); ok {
 		return tw.IsTerminal()
 	}

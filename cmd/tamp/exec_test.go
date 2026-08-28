@@ -13,11 +13,9 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// tamp exec is the bridge an agent drives the bench through, so these tests
-// are about its contract rather than its convenience: where the command lands,
-// what comes back, and the handful of commands tamp has an opinion about.
+// exec is the bridge agents drive the bench through; these tests pin its
+// contract: where the command lands, what comes back, what tamp refuses.
 
-// container names one of the environment's containers the way compose does.
 func (c *cli) container(t *testing.T, name, service string) string {
 	t.Helper()
 	res, err := env.NewResources(env.Name(name), c.path(name))
@@ -27,9 +25,8 @@ func (c *cli) container(t *testing.T, name, service string) string {
 	return res.Container(service)
 }
 
-// lastExec is the command tamp most recently ran inside a container. Every
-// test below creates an environment first, and a create runs a dozen of its
-// own, so the interesting one is always the last.
+// lastExec returns the newest container exec — create runs many of its own
+// first, so the interesting one is always the last.
 func (c *cli) lastExec(t *testing.T) enginetest.Exec {
 	t.Helper()
 	if len(c.engine.Execs) == 0 {
@@ -38,8 +35,6 @@ func (c *cli) lastExec(t *testing.T) enginetest.Exec {
 	return c.engine.Execs[len(c.engine.Execs)-1]
 }
 
-// execCount is how many commands tamp has run so far, so a test can prove it
-// ran none more.
 func (c *cli) execCount() int { return len(c.engine.Execs) }
 
 func TestExecRunsTheCommandOnTheBench(t *testing.T) {
@@ -64,9 +59,7 @@ func TestExecRunsTheCommandOnTheBench(t *testing.T) {
 	}
 }
 
-// The inner exit code is tamp's exit code, whatever it is — an agent on the
-// other side branches on the command it ran, not on tamp. And the command has
-// already said why on its own streams, so tamp says nothing more.
+// Callers branch on the inner command's exit code; tamp adds nothing to it.
 func TestExecPropagatesTheCommandsExitCode(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -86,8 +79,6 @@ func TestExecPropagatesTheCommandsExitCode(t *testing.T) {
 	}
 }
 
-// No auto-start: exec against a stopped environment is a refusal with the fix,
-// not a silent minute of containers coming up.
 func TestExecAgainstAStoppedEnvironmentRefusesAndSaysHowToStartIt(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -103,8 +94,7 @@ func TestExecAgainstAStoppedEnvironmentRefusesAndSaysHowToStartIt(t *testing.T) 
 	}
 }
 
-// The three commands tamp will not run, and why each one is somebody else's
-// job: honcho already runs the bench's processes, and git lives on the host.
+// honcho already runs the bench's processes; these would fight it.
 func TestExecRefusesTheCommandsThatWouldFightTheEnvironment(t *testing.T) {
 	tests := []struct {
 		cmd  []string
@@ -112,9 +102,8 @@ func TestExecRefusesTheCommandsThatWouldFightTheEnvironment(t *testing.T) {
 	}{
 		{[]string{"bench", "start"}, "already runs"},
 		{[]string{"bench", "serve"}, "already runs"},
-		// The rebuild has to reach the container whole. Written as three
-		// commands joined by &&, the shell the user is typing at would keep
-		// the last two and run them on the host.
+		// The hint quotes the && chain so the user's host shell cannot claim
+		// the trailing commands.
 		{[]string{"bench", "update"}, `bash -c "bench setup requirements && bench build && bench migrate"`},
 	}
 	for _, tt := range tests {
@@ -134,8 +123,6 @@ func TestExecRefusesTheCommandsThatWouldFightTheEnvironment(t *testing.T) {
 	}
 }
 
-// --raw is the escape hatch: tamp's opinions are a courtesy to somebody
-// typing, and a caller who means it gets the bridge with nothing in the way.
 func TestRawRunsWhatTampWouldOtherwiseRefuseOrCommentOn(t *testing.T) {
 	tests := [][]string{
 		{"bench", "update"},
@@ -153,8 +140,7 @@ func TestRawRunsWhatTampWouldOtherwiseRefuseOrCommentOn(t *testing.T) {
 			if got := c.lastExec(t).Line(); got != strings.Join(cmd, " ") {
 				t.Errorf("tamp ran %q, want %q", got, strings.Join(cmd, " "))
 			}
-			// Nothing from tamp on either stream: both belong to the
-			// command, and --raw is the promise that tamp stays off them.
+			// --raw promises both streams belong to the command alone.
 			if r.stderr != "" || r.stdout != "" {
 				t.Errorf("--raw still said something:\nstdout: %s\nstderr: %s", r.stdout, r.stderr)
 			}
@@ -162,8 +148,7 @@ func TestRawRunsWhatTampWouldOtherwiseRefuseOrCommentOn(t *testing.T) {
 	}
 }
 
-// Two commands tamp comments on and runs anyway. The comment goes to stderr,
-// because stdout belongs to the command tamp was asked to run.
+// Warnings go to stderr; stdout belongs to the command being run.
 func TestExecWarnsAboutGitAndNewSiteButStillRunsThem(t *testing.T) {
 	tests := []struct {
 		cmd  []string
@@ -191,9 +176,7 @@ func TestExecWarnsAboutGitAndNewSiteButStillRunsThem(t *testing.T) {
 	}
 }
 
-// A terminal on both ends means the command gets a pseudo-terminal of the same
-// size, and tamp's own console goes raw for the duration — which is what
-// makes 'tamp exec -- bash' a shell rather than a stuck pipe.
+// A terminal on both ends: same-size pty, tamp's console raw for the duration.
 func TestExecGivesAnInteractiveCommandTheTerminal(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -218,8 +201,7 @@ func TestExecGivesAnInteractiveCommandTheTerminal(t *testing.T) {
 	}
 }
 
-// Piped input is not a terminal, and asking for one would corrupt the output
-// with escape sequences nothing is there to interpret.
+// A pty over a pipe would corrupt output with escapes nothing interprets.
 func TestExecWithoutATerminalStillFeedsTheCommandItsInput(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -237,8 +219,7 @@ func TestExecWithoutATerminalStillFeedsTheCommandItsInput(t *testing.T) {
 	}
 }
 
-// The separator is required rather than guessed, because everything after it
-// belongs to the command — tamp must never read '--version' as its own.
+// Everything after -- belongs to the command; tamp must not claim its flags.
 func TestExecNeedsTheSeparatorAndACommandAfterIt(t *testing.T) {
 	tests := []struct {
 		name string
@@ -260,8 +241,7 @@ func TestExecNeedsTheSeparatorAndACommandAfterIt(t *testing.T) {
 	}
 }
 
-// fakeConsole is a terminal tamp is attached to, without a pty: it answers the
-// two questions tamp asks a console and records the raw-mode switch.
+// fakeConsole answers Size and Raw without a real pty, recording the switch.
 type fakeConsole struct {
 	width, height uint
 	raw, restored int

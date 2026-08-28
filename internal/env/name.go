@@ -9,25 +9,20 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Name is an environment name that has been checked against tamp's rules.
-//
-// It is a distinct type so that a name reaches resource naming and the
-// registry only by way of ParseName: an unvalidated string would end up in a
-// hostname (mail.<name>.localhost) and a container name, where the damage is
-// discovered much later and much less clearly.
+// Name is a validated environment name. A distinct type so an unchecked
+// string never reaches a hostname (mail.<name>.localhost) or a Docker
+// resource name.
 type Name string
 
 func (n Name) String() string { return string(n) }
 
-// namePattern is the naming rule: a valid DNS label, capped at 32 characters.
-// Names appear in hostnames and in Docker resource names, which is what
-// forbids uppercase, underscores, dots and a leading hyphen.
+// namePattern is a DNS label capped at 32 characters — names appear in
+// hostnames and Docker resource names.
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 // reservedNames are tamp's command words, listed literally rather than
-// read off the command tree on purpose: deriving them would mean that adding a
-// command in a later release silently invalidates an environment somebody
-// already created.
+// derived: a command added in a later release must not invalidate an
+// environment somebody already has.
 var reservedNames = []string{
 	"clean", "completion", "context", "create", "db", "doctor", "exec", "help", "hosts",
 	"init", "list", "logs", "ls", "mail", "open", "rebuild", "restart",
@@ -35,9 +30,8 @@ var reservedNames = []string{
 	"version",
 }
 
-// ParseName validates an environment name. The failures are exit 1 rather than
-// a usage error: the command line was well-formed, tamp just cannot use the
-// name in the places it has to appear.
+// ParseName rejections are exit 1, not usage errors: the command line was
+// well-formed, tamp just cannot use the name where it has to appear.
 func ParseName(s string) (Name, error) {
 	if slices.Contains(reservedNames, s) {
 		return "", exitcode.New(exitcode.CodeFailed,

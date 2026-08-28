@@ -1,10 +1,7 @@
-// Package enginetest provides the recording fake that stands in for the
-// container engine.
-//
-// The engine boundary is tamp's only fake point, so this is the only fake in
-// the codebase. It records every request rather than just answering them,
-// because a test that checks the output tamp printed still would not catch
-// tamp asking the engine for the wrong thing.
+// Package enginetest is the recording fake for the engine boundary — the
+// one fake in the codebase, since the boundary is tamp's single fake point.
+// It records every request, not just the answers: checking tamp's output
+// alone would miss tamp asking the engine for the wrong thing.
 package enginetest
 
 import (
@@ -20,18 +17,14 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// DefaultServices are the compose services a tamp environment contains. The
-// fake answers Containers from this list; a test in internal/env checks the
-// generated compose file against it, so the two cannot drift apart silently.
+// DefaultServices are the compose services of a tamp environment. A test in
+// internal/env checks the generated compose file against this list, so the
+// two cannot drift apart silently.
 var DefaultServices = []string{"frappe", "mariadb", "redis-cache", "redis-queue", "mailpit"}
 
-// BenchInitConfig is the shared site config a real bench init leaves behind.
-//
-// The fake writes it whenever tamp runs a bench init, because tamp's next
-// move is to read that file and merge its own keys into it. Against an empty
-// container filesystem that merge would have nothing to preserve, and the one
-// thing it must get right — not dropping what bench put there — would go
-// untested.
+// BenchInitConfig is the shared site config a real bench init leaves
+// behind. The fake writes it on bench init so the merge tamp performs next
+// has real bench keys to preserve.
 const BenchInitConfig = `{
  "background_workers": 1,
  "db_host": "localhost",
@@ -41,11 +34,8 @@ const BenchInitConfig = `{
  "shallow_clone": true
 }`
 
-// Op is one compose operation the fake was asked to perform, in full.
-//
-// Calls answers "which engine methods, in what order"; Op answers "on which
-// project, from which file, taking what with it" — the questions that catch
-// tamp acting on the wrong environment.
+// Op is one recorded compose operation: which project, from which file,
+// with what removal — what catches tamp acting on the wrong environment.
 type Op struct {
 	Method  string
 	Project engine.ComposeProject
@@ -53,42 +43,37 @@ type Op struct {
 	Removal engine.Removal
 }
 
-// Exec is one command the fake was asked to run inside a container.
+// Exec is one recorded in-container command.
 type Exec struct {
 	Container string
 	Cmd       []string
 	Env       []string
 	WorkDir   string
 	User      string
-	// Stdin says whether tamp attached the caller's input to the command.
+	// Stdin reports whether input was attached.
 	Stdin bool
-	// TTY and Size are the pseudo-terminal tamp asked for, if it asked.
-	TTY  bool
-	Size engine.ConsoleSize
+	TTY   bool
+	Size  engine.ConsoleSize
 }
 
-// Line renders the exec the way a test asks about it: the whole command on one
-// line, so a scripted shell is matched by what it says rather than by argv
-// index.
+// Line joins the command into one string, so tests match by content rather
+// than argv index.
 func (e Exec) Line() string { return strings.Join(e.Cmd, " ") }
 
-// Fake is a scripted Engine. Set the answers, run the code under test, then
+// Fake is a scripted Engine: set the answers, run the code under test,
 // assert on Calls, Ops, Execs and Files.
 type Fake struct {
-	// Info is what Ping reports while PingErr is nil.
+	// Info is Ping's answer while PingErr is nil.
 	Info    engine.Info
 	PingErr error
 
-	// Compose is what ComposeVersion reports while ComposeErr is nil.
+	// Compose is ComposeVersion's answer while ComposeErr is nil.
 	Compose    string
 	ComposeErr error
 
-	// UpErr, StopErr, RestartErr and DownErr script a compose operation that
-	// fails — the mid-create failure whose rollback tamp has to get right.
 	UpErr error
-	// UpErrOnce fails only the next compose up, then clears itself. It is how a
-	// test scripts a port that refuses the bind while the fallback attempt
-	// succeeds.
+	// UpErrOnce fails only the next compose up, then clears itself — e.g. a
+	// refused port bind whose fallback attempt succeeds.
 	UpErrOnce  error
 	StopErr    error
 	RestartErr error
@@ -97,70 +82,59 @@ type Fake struct {
 	// NetworkErr fails every network operation.
 	NetworkErr error
 
-	// ExecErr fails every in-container command. The fake otherwise answers
-	// them all with success, which is what a bench container whose toolchain
-	// is already provisioned looks like.
+	// ExecErr fails every in-container command; otherwise all succeed, like
+	// a fully provisioned bench container.
 	ExecErr error
-	// ExecFails scripts one particular command failing, keyed by a fragment of
-	// its command line. It is how a test puts the failure in the middle of a
-	// create — containers up, no bench yet — which is the rollback tamp has
-	// the most to get wrong about.
+	// ExecFails fails one command, keyed by a fragment of its command line —
+	// how a test plants a failure mid-create.
 	ExecFails map[string]error
 
-	// Services are the containers a project has once it has been brought up.
+	// Services are the containers a brought-up project has.
 	Services []string
 
-	// Calls names each engine method tamp invoked, in order.
+	// Calls names each engine method invoked, in order.
 	Calls []string
 	// Ops records each compose operation in full.
 	Ops []Op
-	// Execs records each command tamp ran inside a container, in order.
+	// Execs records each in-container command, in order.
 	Execs []Exec
-	// Files is the fake's container filesystem, keyed by absolute path. It is
-	// a real store rather than a recording: tamp reads back what it wrote —
-	// bench's own config, merged with tamp's keys — and a write-only fake
-	// would let that round trip pass untested.
+	// Files is the fake's container filesystem, keyed by absolute path. A
+	// real store, not a recording: tamp reads back what it wrote, and a
+	// write-only fake would let that round trip pass untested.
 	Files map[string]string
-	// Volumes names each volume tamp asked to exist, in order.
+	// Volumes names each volume asked to exist, in order.
 	Volumes []string
-	// Log is what every container's log says. One body for all of them is
-	// enough: what a test asks is which container tamp read and how it
-	// asked, not what Docker had stored.
+	// Log is every container's log body; tests care which container was
+	// read and how, not what was stored.
 	Log string
-	// Logs records each log request tamp made, in order.
+	// LogReqs records each log request, in order.
 	LogReqs []engine.LogRequest
 
-	// networks is the fake's set of Docker networks, each holding the names of
-	// the containers attached to it. Compose makes and removes an
-	// environment's network, and tamp attaches the router to it afterwards,
-	// so the two have to be modelled together for either to be testable.
+	// networks maps network name to attached containers. Compose creates
+	// and removes an environment's network and tamp attaches the router to
+	// it, so both must be modelled together.
 	networks map[string]map[string]bool
 
-	// AppAliases maps a repository's URL-derived name to the app its code
-	// actually declares, for the real-world case where the two differ —
-	// frappe/health clones as healthcare. A get-app on a mapped name puts the
-	// declared app on the bench, the way bench itself would.
+	// AppAliases maps a repo's URL-derived name to the app it declares
+	// (frappe/health clones as healthcare); get-app on a mapped name puts
+	// the declared app on the bench, as bench itself would.
 	AppAliases map[string]string
 
-	// sim is the model of the Frappe bench behind this engine — sites, apps,
-	// per-site installs — kept apart from the recording so the two change for
-	// different reasons.
+	// sim models the Frappe bench behind the engine, kept apart from the
+	// recording so the two change for different reasons.
 	sim *benchSim
 
-	// running tracks, per project, whether its containers exist and whether
-	// they are running — so that up, stop, down and Containers tell one
-	// consistent story to the code under test.
+	// running tracks per project whether containers exist and whether they
+	// run, so up, stop, down and Containers stay consistent.
 	running map[string]bool
 
-	// projectVolumes tracks which projects have volumes on the fake's
-	// machine. Up creates them, down removes them only when asked — the
-	// survival rule the rm/init cycle is built on.
+	// projectVolumes tracks which projects have volumes: up creates them,
+	// down removes them only when asked.
 	projectVolumes map[string]bool
 }
 
-// Running is an engine that is up: a plausible Docker found by probing, and a
-// compose v2 alongside it. It is the default backdrop for tests about
-// something other than the engine being broken.
+// Running is an engine that is up — probed Docker plus compose v2 — the
+// default backdrop for tests not about a broken engine.
 func Running() *Fake {
 	return &Fake{
 		Info: engine.Info{
@@ -224,9 +198,8 @@ func (f *Fake) ComposeUp(_ context.Context, p engine.ComposeProject, out io.Writ
 		return f.UpErr
 	}
 	f.setRunning(p.Name, true)
-	// Compose creates the project's network on the way up. tamp names an
-	// environment's network after its project, which is what lets the fake
-	// know it without being told.
+	// Compose creates the project's network on the way up; tamp names the
+	// network after the project, so the fake can infer it.
 	f.ensureNetwork(p.Name)
 	if f.projectVolumes == nil {
 		f.projectVolumes = map[string]bool{}
@@ -259,10 +232,8 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 	delete(f.networks, p.Name)
 	if removal == engine.RemoveVolumes {
 		delete(f.projectVolumes, p.Name)
-		// Everything the fake's bench holds lives in the volumes that just
-		// went: the sites, the apps, and every file tamp wrote into them.
-		// A fake that remembered them would let "the data is gone" pass
-		// without being true.
+		// Everything the bench holds lives in the volumes just removed; a
+		// fake that remembered it would let "the data is gone" pass untrue.
 		f.bench().reset()
 		f.Files = map[string]string{}
 	}
@@ -272,15 +243,14 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 func (f *Fake) Containers(_ context.Context, project string) ([]engine.Container, error) {
 	f.Calls = append(f.Calls, "Containers")
 	if f.PingErr != nil {
-		// An engine tamp cannot reach cannot be asked what is running on it
-		// either, and code that copes with one has to cope with the other.
+		// An unreachable engine cannot be asked what runs on it either.
 		return nil, f.PingErr
 	}
 
 	running, exists := f.running[project]
 	if !exists {
-		// A project that was never brought up, or that has been taken down,
-		// has no containers. That is an answer, not a failure.
+		// Never brought up, or taken down: no containers is an answer, not
+		// a failure.
 		return nil, nil
 	}
 
@@ -340,8 +310,8 @@ func (f *Fake) DisconnectNetwork(_ context.Context, network, container string) e
 	return nil
 }
 
-// Attached names the containers on a network, sorted. A network the fake never
-// made has none, which is how a test asks whether a teardown took it away.
+// Attached names the containers on a network, sorted; a network the fake
+// never made has none.
 func (f *Fake) Attached(network string) []string {
 	return slices.Sorted(maps.Keys(f.networks[network]))
 }
@@ -384,8 +354,7 @@ func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 	return f.bench().answer(exec, req.Stdout)
 }
 
-// bench is the fake's model of the Frappe bench, made on first use so the
-// zero Fake still works.
+// bench lazily builds the bench model, so the zero Fake works.
 func (f *Fake) bench() *benchSim {
 	if f.sim == nil {
 		f.sim = &benchSim{
@@ -397,19 +366,17 @@ func (f *Fake) bench() *benchSim {
 	return f.sim
 }
 
-// Apps names the apps the fake's bench holds, sorted.
+// Apps names the apps on the fake's bench, sorted.
 func (f *Fake) Apps() []string { return f.bench().appsSorted() }
 
-// AddApp puts an app on the fake's bench without a fetch — the backdrop for a
-// test whose subject is what tamp does with an app that is already there.
+// AddApp puts an app on the bench without a fetch, as backdrop for tests
+// about apps that are already there.
 func (f *Fake) AddApp(name string) { f.bench().addApp(name) }
 
-// SiteApps names what a site had installed on it, in the order tamp installed
-// them.
+// SiteApps names what a site had installed, in install order.
 func (f *Fake) SiteApps(host string) []string { return f.bench().siteApps[host] }
 
-// Sites names the sites the fake's bench holds, sorted — what tamp created
-// through it, less what tamp dropped.
+// Sites names the bench's sites, sorted.
 func (f *Fake) Sites() []string { return f.bench().sitesSorted() }
 
 func (f *Fake) Logs(_ context.Context, req engine.LogRequest) error {
@@ -448,19 +415,17 @@ func (f *Fake) put(path, body string) {
 	f.Files[path] = body
 }
 
-// Wrote returns what tamp put at path inside the container, and fails the
-// test's assertion by returning false when nothing was written there.
+// Wrote returns what was written at path; false when nothing was.
 func (f *Fake) Wrote(path string) (string, bool) {
 	body, ok := f.Files[path]
 	return body, ok
 }
 
-// Written lists every path tamp wrote into a container, sorted.
+// Written lists every written path, sorted.
 func (f *Fake) Written() []string { return slices.Sorted(maps.Keys(f.Files)) }
 
-// Ran reports whether any command tamp ran inside a container contained
-// fragment — the way a test asks "did tamp run bench init", without pinning
-// every flag tamp passed alongside it.
+// Ran reports whether any executed command line contained fragment — "did
+// tamp run bench init" without pinning every flag.
 func (f *Fake) Ran(fragment string) bool {
 	for _, e := range f.Execs {
 		if strings.Contains(e.Line(), fragment) {
@@ -470,17 +435,15 @@ func (f *Fake) Ran(fragment string) bool {
 	return false
 }
 
-// record logs the operation and enforces the one thing real compose would
-// enforce for free: the generated file has to exist before tamp acts on it.
-// Without this a test could not tell "tamp generated compose.yaml, then
-// started it" from "tamp started something it never wrote".
+// record logs the operation and enforces what real compose would for free:
+// the generated file must exist before it is acted on.
 func (f *Fake) record(method string, p engine.ComposeProject, removal engine.Removal, out io.Writer) error {
 	f.Calls = append(f.Calls, method)
 	f.Ops = append(f.Ops, Op{Method: method, Project: p, Removal: removal})
 
 	if out != nil {
-		// Real compose narrates what it is doing; tamp captures that stream
-		// into create.log, and a silent fake would let a broken capture pass.
+		// Real compose narrates; a silent fake would let a broken capture of
+		// that stream pass.
 		fmt.Fprintf(out, "compose %s %s\n", method, p.Name)
 	}
 
@@ -492,9 +455,8 @@ func (f *Fake) record(method string, p engine.ComposeProject, removal engine.Rem
 	return nil
 }
 
-// Up puts a project's containers and network in place without a compose up.
-// It is the backdrop for a test whose subject is what tamp does with
-// something it finds already running.
+// Up puts a project's containers and network in place without a compose up
+// — backdrop for tests about something found already running.
 func (f *Fake) Up(project string) {
 	f.setRunning(project, true)
 	f.ensureNetwork(project)
@@ -509,9 +471,8 @@ func (f *Fake) ensureNetwork(name string) {
 	}
 }
 
-// Down stops a project's containers without a compose stop, leaving them and
-// the project's network in place — a machine on which something tamp started
-// earlier is no longer running.
+// Down marks a project stopped without a compose stop, containers and
+// network left in place.
 func (f *Fake) Down(project string) { f.setRunning(project, false) }
 
 func (f *Fake) setRunning(project string, running bool) {
@@ -521,6 +482,4 @@ func (f *Fake) setRunning(project string, running bool) {
 	f.running[project] = running
 }
 
-// A fake that has drifted from the interface would silently stop testing the
-// thing it stands in for.
 var _ engine.Engine = (*Fake)(nil)

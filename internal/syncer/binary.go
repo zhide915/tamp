@@ -21,19 +21,13 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Version is the Mutagen release tamp manages.
-//
-// It is pinned, and the checksums below are pinned with it: bumping Mutagen
-// means changing both together, deliberately, with the end-to-end suite green.
-// This is also why tamp never runs an install script from the network — a
-// pipe cannot be checked against anything.
+// Version is the pinned Mutagen release. Bump it and checksums together, with
+// the end-to-end suite green. Pinned, verifiable archives are also why tamp
+// never pipes an install script from the network.
 const Version = "0.18.1"
 
-// checksums are the SHA-256 digests of the pinned release's archives, keyed by
-// Mutagen's own <os>_<arch> naming.
-//
-// Mutagen runs on the host rather than in a container, so these are host
-// platforms — unlike tamp's other managed binary, which is always Linux.
+// checksums are the pinned archives' SHA-256 digests, keyed by Mutagen's
+// <os>_<arch> naming. Mutagen runs on the host, so these are host platforms.
 var checksums = map[string]string{
 	"windows_amd64": "3e237e77f69959ed520a0f877330a431507bb0a85d9da7919764ba0c87b702c7",
 	"windows_arm64": "9ac53447e46f019be9d37f49c00eeed8635966b885ed29ef06b3ff19afdee532",
@@ -43,22 +37,19 @@ var checksums = map[string]string{
 	"linux_arm64":   "bcba735aebf8cbc11da9b3742118a665599ac697fa06bc5751cac8dcd540db8a",
 }
 
-// releaseBaseURL is where the pinned release is fetched from. The CLI takes it
-// as a field so a test can serve the archive locally.
+// releaseBaseURL is the download source; CLI.ReleaseBaseURL overrides it in
+// tests.
 const releaseBaseURL = "https://github.com/mutagen-io/mutagen/releases/download"
 
-// agentBundle travels beside the binary in the release archive and has to
-// travel beside it on disk too: it holds the remote halves Mutagen pushes into
-// a container, and Mutagen looks for it next to its own executable.
+// agentBundle holds the container-side agents. Mutagen finds it by looking
+// next to its own executable, so it must be unpacked beside the binary.
 const agentBundle = "mutagen-agents.tar.gz"
 
-// BinDirName is where tamp keeps the binaries it manages, under the tamp
-// home. The version sits in the path beneath it, so a tamp upgrade that bumps
-// the pin installs alongside the old one rather than having to decide whether
-// what is already there is stale.
+// BinDirName is tamp's managed-binary directory under the tamp home. The
+// version sits in the path beneath it, so a pin bump installs alongside the
+// old release instead of over it.
 const BinDirName = "bin"
 
-// binDir is the directory holding the pinned Mutagen.
 func (c *CLI) binDir() string { return filepath.Join(c.Home, BinDirName, "mutagen-"+Version) }
 
 func (c *CLI) managedPath() string { return filepath.Join(c.binDir(), executableName()) }
@@ -70,12 +61,9 @@ func executableName() string {
 	return "mutagen"
 }
 
-// Find reports the Mutagen already on this machine.
-//
-// One on PATH is preferred, and only at exactly the pinned version. Mutagen's
-// client and its daemon speak a versioned protocol and refuse each other
-// across releases, so "close enough" is a daemon that will not start — and
-// tamp would have caused it.
+// Find prefers a PATH binary only at exactly the pinned version: Mutagen's
+// client and daemon speak a versioned protocol and refuse each other across
+// releases.
 func (c *CLI) Find(ctx context.Context) (Binary, error) {
 	lookPath := c.LookPath
 	if lookPath == nil {
@@ -101,8 +89,6 @@ func (c *CLI) Find(ctx context.Context) (Binary, error) {
 		"tamp downloads it into "+c.binDir()+" the first time it syncs an environment")
 }
 
-// Ensure reports the Mutagen tamp will drive, downloading the pinned release
-// if the machine has none.
 func (c *CLI) Ensure(ctx context.Context) (Binary, error) {
 	found, err := c.Find(ctx)
 	if err == nil {
@@ -117,7 +103,6 @@ func (c *CLI) Ensure(ctx context.Context) (Binary, error) {
 	return Binary{Path: c.managedPath(), Version: Version, Managed: true}, nil
 }
 
-// version asks a Mutagen binary what it is.
 func (c *CLI) version(ctx context.Context, path string) (string, error) {
 	var out bytes.Buffer
 	cmd := exec.CommandContext(ctx, path, "version")
@@ -128,8 +113,8 @@ func (c *CLI) version(ctx context.Context, path string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-// download fetches the pinned release, refuses it unless it matches the digest
-// tamp ships, and unpacks the two files Mutagen needs beside each other.
+// download fetches the pinned archive, refuses it on checksum mismatch, and
+// unpacks it.
 func (c *CLI) download(ctx context.Context) error {
 	platform := runtime.GOOS + "_" + runtime.GOARCH
 	want, ok := checksums[platform]
@@ -166,11 +151,9 @@ func (c *CLI) baseURL() string {
 	return releaseBaseURL
 }
 
-// extract unpacks the executable and the agent bundle into dir.
-//
-// Both, and beside each other: Mutagen finds the remote halves it installs
-// into containers by looking next to its own executable, so a binary unpacked
-// on its own can start no session at all.
+// extract unpacks the executable and the agent bundle into dir. Both are
+// required: without the bundle beside the binary, Mutagen can start no
+// session.
 func extract(body []byte, dir, name string) error {
 	corrupt := func(err error) error {
 		return exitcode.New(exitcode.CodeFailed,

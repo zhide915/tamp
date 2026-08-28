@@ -12,20 +12,14 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// These tests hold the router to its two promises: that a hostname reaches the
-// right container inside an environment that publishes nothing, and that one
-// environment's comings and goings never take another's routes away.
-
 func newTestRouter(t *testing.T, fake *enginetest.Fake) *Router {
 	t.Helper()
 	r := New(t.TempDir(), fake)
-	// Settled rather than probed: which ports the machine running the test has
-	// spare is not what any of these tests is about.
+	// Fixed answer: which ports the test machine has spare is irrelevant here.
 	r.PortIsFree = func(int) bool { return true }
 	return r
 }
 
-// demo is an environment as the router sees one.
 func demo() Env {
 	return Env{
 		Name:    "demo",
@@ -57,9 +51,7 @@ func (r *Router) assembled(t *testing.T) string {
 
 // --- the assembled Caddyfile ------------------------------------------------
 
-// The mail UI is the one route an environment has before it has any site, and
-// it is what makes "no ports typed" true from the moment the environment
-// exists.
+// The mail route exists before the environment has any site.
 func TestEveryEnvironmentGetsAMailRoute(t *testing.T) {
 	got := Caddyfile([]Env{demo()})
 
@@ -71,8 +63,7 @@ func TestEveryEnvironmentGetsAMailRoute(t *testing.T) {
 	}
 }
 
-// Frappe serves the site and socket.io on two different ports, and the desk
-// stops updating in real time if the second one is not routed separately.
+// Without a separate socket.io route the desk loses live updates.
 func TestASiteIsRoutedToBothTheWebServerAndSocketIO(t *testing.T) {
 	e := demo()
 	e.Sites = []string{"shop.localhost"}
@@ -90,16 +81,13 @@ func TestASiteIsRoutedToBothTheWebServerAndSocketIO(t *testing.T) {
 		}
 	}
 
-	// The socket.io route has to be matched before the catch-all one, or every
-	// websocket goes to the web server instead.
+	// The socket.io matcher must precede the catch-all reverse_proxy.
 	if strings.Index(got, "@socketio tamp-demo-ab12cd-frappe-1:9000") >
 		strings.Index(got, "\treverse_proxy tamp-demo-ab12cd-frappe-1:8000") {
 		t.Errorf("the socket.io route comes after the catch-all one:\n%s", got)
 	}
 }
 
-// The file is rewritten on every environment and site change, so an unstable
-// ordering would make every one of them look like a change.
 func TestTheAssembledFileDoesNotDependOnTheOrderSitesArriveIn(t *testing.T) {
 	a, b := demo(), demo()
 	a.Sites = []string{"shop.localhost", "abc.localhost"}
@@ -110,8 +98,6 @@ func TestTheAssembledFileDoesNotDependOnTheOrderSitesArriveIn(t *testing.T) {
 	}
 }
 
-// A machine with no environments still has a router, and it has to be a
-// configuration Caddy can serve.
 func TestAnEmptyMachineStillProducesRoutableConfiguration(t *testing.T) {
 	got := Caddyfile(nil)
 
@@ -125,8 +111,6 @@ func TestAnEmptyMachineStillProducesRoutableConfiguration(t *testing.T) {
 
 // --- the container ----------------------------------------------------------
 
-// Removing an environment is no reason to start a router this machine was not
-// using — but its routes still have to go.
 func TestRefreshLeavesAStoppedRouterStopped(t *testing.T) {
 	fake := enginetest.Running()
 	r := newTestRouter(t, fake)
@@ -147,8 +131,7 @@ func TestRefreshLeavesAStoppedRouterStopped(t *testing.T) {
 	}
 }
 
-// The router carries routes for stopped environments, so it is routinely asked
-// to attach to a network that is not there. That is an answer, not a failure.
+// Routes for stopped environments are kept, so a missing network is routine.
 func TestAttachingToAnEnvironmentThatIsNotUpIsNotAnError(t *testing.T) {
 	fake := enginetest.Running()
 	r := newTestRouter(t, fake)
@@ -197,8 +180,6 @@ func TestTheRouterTakesPortEightyWhenItCan(t *testing.T) {
 	}
 }
 
-// A machine already serving something on port 80 is common, and it is no
-// reason for tamp to have no router at all.
 func TestTheRouterFallsBackWhenPortEightyIsTaken(t *testing.T) {
 	port, err := choosePort(func(p int) bool { return p != DefaultPort })
 	if err != nil {
@@ -209,10 +190,8 @@ func TestTheRouterFallsBackWhenPortEightyIsTaken(t *testing.T) {
 	}
 }
 
-// A port can pass the connect probe and still refuse the bind — Windows keeps
-// excluded port ranges that swallow 80 with nothing listening on it. The
-// fallback has to cover that case too, or the likeliest "80 can't bind"
-// machine gets no router at all.
+// A Windows excluded port range refuses the bind while the connect probe sees
+// nothing, so a failed up on 80 must still reach the fallback.
 func TestTheRouterFallsBackWhenPortEightyRefusesTheBind(t *testing.T) {
 	fake := enginetest.Running()
 	fake.UpErrOnce = exitcode.New(exitcode.CodeFailed, "bind: access denied", "")
@@ -226,8 +205,7 @@ func TestTheRouterFallsBackWhenPortEightyRefusesTheBind(t *testing.T) {
 		t.Errorf("status = %+v, want running on %d", status, FallbackPort)
 	}
 
-	// The remembered port has to be the one that worked, or every URL tamp
-	// prints from now on points at the port that refused.
+	// The recorded port must be the one that actually worked.
 	st, err := r.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -248,8 +226,6 @@ func TestNoUsablePortIsAFailureWithAFix(t *testing.T) {
 	}
 }
 
-// The URLs tamp prints have to carry the fallback port, or they point at
-// whatever else is on 80.
 func TestTheFallbackPortReachesEveryURL(t *testing.T) {
 	fake := enginetest.Running()
 	r := newTestRouter(t, fake)
@@ -276,7 +252,6 @@ func TestTheFallbackPortReachesEveryURL(t *testing.T) {
 	}
 }
 
-// Port 80 is the product: a URL nobody has to remember a number for.
 func TestTheDefaultPortIsNotSpelledOutInURLs(t *testing.T) {
 	got := Status{Running: true, Port: DefaultPort}.URL("shop.localhost")
 	if want := "http://shop.localhost"; got != want {
@@ -284,8 +259,6 @@ func TestTheDefaultPortIsNotSpelledOutInURLs(t *testing.T) {
 	}
 }
 
-// The port is settled once, when the router starts, and every later command
-// prints URLs from it — including on a machine whose Docker has since stopped.
 func TestTheRouterRemembersItsPortForTheNextCommand(t *testing.T) {
 	fake := enginetest.Running()
 	r := newTestRouter(t, fake)

@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// bench has printed its app list two ways across releases, and tamp's site
-// listing has to survive being pointed at either.
 func TestTheAppListIsReadTheSameWayFromEitherOfBenchsFormats(t *testing.T) {
 	for why, out := range map[string]string{
 		"bare names":              "frappe\nerpnext\n",
@@ -22,8 +20,6 @@ func TestTheAppListIsReadTheSameWayFromEitherOfBenchsFormats(t *testing.T) {
 	}
 }
 
-// A site tamp cannot ask, or a bench with nothing to say, is an empty list
-// rather than one app named "".
 func TestNoAppsIsNoApps(t *testing.T) {
 	if got := parseApps("\n  \n"); len(got) != 0 {
 		t.Errorf("parseApps = %v, want nothing", got)

@@ -1,10 +1,6 @@
-// Package engine is tamp's boundary with the container engine: finding
-// Docker, asking the Docker API, and invoking compose.
-//
-// It is the only thing tamp fakes in tests. Everything above it — commands,
-// diagnosis, later the whole environment lifecycle — is exercised against real
-// code with a recording fake standing in here, so a test that passes says
-// something about tamp rather than about the mock.
+// Package engine is tamp's boundary with Docker: endpoint detection, the
+// Docker API, and compose invocation. It is the single point tamp fakes in
+// tests; everything above it runs real code against a recording fake here.
 package engine
 
 import (
@@ -13,198 +9,153 @@ import (
 	"io/fs"
 )
 
-// Info is what tamp learned by reaching the engine.
+// Info is the engine tamp reached.
 type Info struct {
 	Address Address
-	Version string // the Docker Engine version, e.g. "29.7.2"
+	Version string // Docker Engine version, e.g. "29.7.2"
 }
 
-// ComposeProject identifies one environment's compose project: the name every
-// container, volume and network beneath it is prefixed with, and the generated
-// file that describes it.
+// ComposeProject identifies one environment's compose project.
 type ComposeProject struct {
 	// Name is the -p project name, tamp-<env>-<hash>.
 	Name string
-	// File is the absolute path to the generated compose.yaml.
+	// File is the absolute path of the generated compose.yaml.
 	File string
-	// Dir is the environment directory, which compose resolves the file's
-	// relative paths — the database secret, for one — against.
+	// Dir is the environment directory; compose resolves the file's relative
+	// paths against it.
 	Dir string
 }
 
-// Removal says how much of an environment a compose down takes with it.
-//
-// It is a named type rather than a bool because the call sites are `tamp
-// stop` and `tamp rm --volumes`, and the difference between them is every
-// site's database.
+// Removal selects how much a compose down destroys. Distinct from a bool
+// because volumes hold the site's database.
 type Removal int
 
 const (
-	// KeepVolumes removes containers and the network. Volumes always survive
-	// stop, and survive rm unless the user asks otherwise.
+	// KeepVolumes removes containers and the network only.
 	KeepVolumes Removal = iota
-	// RemoveVolumes additionally destroys the environment's storage layers.
+	// RemoveVolumes also destroys the environment's volumes.
 	RemoveVolumes
 )
 
-// Container is one of an environment's containers, as the engine sees it.
+// Container is one of an environment's containers.
 type Container struct {
-	// Service is the compose service name: frappe, mariadb, redis-cache...
+	// Service is the compose service name.
 	Service string
 	Running bool
 }
 
-// Network is one Docker network and what is attached to it.
-//
-// tamp's environments each own one, and the global router is attached to
-// every one of them: that attachment is the only reason the router can reach
-// containers which publish nothing to the host.
+// Network is a Docker network and its attached containers. Each environment
+// owns one; the router joins it to reach containers with no published ports.
 type Network struct {
-	Name string
-	// Containers names the containers currently on the network.
+	Name       string
 	Containers []string
 }
 
-// ExecRequest is one command tamp runs inside a running container.
-//
-// It is tamp's way into a live environment: bench, uv and nvm are somebody
-// else's CLI, and tamp runs them rather than reimplementing them.
+// ExecRequest is one command run inside a running container.
 type ExecRequest struct {
-	// Container is the container's name, as compose named it.
 	Container string
-	// Cmd is argv. Nothing runs it through a shell unless Cmd names one.
+	// Cmd is argv; it is not run through a shell.
 	Cmd []string
-	// Env adds to the image's own environment, as KEY=VALUE strings.
+	// Env adds KEY=VALUE entries to the image's environment.
 	Env []string
 	// WorkDir overrides the image's working directory.
 	WorkDir string
-	// User overrides the image's user. tamp sets it only to root, and only to
-	// make a freshly created volume writable by the user the bench runs as.
+	// User overrides the image's user.
 	User string
-	// Stdout and Stderr receive the command's two streams, demultiplexed.
-	// Either may be nil, which discards that stream. Under TTY there is only
-	// one stream and it all arrives on Stdout.
+	// Stdout and Stderr receive the demultiplexed streams; nil discards.
+	// With TTY there is a single stream and it arrives on Stdout.
 	Stdout, Stderr io.Writer
 	// Stdin, when set, is attached to the command's standard input.
 	Stdin io.Reader
-	// TTY runs the command under a pseudo-terminal, which is what an
-	// interactive command needs — a shell, a REPL, anything that draws itself.
-	// It costs the separation of the two output streams: the daemon can only
-	// keep them apart when there is no terminal for them to interleave on.
+	// TTY allocates a pseudo-terminal, at the cost of stdout/stderr
+	// separation.
 	TTY bool
-	// Size is the pseudo-terminal's dimensions, meaningful only with TTY.
+	// Size is the terminal size; meaningful only with TTY.
 	Size ConsoleSize
 }
 
-// ConsoleSize is a terminal's dimensions in character cells. The zero value
-// leaves the size to the daemon's default.
+// ConsoleSize is a terminal size in character cells; zero uses the daemon's
+// default.
 type ConsoleSize struct{ Width, Height uint }
 
-// LogRequest is one container's log, as tamp asks for it.
+// LogRequest is one container-log read.
 type LogRequest struct {
-	// Container is the container's name, as compose named it.
 	Container string
-	// Follow keeps the stream open, so new lines arrive as they are written.
-	// It ends when the caller's context is cancelled.
+	// Follow keeps streaming until the caller's context is cancelled.
 	Follow bool
-	// Tail is how many lines from the end to start with. TailAll is the whole
-	// log.
+	// Tail is the number of trailing lines to start from; TailAll for all.
 	Tail int
-	// Stdout and Stderr receive the container's two streams, demultiplexed.
+	// Stdout and Stderr receive the demultiplexed streams.
 	Stdout, Stderr io.Writer
 }
 
-// Script builds the argv that runs a shell script with positional arguments.
-//
-// bash rather than sh: tamp's scripts source nvm, which is a bash script and
-// will not run under dash. The name in the middle is what makes the caller's
-// arguments $1 onwards — bash gives $0 to the word after the script.
-//
-// Arguments travel beside the script rather than inside it, so that what tamp
-// asked for is visible in the command it ran, and so that nothing tamp
-// substitutes has to be escaped for a shell.
+// Script builds argv running a shell script with positional arguments.
+// bash, not sh: the scripts source nvm, which needs bash. The "tamp" word
+// becomes $0 so args start at $1; passing args beside the script avoids
+// shell escaping.
 func Script(script string, args ...string) []string {
 	return append([]string{"bash", "-c", script, "tamp"}, args...)
 }
 
-// FileSpec is a file tamp puts into a container.
+// FileSpec is a file to place into a container.
 type FileSpec struct {
-	// Path is absolute, inside the container. Its directory must exist.
+	// Path is absolute inside the container; its directory must exist.
 	Path string
 	Data []byte
 	Mode fs.FileMode
-	// UID and GID own the file once it lands. They are spelled out rather than
-	// inherited because the bench container runs as a non-root user, and a
-	// file tamp drops in as root is one bench itself can never rewrite.
+	// UID and GID own the file: the bench runs as a non-root user, and a
+	// root-owned file would be one it can never rewrite.
 	UID, GID int
 }
 
-// Engine is the whole of tamp's dependency on Docker.
-//
-// Every method's failure is an *exitcode.Error carrying CodeEngineUnavailable
-// and a fix, which is what makes exit 4 tamp's answer to an unreachable
-// engine: a command that cannot proceed without Docker returns the error
-// unchanged, and the user gets something to act on rather than a stack trace.
+// Engine is the whole of tamp's dependency on Docker. An unreachable engine
+// surfaces as an *exitcode.Error carrying CodeEngineUnavailable and a fix,
+// so commands can return it unchanged as exit 4.
 type Engine interface {
-	// Ping resolves the engine's address and confirms the daemon answers.
+	// Ping resolves the endpoint and confirms the daemon answers.
 	Ping(ctx context.Context) (Info, error)
-	// ComposeVersion reports the version of the `docker compose` v2 plugin.
-	// It deliberately does not need a reachable daemon: a user whose Docker is
-	// merely stopped should still be told whether compose is installed.
+	// ComposeVersion reports the compose v2 plugin version. It works without
+	// a reachable daemon, so doctor can report it while Docker is stopped.
 	ComposeVersion(ctx context.Context) (string, error)
 
-	// ComposeUp creates and starts the project's containers, pulling any
-	// images the machine does not have, and waits for the healthchecks the
-	// generated file declares.
-	//
-	// Every compose operation streams the engine's own output to out rather
-	// than to a terminal, which is how create captures it into create.log and
-	// how tests read what compose was told to do.
+	// ComposeUp creates and starts the project's containers and waits for
+	// their healthchecks. All compose operations stream engine output to out.
 	ComposeUp(ctx context.Context, p ComposeProject, out io.Writer) error
-	// ComposeStop stops the project's containers, leaving them — and every
-	// volume — in place.
+	// ComposeStop stops containers, leaving them and all volumes in place.
 	ComposeStop(ctx context.Context, p ComposeProject, out io.Writer) error
-	// ComposeRestart restarts one of the project's services, which re-runs the
-	// command its container was created with. It is how tamp hands a
-	// container a job it could not do when it first started.
+	// ComposeRestart restarts one service, re-running the command its
+	// container was created with.
 	ComposeRestart(ctx context.Context, p ComposeProject, service string, out io.Writer) error
-	// ComposeDown removes the project's containers and network, and its
-	// volumes only when asked.
+	// ComposeDown removes containers and the network; volumes only with
+	// RemoveVolumes.
 	ComposeDown(ctx context.Context, p ComposeProject, removal Removal, out io.Writer) error
 
-	// Containers reports the project's containers, running or not. An
-	// environment that was never created, or whose containers were removed,
-	// has none — that is an empty slice, not an error.
+	// Containers reports the project's containers, running or not. No
+	// containers is an empty slice, not an error.
 	Containers(ctx context.Context, project string) ([]Container, error)
 
-	// InspectNetwork reports a network and the containers on it. A name the
-	// machine has no network for is a nil result and a nil error: tamp keeps
-	// routes for stopped environments, whose networks may be gone.
+	// InspectNetwork reports a network and its containers. A missing network
+	// is (nil, nil): tamp keeps routes for stopped environments.
 	InspectNetwork(ctx context.Context, name string) (*Network, error)
-	// ConnectNetwork attaches a container to a network it is not already on.
+	// ConnectNetwork attaches a container to a network.
 	ConnectNetwork(ctx context.Context, network, container string) error
-	// DisconnectNetwork detaches a container from a network. It has to happen
-	// before that network is removed — Docker refuses to remove one that still
-	// has something attached.
+	// DisconnectNetwork detaches a container; required before the network can
+	// be removed.
 	DisconnectNetwork(ctx context.Context, network, container string) error
 
-	// EnsureVolume creates a volume unless it is already there. It exists
-	// because compose refuses to start a project whose external volumes are
-	// missing, and will not create one itself.
+	// EnsureVolume creates a volume if absent: compose refuses to start with
+	// missing external volumes and will not create them.
 	EnsureVolume(ctx context.Context, name string) error
-	// HasVolumes reports whether any of a compose project's volumes still
-	// exist — the data an earlier environment may have left behind.
+	// HasVolumes reports whether any of the project's volumes exist.
 	HasVolumes(ctx context.Context, project string) (bool, error)
 
-	// Exec runs a command inside a container and waits for it. A non-zero exit
-	// is an error; what the command said is on the request's streams.
+	// Exec runs a command in a container and waits. A non-zero exit is an
+	// error; output goes to the request's streams.
 	Exec(ctx context.Context, req ExecRequest) error
-	// Logs copies a container's log to the request's streams, optionally
-	// following it until the context is cancelled.
+	// Logs copies a container's log to the request's streams.
 	Logs(ctx context.Context, req LogRequest) error
-	// ReadFile returns the contents of a file inside a container.
+	// ReadFile returns a file's contents from inside a container.
 	ReadFile(ctx context.Context, container, path string) ([]byte, error)
-	// WriteFile puts a file inside a container, replacing any file already
-	// there.
+	// WriteFile places a file inside a container, replacing any existing one.
 	WriteFile(ctx context.Context, container string, f FileSpec) error
 }

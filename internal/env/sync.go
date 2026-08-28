@@ -14,14 +14,10 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// syncMode settles how an environment's source reaches its container, on this
-// machine, right now.
-//
-// It is decided fresh on every create and every start rather than recorded,
-// because it depends on something that changes: whether tamp can get hold of
-// Mutagen. A machine that goes offline behind a proxy falls back to a bind
-// mount and says so — loudly, because the fallback works and is slow, and
-// because inotify does not fire through it, so nothing hot-reloads.
+// syncMode settles how source reaches the container, decided fresh on every
+// create and start because Mutagen's availability can change. The bind
+// fallback is loud: it works, but it is slow and inotify does not fire
+// through it, so nothing hot-reloads.
 func (m *Manager) syncMode(ctx context.Context, want syncer.Mode) syncer.Effective {
 	mode := syncer.Resolve(want, runtime.GOOS)
 	if mode != syncer.UseMutagen {
@@ -35,10 +31,8 @@ func (m *Manager) syncMode(ctx context.Context, want syncer.Mode) syncer.Effecti
 	return mode
 }
 
-// syncSession describes an environment's sync to Mutagen.
-//
-// The host side is alpha because the host is where the editing happens, and
-// alpha is the side two-way-resolved settles a conflict in favour of.
+// syncSession makes the host side alpha: it is where editing happens, and the
+// side two-way-resolved settles conflicts toward.
 func (m *Manager) syncSession(ctx context.Context, e *Environment) (syncer.Session, error) {
 	info, err := m.Engine.Ping(ctx)
 	if err != nil {
@@ -53,12 +47,8 @@ func (m *Manager) syncSession(ctx context.Context, e *Environment) (syncer.Sessi
 	}, nil
 }
 
-// startSync brings an environment's sync session up: resumed if tamp has one
-// for this environment already, created if it does not.
-//
-// The other modes are not failures and not omissions. A bind mount needs
-// nothing running, and off means the source stays in the container — both are
-// finished states, and the note says which one the user is in.
+// startSync resumes the environment's session or creates one. Bind and off
+// are finished states, not omissions — neither needs anything running.
 func (m *Manager) startSync(ctx context.Context, e *Environment, mode syncer.Effective, out io.Writer) error {
 	switch mode {
 	case syncer.UseBind:
@@ -90,13 +80,9 @@ func (m *Manager) startSync(ctx context.Context, e *Environment, mode syncer.Eff
 	return nil
 }
 
-// pauseSync stops an environment's sync session without forgetting it, so that
-// starting the environment again picks it up rather than resynchronising the
-// whole tree.
-//
-// Its failure is a warning: the containers are already down, which is what the
-// user asked for, and a stop that reports a sync error instead would be
-// telling them about the smaller half of what happened.
+// pauseSync stops the session without forgetting it, so the next start
+// resumes instead of resynchronising the tree. Failure is a warning: the
+// containers are already down, which is what was asked for.
 func (m *Manager) pauseSync(ctx context.Context, e *Environment) {
 	if !m.hasSyncSession(ctx, e) {
 		return
@@ -106,7 +92,6 @@ func (m *Manager) pauseSync(ctx context.Context, e *Environment) {
 	}
 }
 
-// terminateSync forgets an environment's sync session for good.
 func (m *Manager) terminateSync(ctx context.Context, e *Environment) {
 	if !m.hasSyncSession(ctx, e) {
 		return
@@ -116,11 +101,8 @@ func (m *Manager) terminateSync(ctx context.Context, e *Environment) {
 	}
 }
 
-// hasSyncSession reports whether there is a session to act on at all.
-//
-// It asks Mutagen only when the machine already has one. Stopping a
-// bind-mounted environment must not be the thing that downloads a Mutagen this
-// machine has never needed.
+// hasSyncSession asks Mutagen only when the machine already has it: stopping
+// a bind-mounted environment must not trigger a Mutagen download.
 func (m *Manager) hasSyncSession(ctx context.Context, e *Environment) bool {
 	if syncer.Resolve(e.Config.Sync.Mode, runtime.GOOS) != syncer.UseMutagen {
 		return false
@@ -136,12 +118,9 @@ func (m *Manager) hasSyncSession(ctx context.Context, e *Environment) bool {
 	return slices.Contains(held, e.Resources.Project())
 }
 
-// ensureAppsDir makes the host side of the source layer.
-//
-// It exists before anything starts, in both syncing modes and for different
-// reasons: a bind mount whose host directory is missing is created by Docker
-// as root, and a Mutagen session needs somewhere to put the tree it mirrors
-// out. Only "off" has no host side at all.
+// ensureAppsDir pre-creates the host apps/ directory: Docker creates a
+// missing bind source as root, and a Mutagen session needs a mirror target.
+// Only "off" has no host side.
 func ensureAppsDir(dir string, mode syncer.Effective) error {
 	if mode == syncer.UseOff {
 		return nil

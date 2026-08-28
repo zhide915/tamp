@@ -14,24 +14,22 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Docker is the real engine: the Docker API for inspection, and the docker CLI
-// for compose. It is tamp's only implementation of Engine (Docker is the one
-// supported engine), and the only code in tamp that a test cannot run.
+// Docker is the real Engine: the Docker API for inspection, the docker CLI
+// for compose. It is the only Engine implementation and the only code tests
+// cannot run.
 type Docker struct {
 	detector Detector
 
-	// Detection stats the filesystem and reads docker's config, and several
-	// checks in one command would otherwise repeat it, so the result — success
-	// or failure — is resolved once.
+	// Detection is resolved once — success or failure — so multiple checks
+	// in one command do not repeat the filesystem and config reads.
 	once sync.Once
 	addr Address
 	api  *client.Client
 	err  error
 }
 
-// New returns the engine tamp talks to. Detection is deferred to the first
-// call, so building the command tree never touches the filesystem and `tamp
-// --help` works on a machine with no Docker at all.
+// New returns the production engine. Detection is deferred to first use so
+// `tamp --help` works on a machine with no Docker.
 func New() *Docker {
 	return &Docker{detector: NewDetector(os.LookupEnv)}
 }
@@ -42,8 +40,8 @@ func (d *Docker) connect() (Address, *client.Client, error) {
 		if d.err != nil {
 			return
 		}
-		// No version is pinned: tamp must work against whatever engine the
-		// user has, and this client negotiates the API version by default.
+		// No pinned API version: the client negotiates with whatever engine
+		// the user has.
 		d.api, d.err = client.New(client.WithHost(d.addr.Host))
 		if d.err != nil {
 			d.err = exitcode.New(
@@ -64,9 +62,8 @@ func (d *Docker) Ping(ctx context.Context) (Info, error) {
 
 	v, err := api.ServerVersion(ctx, client.ServerVersionOptions{})
 	if err != nil {
-		// The socket is there but nothing is listening on it — the ordinary
-		// "Docker Desktop is not running" case, which deserves its own words
-		// rather than the API client's.
+		// Socket present, daemon not answering: the everyday "Docker Desktop
+		// is not running" case.
 		return Info{}, exitcode.New(
 			exitcode.CodeEngineUnavailable,
 			fmt.Sprintf("Docker is not answering at %s: %v", addr, rootCause(err)),
@@ -78,9 +75,8 @@ func (d *Docker) Ping(ctx context.Context) (Info, error) {
 }
 
 func (d *Docker) ComposeVersion(ctx context.Context) (string, error) {
-	// No DOCKER_HOST is set on this invocation on purpose: reporting the
-	// version asks the plugin about itself and must keep working while the
-	// daemon is down, which is exactly when doctor is run.
+	// No DOCKER_HOST here on purpose: the plugin reports its own version and
+	// must keep working while the daemon is down.
 	out, err := exec.CommandContext(ctx, "docker", "compose", "version", "--short").Output()
 	if err != nil {
 		return "", exitcode.New(
@@ -92,9 +88,8 @@ func (d *Docker) ComposeVersion(ctx context.Context) (string, error) {
 	return parseComposeVersion(string(out))
 }
 
-// parseComposeVersion turns `docker compose version --short` output into a
-// bare version, rejecting anything before v2. tamp generates compose files
-// that v1 cannot read, so a v1 install is an unusable engine, not a warning.
+// parseComposeVersion extracts a bare version and rejects anything before
+// v2: tamp's generated files are unreadable by compose v1.
 func parseComposeVersion(out string) (string, error) {
 	v := strings.TrimPrefix(strings.TrimSpace(out), "v")
 
@@ -117,14 +112,9 @@ func parseComposeVersion(out string) (string, error) {
 	return v, nil
 }
 
-// rootCause digs out the innermost error.
-//
-// The Docker client wraps a dial failure in several layers that each restate
-// the endpoint ("error during connect: Get "http://…/version": dial tcp …"),
-// so tamp's own line would name the address three times over. The innermost
-// error is the part tamp cannot say for itself — refused, timed out, denied —
-// and it is what distinguishes "Docker is stopped" from "Docker is running and
-// you are not in the docker group".
+// rootCause returns the innermost error. The Docker client's wrapping
+// restates the endpoint at every layer; only the innermost reason —
+// refused, timed out, denied — is worth repeating.
 func rootCause(err error) error {
 	for {
 		inner := errors.Unwrap(err)

@@ -11,8 +11,7 @@ import (
 	"github.com/zhide915/tamp/internal/router"
 )
 
-// diagnosisTimeout bounds the whole report, not each check: the user is
-// waiting at a prompt, and no honest answer takes this long.
+// diagnosisTimeout caps the whole report; the user is waiting at a prompt.
 const diagnosisTimeout = 15 * time.Second
 
 func newDoctorCommand(d deps) *cobra.Command {
@@ -24,9 +23,7 @@ func newDoctorCommand(d deps) *cobra.Command {
 			"tamp exits 0 unless something failed.",
 		Args: noArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// A diagnosis that never returns is the worst possible one, and a
-			// half-started Docker Desktop can leave a socket that accepts a
-			// connection and then says nothing.
+			// A half-started Docker Desktop can accept a connection and then hang.
 			ctx, cancel := context.WithTimeout(cmd.Context(), diagnosisTimeout)
 			defer cancel()
 
@@ -41,8 +38,7 @@ func newDoctorCommand(d deps) *cobra.Command {
 			if report.OK() {
 				return nil
 			}
-			// The report above is the explanation; anything tamp added here
-			// would be a worse restatement of it.
+			// The printed report is the explanation; add no error line.
 			return exitcode.Reported(report.ExitCode())
 		},
 	}

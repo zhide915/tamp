@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// The check has to answer "is something serving here" without being root,
-// because tamp is not root and the port it cares about most is 80.
 func TestAListenedPortReadsAsTaken(t *testing.T) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -26,8 +24,7 @@ func TestAPortNobodyIsServingReadsAsFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	port := l.Addr().(*net.TCPAddr).Port
-	// Closed again, so the port is one the OS just confirmed is usable and
-	// that nothing is on.
+	// Listen-then-close yields a port known to be usable and unoccupied.
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}

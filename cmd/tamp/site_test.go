@@ -12,19 +12,15 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// A site is tamp's whole promise made visible: a hostname a browser opens.
-// These tests are about the three things that decide it — the bench command
-// tamp ran, the routes it assembled afterwards, and what it refuses to
-// accept in the first place.
+// Three things decide a site: the bench command run, the routes assembled
+// afterwards, and what tamp refuses up front.
 
-// siteNew makes a site and fails the test if it did not work, so that tests
-// about listing and removal are not also tests about creation.
+// siteNew fails the test on error, so callers are not also testing creation.
 func (c *cli) siteNew(t *testing.T, args ...string) {
 	t.Helper()
 	c.run(t, append([]string{"site", "new"}, args...)...).assertCode(t, exitcode.CodeOK)
 }
 
-// benchRan is the command tamp sent to the bench containing fragment.
 func (c *cli) benchRan(t *testing.T, fragment string) enginetest.Exec {
 	t.Helper()
 	for _, e := range c.engine.Execs {
@@ -36,9 +32,8 @@ func (c *cli) benchRan(t *testing.T, fragment string) enginetest.Exec {
 	return enginetest.Exec{}
 }
 
-// registered is the site list tamp recorded for an environment. It is what
-// the router's routes are assembled from, so it is what has to be right for a
-// stopped environment to keep its sites.
+// registered is the recorded site list — what the router's routes are
+// assembled from.
 func (c *cli) registered(t *testing.T, name string) []string {
 	t.Helper()
 	reg, err := env.LoadRegistry(filepath.Join(c.home, env.HomeDirName))
@@ -50,8 +45,6 @@ func (c *cli) registered(t *testing.T, name string) []string {
 
 // --- creating a site -------------------------------------------------------
 
-// The point of the whole command: after it, a browser pointed at the hostname
-// reaches this bench, and the desk's live updates reach it too.
 func TestSiteNewRoutesTheHostnameToItsBench(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -65,8 +58,7 @@ func TestSiteNewRoutesTheHostnameToItsBench(t *testing.T) {
 	if !strings.Contains(caddyfile, "http://shop.localhost {") {
 		t.Errorf("shop.localhost is not routed:\n%s", caddyfile)
 	}
-	// socket.io is a second server on a second port; without its own route the
-	// desk stops updating in real time.
+	// Without its own socket.io route the desk stops updating live.
 	if !strings.Contains(caddyfile, "/socket.io/*") {
 		t.Errorf("shop.localhost has no socket.io route:\n%s", caddyfile)
 	}
@@ -75,10 +67,8 @@ func TestSiteNewRoutesTheHostnameToItsBench(t *testing.T) {
 	}
 }
 
-// The three flags that make a site work in a container: the login scope,
-// without which the new site cannot reach the database it was just given, and
-// the two passwords, without which bench stops to prompt a user who may be an
-// agent.
+// The login scope lets the site reach its database across containers; the
+// passwords keep bench from stopping to prompt.
 func TestSiteNewCreatesTheSiteNonInteractivelyInAContainer(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -99,17 +89,15 @@ func TestSiteNewCreatesTheSiteNonInteractivelyInAContainer(t *testing.T) {
 		t.Errorf("tamp created the site in %s, not on demo's bench", got)
 	}
 
-	// The environment's own stored credential, not something tamp asked for:
-	// there is no user-facing database password flag anywhere on this command.
+	// The stored credential: no user-facing db password flag exists.
 	password := c.read(t, "demo", env.StateDirName, env.SecretsDirName, env.DBRootPasswordFile)
 	if !slices.Contains(newSite.Cmd, strings.TrimSpace(password)) {
 		t.Errorf("tamp did not pass demo's own database credential:\n%s", newSite.Line())
 	}
 }
 
-// Frappe resolves the site from the Host header, which only works while no
-// default site is forced. Writing currentsite.txt would make one bench answer
-// for one site whatever hostname was asked for.
+// Host-header resolution only works while no default site is forced;
+// currentsite.txt would pin the bench to one site.
 func TestSiteNewNeverForcesADefaultSite(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -126,8 +114,7 @@ func TestSiteNewNeverForcesADefaultSite(t *testing.T) {
 	}
 }
 
-// Developer mode is what makes Frappe reload changed Python and rebuild
-// changed assets — the reason anyone runs a bench locally at all.
+// Developer mode is what reloads changed Python and rebuilds changed assets.
 func TestSiteNewTurnsOnDeveloperModeForTheSite(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -138,8 +125,8 @@ func TestSiteNewTurnsOnDeveloperModeForTheSite(t *testing.T) {
 	if !slices.Contains(setConfig.Cmd, "developer_mode") {
 		t.Errorf("tamp never set developer_mode on the site:\n%s", setConfig.Line())
 	}
-	// -p parses the value, so the key lands as the number 1 rather than the
-	// string "1" — the shape the bench-wide config already has.
+	// -p parses the value: the number 1, not the string "1", matching the
+	// bench-wide config's shape.
 	if !strings.Contains(setConfig.Line(), "set-config -p") {
 		t.Errorf("developer_mode was set as a string:\n%s", setConfig.Line())
 	}
@@ -147,8 +134,7 @@ func TestSiteNewTurnsOnDeveloperModeForTheSite(t *testing.T) {
 
 var adminPasswordLine = regexp.MustCompile(`Administrator password: (\S+)`)
 
-// A generated credential the user never sees again is a site they cannot log
-// into, and one printed twice is one more place it outlives the terminal.
+// Unseen means a site nobody can log into; printed twice outlives the terminal.
 func TestSiteNewPrintsAGeneratedAdminPasswordExactlyOnce(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -168,19 +154,14 @@ func TestSiteNewPrintsAGeneratedAdminPasswordExactlyOnce(t *testing.T) {
 	if !slices.Contains(c.benchRan(t, "bench new-site").Cmd, password) {
 		t.Error("tamp printed one password and gave the site another")
 	}
-	// It is not written down anywhere: what tamp generates and prints once is
-	// the user's to keep, and a file tamp never reads back is a file that
-	// only ever leaks.
+	// Never stored: a file tamp never reads back can only leak.
 	if c.exists("demo", env.StateDirName, env.SecretsDirName, "admin_password") {
 		t.Error("tamp stored the Administrator password")
 	}
 }
 
-// After `bench new-site` succeeds the site and its database exist, whatever
-// happens next. A failure past that point must not take with it the one thing
-// only this run knows — the generated password — and must still route the
-// site, or the claimed hostname points at nothing until an unrelated command
-// happens to reassemble the routes.
+// Once bench new-site succeeds the site exists regardless; the generated
+// password and the route must survive a later failure.
 func TestAFailureAfterTheSiteExistsStillPrintsThePasswordAndRoutesIt(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--apps", "erpnext:version-15")
@@ -209,15 +190,14 @@ func TestSiteNewTakesTheAdminPasswordFromTheFlag(t *testing.T) {
 	if !slices.Contains(c.benchRan(t, "bench new-site").Cmd, "hunter2") {
 		t.Error("tamp generated a password over the one it was given")
 	}
-	// A password the user chose is not news, and printing it back only puts it
-	// in one more place.
+	// Echoing a user-chosen password only spreads it.
 	if strings.Contains(r.stdout+r.stderr, "hunter2") {
 		t.Errorf("tamp echoed back the password it was given:\n%s%s", r.stdout, r.stderr)
 	}
 }
 
-// The router matches one Host header against every environment's routes at
-// once, so a hostname is a machine-wide claim rather than a per-bench one.
+// The router matches Host against every environment at once, so a hostname
+// is a machine-wide claim.
 func TestSiteNewRefusesAHostnameAnotherEnvironmentAlreadyHas(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -233,9 +213,8 @@ func TestSiteNewRefusesAHostnameAnotherEnvironmentAlreadyHas(t *testing.T) {
 	}
 }
 
-// An environment's mail UI is as much a claim on a hostname as a site is, and
-// a Caddyfile holding one address twice is one the router will not load — which
-// would take every other site on the machine down with it.
+// A duplicate address makes a Caddyfile the router will not load, taking
+// every site on the machine down.
 func TestSiteNewRefusesAnEnvironmentsMailHostname(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -249,8 +228,7 @@ func TestSiteNewRefusesAnEnvironmentsMailHostname(t *testing.T) {
 	}
 }
 
-// The same rule from the other side: a new environment's name decides a
-// hostname too.
+// The same claim from the other side: a new name decides a hostname too.
 func TestCreateRefusesANameWhoseMailHostnameIsAlreadyASite(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -262,9 +240,8 @@ func TestCreateRefusesANameWhoseMailHostnameIsAlreadyASite(t *testing.T) {
 	r.assertStderrContains(t, "mail.next.localhost", "demo")
 }
 
-// Creating a site is minutes of work inside a container, and tamp never
-// starts an environment on the user's behalf — that would hide the wait inside
-// a command that promised something else.
+// No auto-start: minutes of hidden work inside a command that promised
+// something else.
 func TestSiteNewNeedsARunningEnvironment(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -283,9 +260,8 @@ func TestSiteNewNeedsARunningEnvironment(t *testing.T) {
 	}
 }
 
-// *.localhost resolves everywhere with no configuration; anything else
-// resolves to whatever the internet says, which is not this machine. Until
-// tamp manages the hosts file itself, the user needs the exact line.
+// Only *.localhost resolves without configuration; other names need the
+// exact hosts-file line.
 func TestSiteNewSaysWhatANonLocalhostNameStillNeeds(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -308,8 +284,6 @@ func TestSiteNewSaysNothingAboutHostsFilesForALocalhostName(t *testing.T) {
 	}
 }
 
-// One bench, two sites, two databases — and stopping short of that would make
-// tamp one environment per project rather than one environment per stack.
 func TestASecondSiteOnOneBenchGetsItsOwnRoute(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -327,8 +301,6 @@ func TestASecondSiteOnOneBenchGetsItsOwnRoute(t *testing.T) {
 	}
 }
 
-// The environment tamp acts on is the one the user is standing in, the same
-// way it is for every other command.
 func TestSiteNewTakesTheEnvironmentFromTheWorkingDirectory(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -356,8 +328,7 @@ func TestSiteListShowsEveryHostWithItsURL(t *testing.T) {
 	r.assertStdoutContains(t, "HOST", "URL", "APPS",
 		"shop.localhost", "http://shop.localhost",
 		"books.localhost", "http://books.localhost")
-	// Every Frappe site has frappe installed, so the column is never empty on
-	// a bench tamp can reach.
+	// frappe is on every site, so the column is never empty on a reachable bench.
 	r.assertStdoutContains(t, "frappe")
 }
 
@@ -371,9 +342,7 @@ func TestSiteListOnAnEnvironmentWithNoSites(t *testing.T) {
 	r.assertStdoutContains(t, "no sites yet", "tamp site new demo")
 }
 
-// The registry caches the site list precisely so that a stopped environment
-// still knows what it has — the same cache the router's routes are assembled
-// from.
+// The cached list is the same one routes are assembled from.
 func TestSiteListOnAStoppedEnvironmentListsWhatTampLastSaw(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -387,9 +356,7 @@ func TestSiteListOnAStoppedEnvironmentListsWhatTampLastSaw(t *testing.T) {
 	r.assertStderrContains(t, "not running")
 }
 
-// A site made behind tamp's back — through 'tamp exec -- bench new-site' —
-// is still a site on this bench, and the bench is the authority whenever it is
-// running.
+// The running bench is the authority, even for sites made behind tamp's back.
 func TestSiteListAdoptsASiteTampDidNotCreate(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -405,16 +372,14 @@ func TestSiteListAdoptsASiteTampDidNotCreate(t *testing.T) {
 	}
 }
 
-// tamp did not create every site it finds, and a bench can hold a hostname
-// the machine has already given to something else. Adopting that one would put
-// the address in the assembled Caddyfile twice, which is a router that will not
-// reload, so the site is reported and left unrouted.
+// Adopting a hostname another environment owns would duplicate it in the
+// Caddyfile, which the router refuses to load; report it, leave it unrouted.
 func TestSiteListRefusesToAdoptAHostnameAnotherEnvironmentOwns(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
 	c.create(t, "other")
 	c.siteNew(t, "other", "shop.localhost")
-	// The same hostname turns up on demo's bench, behind tamp's back.
+	// The taken hostname appears on demo's bench behind tamp's back.
 	c.run(t, "exec", "demo", "--", "bench", "new-site", "shop.localhost").
 		assertCode(t, exitcode.CodeOK)
 
@@ -435,8 +400,6 @@ func TestSiteListRefusesToAdoptAHostnameAnotherEnvironmentOwns(t *testing.T) {
 
 // --- removing a site -------------------------------------------------------
 
-// One site is one database, and this is where that has to be true: dropping
-// one must leave every other site on the bench working.
 func TestSiteRmDropsOnlyThatSite(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -463,8 +426,7 @@ func TestSiteRmDropsOnlyThatSite(t *testing.T) {
 	}
 }
 
-// The exit-5 contract: what --yes would destroy is on screen before the user
-// retypes the command, and nothing has happened yet.
+// Exit 5: show what --yes would destroy, do nothing.
 func TestSiteRmWithoutYesDestroysNothing(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -493,8 +455,6 @@ func TestSiteRmOnASiteTheEnvironmentDoesNotHave(t *testing.T) {
 	r.assertStderrContains(t, "shop.localhost", "tamp site list demo")
 }
 
-// The bench is the authority whenever it is up, so a site tamp did not create
-// is still one tamp can drop by name.
 func TestSiteRmDropsASiteTampDidNotCreate(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -524,7 +484,6 @@ func TestSiteRmNeedsARunningEnvironment(t *testing.T) {
 	}
 }
 
-// A hostname tamp gave up is a hostname another environment may take.
 func TestAHostnameIsFreeAgainOnceItsSiteIsDropped(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

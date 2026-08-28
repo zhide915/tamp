@@ -15,28 +15,23 @@ import (
 
 // InitRequest is what `tamp init` was asked for.
 type InitRequest struct {
-	// Name overrides the folder name, still unvalidated. Empty means the
-	// environment is named after the directory it is being made in.
+	// Name overrides the folder name; empty names the environment after the
+	// directory.
 	Name string
-	// Frappe, Apps and Sync are create's flags, and mean the same here. A
-	// directory being re-adopted already answers all three from its own
-	// tamp.toml, and they are ignored there.
+	// Frappe, Apps and Sync are create's flags. A re-adoption answers them
+	// from its own tamp.toml and ignores them.
 	Frappe string
 	Apps   string
 	Sync   string
-	// Explicit names the flags the user actually typed, defaults excluded. A
-	// re-adoption ignores them, and has to say so per flag — a user pinning
-	// --frappe version-16 must not believe they upgraded.
+	// Explicit names the flags actually typed, so a re-adoption can warn per
+	// flag — a user pinning --frappe must not believe they upgraded.
 	Explicit []string
 }
 
-// Init turns the current directory into an environment.
-//
-// It is create's sibling, and it does one thing create cannot: it re-adopts.
-// `tamp rm` deliberately keeps an environment's volumes and never touches its
-// directory, and this is the command that turns what is left back into a
-// working environment — same name, same path, so the same volumes attach and
-// the data comes back with them.
+// Init turns the current directory into an environment. Its one power create
+// lacks is re-adoption: `tamp rm` keeps the volumes and the directory, and
+// init turns them back into a working environment — same name, same path, so
+// the volumes reattach with the data in them.
 func (m *Manager) Init(ctx context.Context, req InitRequest) error {
 	dir, err := filepath.Abs(m.Cwd)
 	if err != nil {
@@ -72,13 +67,9 @@ func (m *Manager) Init(ctx context.Context, req InitRequest) error {
 	return m.raise(ctx, dir, plan)
 }
 
-// requireFreeName refuses a name the machine has already given out, before
-// anything is made.
-//
-// The registry check happens again under the lock when the name is claimed,
-// which is what actually makes it safe. This one exists for the message: the
-// answer to a folder whose name is taken is --name, and the answer inside the
-// lock cannot know whether tamp chose the name or the user did.
+// requireFreeName exists for the message: the fix for a taken folder-derived
+// name is --name, which the later check under the lock cannot know to say.
+// That later check is what actually makes claiming safe.
 func (m *Manager) requireFreeName(name Name, derived bool) error {
 	reg, err := LoadRegistry(m.Home)
 	if err != nil {
@@ -98,13 +89,10 @@ func (m *Manager) requireFreeName(name Name, derived bool) error {
 		fix)
 }
 
-// leftover reports the environment a directory already holds, or nil when the
-// directory is one tamp may fill from scratch.
-//
-// The two are told apart by the source layer. A tamp.toml with an apps tree
-// beside it is what `tamp rm` leaves behind — the code is still there, and
-// so, unless the user asked otherwise, are the volumes. Anything else in the
-// directory is somebody's work, and tamp will not build on top of it.
+// leftover reports the environment a directory already holds, or nil for one
+// tamp may fill from scratch. A tamp.toml with an apps tree beside it is what
+// `tamp rm` leaves; anything else in the directory is somebody's work, and
+// tamp will not build on top of it.
 func (m *Manager) leftover(dir string) (*Config, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -120,8 +108,7 @@ func (m *Manager) leftover(dir string) (*Config, error) {
 		}
 	}
 	if len(others) == 0 {
-		// Empty, or holding nothing but a tamp.toml tamp is about to write
-		// itself. Either way there is nothing here to lose.
+		// Empty, or only a tamp.toml about to be rewritten — nothing to lose.
 		return nil, nil
 	}
 
@@ -133,9 +120,8 @@ func (m *Manager) leftover(dir string) (*Config, error) {
 		for _, w := range warnings {
 			m.Out.Warn(w)
 		}
-		// The source is normally what proves this was an environment, but an
-		// environment that syncs nothing to the host never had any here — and
-		// its volumes survived a removal just the same.
+		// A sync-off environment never had host source, but its volumes
+		// survived a removal all the same.
 		if hasSource(dir) || syncer.Resolve(cfg.Sync.Mode, runtime.GOOS) == syncer.UseOff {
 			return cfg, nil
 		}
@@ -147,25 +133,20 @@ func (m *Manager) leftover(dir string) (*Config, error) {
 		fmt.Sprintf("run tamp init in an empty directory, or 'tamp create %s' to make one", filepath.Base(dir)))
 }
 
-// hasSource reports whether the directory holds an apps tree with something in
-// it. Empty does not count: an environment whose create failed before the
-// bench existed has the directory and none of the source, and adopting that
-// would be adopting nothing.
+// hasSource requires a non-empty apps tree: a create that failed before the
+// bench existed left a directory with no source, and adopting that would be
+// adopting nothing.
 func hasSource(dir string) bool {
 	entries, err := os.ReadDir(syncer.AppsDir(dir))
 	return err == nil && len(entries) > 0
 }
 
-// readoptSteps is buildSteps plus the two an adoption does first.
 const readoptSteps = 2 + buildSteps
 
-// readopt brings a removed environment back around the source it left behind.
-//
-// The tamp.toml decides everything — its Frappe version, its toolchain, its
-// apps — because the volumes that may be about to reattach were built to match
-// it. That is why create's flags are ignored here and merely reported: an
-// environment cannot change Frappe version by being adopted, and pretending
-// otherwise would hand the user a bench its own data does not fit.
+// readopt rebuilds a removed environment around the source it left behind.
+// The surviving tamp.toml decides everything — the volumes about to reattach
+// were built to match it, so create's flags cannot apply and are only
+// reported.
 func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req InitRequest) error {
 	m.Out.Note(ConfigFile + " already says what this environment is — tamp is regenerating everything else from it")
 	if req.Name != "" {
@@ -182,10 +163,8 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 	}
 	e := &Environment{Dir: dir, Config: cfg, Resources: res}
 
-	// A directory that is still a registered environment is not a leftover:
-	// adopting it would re-run the build against a live bench, and a failure
-	// there rolls back — stopping and deregistering — an environment that was
-	// healthy before init was typed.
+	// A still-registered directory is live, not leftover: a failed build here
+	// would roll back — stop and deregister — a healthy environment.
 	if err := m.requireUnregistered(e); err != nil {
 		return err
 	}
@@ -206,33 +185,28 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 	if port != e.Config.Ports.DB {
 		m.Out.Warn(fmt.Sprintf("another environment holds host port %d now, so this one's database moves to %d",
 			e.Config.Ports.DB, port))
-		// Written back by writeEnvironment, which rewrites tamp.toml as part
-		// of regenerating everything this adoption regenerates.
+		// Reaches disk via writeEnvironment, which rewrites tamp.toml.
 		e.Config.Ports.DB = port
 	}
 
 	sync := m.syncMode(ctx, cfg.Sync.Mode)
 	if err := m.writeEnvironment(e, sync); err != nil {
-		// The entry reregister just made must not outlive the adoption it was
-		// made for: a registry naming a dead environment blocks the next try
-		// and holds a port nothing answers on.
+		// The fresh registry entry must not outlive its adoption: it would
+		// block the next try and hold a port nothing answers on.
 		m.unregister(e.Name())
 		return err
 	}
 
 	if _, err := m.build(ctx, e, sync, log); err != nil {
-		// Volumes are kept, and that is the whole promise being kept: they are
-		// the data this command exists to bring back, and a failed adoption
-		// must leave it exactly as it found it.
+		// Volumes kept — they are the data this command exists to bring back.
 		m.rollback(ctx, e, engine.KeepVolumes, log)
 		m.Out.Note("your source and your data are untouched — run 'tamp init' again once this is fixed")
 		return err
 	}
 
-	// The registry entry this adoption made is new, and the site list tamp
-	// caches in it went with the old one. The bench is up now and knows what
-	// it has, so it is asked, and the routes are assembled again from what it
-	// said — otherwise an adopted environment comes back unreachable.
+	// The new registry entry has no cached site list; the bench is up, so ask
+	// it and reassemble the routes — or the environment comes back
+	// unreachable.
 	if _, _, err := m.sites(ctx, e); err != nil {
 		return err
 	}
@@ -248,10 +222,9 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 	return nil
 }
 
-// requireUnregistered refuses to adopt a directory that is still a registered
-// environment. init exists for what `tamp rm` left behind, and rm removes the
-// registry entry — an entry still present means the environment was never
-// removed, and the way to rebuild one of those starts with removing it.
+// requireUnregistered refuses to adopt a still-registered environment: an
+// entry present means it was never removed, and rebuilding one starts with
+// removing it.
 func (m *Manager) requireUnregistered(e *Environment) error {
 	reg, err := LoadRegistry(m.Home)
 	if err != nil {
@@ -267,9 +240,8 @@ func (m *Manager) requireUnregistered(e *Environment) error {
 			e.Name(), e.Name()))
 }
 
-// samePath compares two environment directories the way the resource hash
-// does, so that a path reached by a different spelling is still the same
-// environment.
+// samePath compares directories the way the resource hash does, so a
+// different spelling of the same path still matches.
 func samePath(a, b string) bool {
 	return pathHash(a) == pathHash(b)
 }

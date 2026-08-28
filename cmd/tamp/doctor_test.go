@@ -26,8 +26,8 @@ func TestDoctorReportsEveryCheckWhenTheEngineIsHealthy(t *testing.T) {
 	}
 }
 
-// The report is what the user asked for, so it must survive being redirected;
-// a doctor that wrote its failures to stderr would produce an empty file.
+// The report must survive redirection; failures on stderr would leave an
+// empty file.
 func TestDoctorWritesFailuresToStdout(t *testing.T) {
 	c := sandbox(t)
 	c.engine = enginetest.Unavailable()
@@ -40,8 +40,6 @@ func TestDoctorWritesFailuresToStdout(t *testing.T) {
 	}
 }
 
-// doctor has already said what is wrong, in more detail than one line can
-// carry; tamp's trailing "error:" line would only repeat it.
 func TestDoctorDoesNotAppendAnErrorLineToItsOwnReport(t *testing.T) {
 	c := sandbox(t)
 	c.engine = enginetest.Unavailable()
@@ -53,8 +51,6 @@ func TestDoctorDoesNotAppendAnErrorLineToItsOwnReport(t *testing.T) {
 	}
 }
 
-// Every failing check names its fix — that is the entire reason doctor exists
-// rather than tamp just failing at the moment of use.
 func TestDoctorPrintsTheFixForEveryFailingCheck(t *testing.T) {
 	c := sandbox(t)
 	c.engine = enginetest.Unavailable()
@@ -64,7 +60,7 @@ func TestDoctorPrintsTheFixForEveryFailingCheck(t *testing.T) {
 	r.assertStdoutContains(t, "start Docker Desktop", "install Docker Desktop")
 }
 
-// A failing report is the result, not progress, so --quiet cannot swallow it.
+// The report is the result, not progress.
 func TestDoctorReportSurvivesQuiet(t *testing.T) {
 	c := sandbox(t)
 	c.engine = enginetest.Unavailable()
@@ -75,8 +71,7 @@ func TestDoctorReportSurvivesQuiet(t *testing.T) {
 	r.assertStdoutContains(t, "✗ Docker", "start Docker Desktop")
 }
 
-// A stopped Docker must not hide a missing compose: they are separate installs
-// and the user needs both problems in one pass.
+// Docker and compose are separate installs; report both problems in one pass.
 func TestDoctorStillChecksComposeWhenDockerIsDown(t *testing.T) {
 	c := sandbox(t)
 	c.engine.PingErr = exitcode.New(exitcode.CodeEngineUnavailable, "Docker is not answering", "start Docker")
@@ -87,10 +82,8 @@ func TestDoctorStillChecksComposeWhenDockerIsDown(t *testing.T) {
 	r.assertStdoutContains(t, "✗ Docker", "✓ Docker Compose")
 }
 
-// Exit 4 is for commands that need the engine. Everything else has to keep
-// working on a machine with no Docker at all — tamp must be usable before it
-// is configured, and `tamp version` in a bug report is filed from exactly
-// such a machine.
+// tamp must work before it is configured: 'tamp version' in a bug report is
+// filed from a machine with no Docker.
 func TestCommandsThatDoNotNeedTheEngineIgnoreItBeingDown(t *testing.T) {
 	for _, args := range [][]string{{"version"}, {"--help"}, {}} {
 		c := sandbox(t)

@@ -13,31 +13,25 @@ import (
 	"github.com/zhide915/tamp/internal/router"
 )
 
-// LogService is one thing an environment's logs can be asked about.
-//
-// It is the whole of what tamp knows about a log, and it exists so that the
-// user never has to: the five bench processes share one container and are told
-// apart by the prefix honcho writes, the four service containers have one
-// stream each, and the router belongs to no environment at all.
+// LogService maps a user-facing log name to where it lives: the five bench
+// processes share one container and are told apart by honcho's prefix, the
+// service containers have one stream each, and the router belongs to no
+// environment.
 type LogService struct {
-	Name string
-	// Service is the compose service whose container holds the log.
+	Name    string
 	Service string
-	// Process is the honcho process to keep lines from, or empty when the
-	// container's whole log is the answer.
+	// Process is the honcho process to keep lines from; empty takes the whole
+	// container log.
 	Process string
-	// Global marks a service that is not part of any environment. There is one
-	// — the router — and it is why `tamp logs router` works from anywhere.
+	// Global marks the router, the one service outside any environment —
+	// why `tamp logs router` works from anywhere.
 	Global bool
 }
 
-// DefaultLogService is what `tamp logs` shows when told nothing: the web
-// server, which is what the browser is talking to.
+// DefaultLogService is the web server — what the browser is talking to.
 const DefaultLogService = "web"
 
-// logServices is every service tamp can show a log for, in the order the
-// error message lists them: the bench's own processes first, then the
-// containers around it, then the machine's router.
+// logServices is ordered the way the error message lists them.
 var logServices = []LogService{
 	{Name: "web", Service: FrappeService, Process: "web"},
 	{Name: "socketio", Service: FrappeService, Process: "socketio"},
@@ -51,10 +45,8 @@ var logServices = []LogService{
 	{Name: "router", Global: true},
 }
 
-// ParseLogService resolves a service name, or names every one tamp has.
-//
-// An unknown service is a usage error rather than a failure: nothing was
-// attempted, the command line itself was wrong, and the answer is the list.
+// ParseLogService resolves a service name. An unknown one is a usage error —
+// nothing was attempted — and the answer is the list.
 func ParseLogService(name string) (LogService, error) {
 	if name == "" {
 		name = DefaultLogService
@@ -69,7 +61,6 @@ func ParseLogService(name string) (LogService, error) {
 		"services: "+strings.Join(LogServiceNames(), ", "))
 }
 
-// LogServiceNames lists the services `tamp logs` accepts.
 func LogServiceNames() []string {
 	names := make([]string, len(logServices))
 	for i, svc := range logServices {
@@ -80,15 +71,12 @@ func LogServiceNames() []string {
 
 // LogsRequest is what `tamp logs` was asked for.
 type LogsRequest struct {
-	// Target is the positional arguments as the user wrote them: an
-	// environment, a service, both in that order, or neither. Resolving which
-	// is which needs the registry, so the command hands them over unread.
+	// Target is the raw positionals — environment, service, both in that
+	// order, or neither; telling which needs the registry.
 	Target []string
-	// Follow keeps the log open, until the user interrupts tamp.
 	Follow bool
-	// Tail is how many lines from the end of the container's log to start
-	// with. For a bench process it bounds the bench's whole output, of which
-	// tamp then shows the lines belonging to that one service.
+	// Tail bounds the container's log; for a bench process the per-process
+	// filter applies after that.
 	Tail int
 }
 
@@ -105,9 +93,8 @@ func (m *Manager) Logs(ctx context.Context, req LogsRequest) error {
 
 	container := router.Container
 	if svc.Global {
-		// The router belongs to no environment, but an environment the user
-		// named still has to exist: a typo silently ignored would show the
-		// router's log as if the environment were there.
+		// A named environment must still exist, or a typo would silently show
+		// the router's log.
 		if name != "" {
 			if _, err := m.resolve(name); err != nil {
 				return err
@@ -121,8 +108,7 @@ func (m *Manager) Logs(ctx context.Context, req LogsRequest) error {
 		container = e.Resources.Container(svc.Service)
 	}
 
-	// The log goes to stdout whatever --quiet says: it is the whole of what
-	// the command was asked for, not narration around a result.
+	// The log is the command's output — --quiet does not drop it.
 	out := io.Writer(m.Out.Out)
 	if svc.Process != "" {
 		filter := &processFilter{out: out, process: svc.Process}
@@ -138,15 +124,9 @@ func (m *Manager) Logs(ctx context.Context, req LogsRequest) error {
 	})
 }
 
-// logsTarget reads which environment and which service the positional
-// arguments named.
-//
-// One bare word is ambiguous on its face, and the registry settles it: an
-// environment answering to that name wins. Nothing stops someone naming an
-// environment "web" — tamp's reserved words are its command words, and are
-// deliberately not derived from a list that grows — so the environment they
-// made has to keep answering to its own name, and the service is still
-// reachable by saying both.
+// logsTarget settles one bare word via the registry: an environment answering
+// to the name wins — reserved words do not grow, so someone may name one
+// "web" — and the service stays reachable by saying both.
 func (m *Manager) logsTarget(target []string) (name, service string, err error) {
 	switch len(target) {
 	case 0:
@@ -180,12 +160,8 @@ func (m *Manager) isRegistered(name string) (bool, error) {
 	return ok, nil
 }
 
-// processFilter passes through the lines honcho attributed to one process.
-//
-// The five bench processes share a container and so share a log; honcho
-// prefixes every line with the process that wrote it, and this is what turns
-// that back into five logs. It buffers because a write arrives as whatever
-// bytes the daemon had ready, which is not a whole number of lines.
+// processFilter keeps the lines honcho attributed to one process. It buffers
+// because writes arrive as arbitrary byte chunks, not whole lines.
 type processFilter struct {
 	out     io.Writer
 	process string
@@ -197,7 +173,7 @@ func (f *processFilter) Write(p []byte) (int, error) {
 	for {
 		line, err := f.buf.ReadString('\n')
 		if err != nil {
-			// Not a whole line yet — put it back and wait for the rest.
+			// Partial line — put it back and wait for the rest.
 			f.buf.WriteString(line)
 			return len(p), nil
 		}
@@ -207,8 +183,7 @@ func (f *processFilter) Write(p []byte) (int, error) {
 	}
 }
 
-// flush writes out a last line that never ended in a newline, which is what a
-// log tamp stopped reading mid-line leaves behind.
+// flush emits a trailing line that never got its newline.
 func (f *processFilter) flush() {
 	if f.buf.Len() > 0 {
 		_ = f.emit(f.buf.String())
@@ -223,19 +198,14 @@ func (f *processFilter) emit(line string) error {
 	return err
 }
 
-// belongs reports whether a honcho line was written by, or is about, the
-// process being asked for.
-//
-// The second half is not padding: "web.1 stopped (rc=1)" is written by
-// honcho's own system process and is exactly what someone reading web's log
-// came for.
+// belongs also keeps honcho's own "system" lines about the process — "web.1
+// stopped (rc=1)" is exactly what a reader of web's log came for.
 func (f *processFilter) belongs(line string) bool {
 	process, rest, ok := honchoLine(line)
 	if !ok {
-		// Not honcho's format at all, so it was written before or instead of
-		// honcho — the entrypoint failing, most likely. Dropping it would
-		// leave every log view empty at the exact moment the user is asking
-		// why the bench will not start.
+		// Not honcho's format: written before or instead of honcho, likely
+		// the entrypoint failing. Dropping it would empty every log view at
+		// the moment it matters most.
 		return true
 	}
 	if process == f.process {
@@ -244,12 +214,9 @@ func (f *processFilter) belongs(line string) bool {
 	return process == "system" && strings.HasPrefix(strings.TrimSpace(rest), f.process+".")
 }
 
-// honchoLine splits a line of honcho's output into the process that wrote it
-// and what that process said.
-//
-// honcho writes "<time> <process>.<n> | <line>". The replica number is dropped
-// so that a process is addressed by the name it has in the process file, and
-// tolerated as absent so a honcho that stops numbering still reads.
+// honchoLine parses "<time> <process>.<n> | <line>". The replica number is
+// dropped so processes go by their process-file names, and tolerated as
+// absent.
 func honchoLine(line string) (process, rest string, ok bool) {
 	bar := strings.Index(line, "|")
 	if bar < 0 {

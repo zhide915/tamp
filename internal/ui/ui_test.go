@@ -16,6 +16,7 @@ func newPrinter() (*ui.Printer, *bytes.Buffer, *bytes.Buffer) {
 	return &ui.Printer{Out: &out, Err: &errOut}, &out, &errOut
 }
 
+// Warn and Fail are diagnostics and belong on stderr.
 func TestResultPrefixes(t *testing.T) {
 	p, out, errOut := newPrinter()
 	p.OK("erp15 ready")
@@ -25,8 +26,6 @@ func TestResultPrefixes(t *testing.T) {
 	if got, want := out.String(), "✓ erp15 ready\n"; got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}
-	// Warnings and failures are diagnostics, so they belong on stderr where
-	// they never pollute a piped stdout.
 	if got, want := errOut.String(), "! port 80 is taken\n✗ bench init failed\n"; got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
 	}
@@ -62,8 +61,7 @@ func TestQuietSuppressesProgressButNotResults(t *testing.T) {
 	}
 }
 
-// fakeTerminal is a writer that claims to be a terminal, so the colour rules
-// can be exercised without allocating a real pty.
+// fakeTerminal claims terminal-ness so color rules run without a pty.
 type fakeTerminal struct{ bytes.Buffer }
 
 func (fakeTerminal) IsTerminal() bool { return true }
@@ -77,7 +75,7 @@ func TestShouldColorOnlyOnATerminal(t *testing.T) {
 		"terminal":               {&fakeTerminal{}, nil, true},
 		"pipe":                   {&bytes.Buffer{}, nil, false},
 		"terminal with NO_COLOR": {&fakeTerminal{}, map[string]string{"NO_COLOR": "1"}, false},
-		// An empty NO_COLOR means "unset" per the NO_COLOR convention.
+		// Empty NO_COLOR counts as unset.
 		"terminal with empty NO_COLOR": {&fakeTerminal{}, map[string]string{"NO_COLOR": ""}, true},
 	} {
 		if got := ui.ShouldColor(tc.w, fakeEnv(tc.env)); got != tc.want {
@@ -93,8 +91,7 @@ func fakeEnv(pairs map[string]string) func(string) (string, bool) {
 	}
 }
 
-// stdout and stderr are redirected independently, so a run with a piped stdout
-// and a live stderr must still colour its error lines.
+// A piped stdout must not strip color from a stderr still on the terminal.
 func TestColorIsDecidedPerStream(t *testing.T) {
 	var piped bytes.Buffer
 	tty := &fakeTerminal{}
@@ -117,7 +114,6 @@ func TestColorIsDecidedPerStream(t *testing.T) {
 	}
 }
 
-// --no-color overrides a terminal on both streams.
 func TestDisableColorSilencesBothStreams(t *testing.T) {
 	out, errOut := &fakeTerminal{}, &fakeTerminal{}
 	p := ui.NewPrinter(out, errOut, fakeEnv(nil))
@@ -130,9 +126,7 @@ func TestDisableColorSilencesBothStreams(t *testing.T) {
 	}
 }
 
-// Note and Hint look identical; the difference is that a note is part of the
-// answer. doctor's fix lines print under a failing check, and a --quiet that
-// swallowed them would leave the user with a failure and no remedy.
+// Notes carry doctor's fix lines; --quiet must not drop them.
 func TestNoteIsDimOnStdoutAndSurvivesQuiet(t *testing.T) {
 	p, out, errOut := newPrinter()
 	p.ColorOut = true

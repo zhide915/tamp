@@ -14,13 +14,9 @@ import (
 	"github.com/zhide915/tamp/internal/router"
 )
 
-// The router is what makes tamp's promise true from the outside: an
-// environment is reached by hostname, and nothing on this machine is ever
-// reached by typing a port. These tests drive the real commands and then read
-// the two things that decide it — the assembled Caddyfile, and which networks
-// the router container is on.
+// Hostname routing is decided by two things these tests read directly: the
+// assembled Caddyfile and which networks the router container is on.
 
-// caddyfile is the machine's assembled routes.
 func (c *cli) caddyfile(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(c.home, env.HomeDirName, router.DirName, router.CaddyfileName)
@@ -31,7 +27,6 @@ func (c *cli) caddyfile(t *testing.T) string {
 	return string(body)
 }
 
-// network is the Docker network of an environment created in this sandbox.
 func (c *cli) network(t *testing.T, name string) string {
 	t.Helper()
 	res, err := env.NewResources(env.Name(name), c.path(name))
@@ -46,8 +41,6 @@ func (c *cli) routerIsOn(t *testing.T, name string) bool {
 	return slices.Contains(c.engine.Attached(c.network(t, name)), router.Container)
 }
 
-// The mail UI is reachable the moment the environment exists: no site, no
-// port, nothing to look up.
 func TestCreateStartsTheRouterAndRoutesTheMailUI(t *testing.T) {
 	c := sandbox(t)
 
@@ -67,9 +60,7 @@ func TestCreateStartsTheRouterAndRoutesTheMailUI(t *testing.T) {
 	}
 }
 
-// There is one router per machine, however many environments it holds — and
-// the second environment must not restart it, because that would drop every
-// connection the first one is serving.
+// Restarting the router would drop connections the first environment serves.
 func TestASecondEnvironmentReusesTheOneRouter(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -90,9 +81,7 @@ func TestASecondEnvironmentReusesTheOneRouter(t *testing.T) {
 	}
 }
 
-// This is the reason the routes are assembled from tamp's registry rather
-// than from what happens to be running: one environment going down must not
-// take another's routes with it.
+// Routes come from the registry, not from what happens to be running.
 func TestStoppingOneEnvironmentLeavesTheOthersRoutes(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -107,9 +96,6 @@ func TestStoppingOneEnvironmentLeavesTheOthersRoutes(t *testing.T) {
 	}
 }
 
-// Removing an environment takes its routes and its network attachment, and
-// nothing else. The attachment has to go first: Docker refuses to remove a
-// network anything is still on.
 func TestRemovingAnEnvironmentTakesOnlyItsRoutes(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -127,8 +113,8 @@ func TestRemovingAnEnvironmentTakesOnlyItsRoutes(t *testing.T) {
 	if slices.Contains(c.engine.Attached(demoNetwork), router.Container) {
 		t.Error("the router is still attached to the removed environment's network")
 	}
-	// Detached before the teardown, not after: the other order is one Docker
-	// refuses.
+	// Detach must precede teardown: Docker refuses to remove a network
+	// something is still attached to.
 	detach := slices.Index(c.engine.Calls, "DisconnectNetwork")
 	down := slices.Index(c.engine.Calls, "ComposeDown")
 	if detach < 0 || down < 0 || detach > down {
@@ -136,8 +122,7 @@ func TestRemovingAnEnvironmentTakesOnlyItsRoutes(t *testing.T) {
 	}
 }
 
-// No container tamp runs has a restart policy, so a host reboot leaves the
-// machine with no router. Starting any environment has to bring it back.
+// No tamp container has a restart policy, so a reboot loses the router.
 func TestStartBringsTheRouterBackWhenTheMachineHasLostIt(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -152,8 +137,8 @@ func TestStartBringsTheRouterBackWhenTheMachineHasLostIt(t *testing.T) {
 	}
 }
 
-// Starting an environment that is already up is a no-op for its containers —
-// but not for the router, which is machine-global and may have gone since.
+// The router is machine-global and may have gone since; the containers'
+// no-op does not cover it.
 func TestStartRoutesEvenWhenTheEnvironmentIsAlreadyRunning(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
@@ -178,14 +163,11 @@ func TestListReportsTheRouterAndEveryMailURL(t *testing.T) {
 	r.assertStdoutContains(t, "router", "running", "MAIL", "http://mail.demo.localhost")
 }
 
-// list is mostly a report on tamp's own state, and the router's port is part
-// of it. A URL printed without the port it is actually on points at whatever
-// else took port 80.
+// A URL without its real port points at whatever else took port 80.
 func TestListPrintsTheRoutersRealPortWithDockerDown(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
-	// The router took the fallback port on this machine, whatever the sandbox
-	// found free when it started.
+	// Simulate the router having taken the fallback port.
 	writeRouterPort(t, c, router.FallbackPort)
 	c.engine = enginetest.Unavailable()
 
@@ -204,8 +186,7 @@ func writeRouterPort(t *testing.T, c *cli, port int) {
 	}
 }
 
-// With the router down nothing on the machine answers to a hostname, which is
-// the answer to the question that brought the user to doctor.
+// With the router down, no hostname on the machine answers.
 func TestDoctorReportsTheRouterState(t *testing.T) {
 	c := sandbox(t)
 

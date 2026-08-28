@@ -19,9 +19,8 @@ func generated(t *testing.T) (*Environment, string) {
 	return generatedWithSync(t, syncer.UseMutagen)
 }
 
-// generatedWithSync is the same for an environment whose source reaches its
-// container a particular way — which is the one thing that changes the shape
-// of the file.
+// generatedWithSync varies the sync mode — the one input that changes the
+// file's shape.
 func generatedWithSync(t *testing.T, sync syncer.Effective) (*Environment, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -45,9 +44,8 @@ func generatedWithSync(t *testing.T, sync syncer.Effective) (*Environment, strin
 	return e, string(body)
 }
 
-// serviceNames pulls the service keys out of a compose file. The file is
-// generated from tamp's own template, so a two-space-indented key under
-// services: is exactly a service and nothing else.
+// In tamp's own template, a two-space-indented key under services: is exactly
+// a service.
 var serviceNames = regexp.MustCompile(`(?m)^  ([a-z][a-z0-9-]*):$`)
 
 func composeServices(t *testing.T, body string) []string {
@@ -65,9 +63,8 @@ func composeServices(t *testing.T, body string) []string {
 	return names
 }
 
-// The container set tamp brings up, and the set the recording fake
-// answers with. They are asserted against each other so a service added to the
-// template without teaching the fake about it cannot pass unnoticed.
+// Asserted against the fake's service list, so a service added to the
+// template without teaching the fake cannot pass unnoticed.
 func TestGeneratedComposeDeclaresTheEnvironmentsServices(t *testing.T) {
 	_, body := generated(t)
 
@@ -77,8 +74,6 @@ func TestGeneratedComposeDeclaresTheEnvironmentsServices(t *testing.T) {
 	}
 }
 
-// The file is rewritten on every start, and it has to say so where
-// somebody about to edit it will read it.
 func TestGeneratedComposeSaysItIsGenerated(t *testing.T) {
 	_, body := generated(t)
 
@@ -90,7 +85,7 @@ func TestGeneratedComposeSaysItIsGenerated(t *testing.T) {
 	}
 }
 
-// Nothing tamp runs comes back by itself after a reboot.
+// Nothing tamp runs may come back by itself after a reboot.
 func TestNoServiceHasARestartPolicy(t *testing.T) {
 	_, body := generated(t)
 
@@ -99,8 +94,7 @@ func TestNoServiceHasARestartPolicy(t *testing.T) {
 	}
 }
 
-// Without these flags site creation fails on collation errors — this is the
-// one MariaDB setting tamp cannot get wrong.
+// Without these flags site creation fails on collation errors.
 func TestMariaDBIsConfiguredForFrappesCharacterSet(t *testing.T) {
 	_, body := generated(t)
 
@@ -115,8 +109,7 @@ func TestMariaDBIsConfiguredForFrappesCharacterSet(t *testing.T) {
 	}
 }
 
-// MariaDB's host port is the only one an environment publishes, and it is
-// bound to loopback because this is a development database.
+// Bound to loopback: a development database.
 func TestOnlyMariaDBPublishesAHostPort(t *testing.T) {
 	e, body := generated(t)
 
@@ -136,8 +129,8 @@ func TestOnlyMariaDBPublishesAHostPort(t *testing.T) {
 	}
 }
 
-// Every resource an environment owns carries its name and path hash, so two
-// environments never collide.
+// Name plus path hash in every resource keeps two environments from
+// colliding.
 func TestGeneratedComposeNamesTampsResources(t *testing.T) {
 	e, body := generated(t)
 
@@ -155,8 +148,6 @@ func TestGeneratedComposeNamesTampsResources(t *testing.T) {
 	}
 }
 
-// The database credential lives in one place on disk; compose mounts it rather
-// than repeating it.
 func TestTheDatabaseCredentialIsNotWrittenIntoTheComposeFile(t *testing.T) {
 	e, body := generated(t)
 
@@ -175,8 +166,6 @@ func TestTheDatabaseCredentialIsNotWrittenIntoTheComposeFile(t *testing.T) {
 	}
 }
 
-// The file exists so that if the user makes this directory a repository,
-// the secrets and generated files stay out of it.
 func TestGitignoreCoversTheSecretsAndTheGeneratedFiles(t *testing.T) {
 	dir := t.TempDir()
 	if err := WriteGitignore(dir); err != nil {
@@ -193,8 +182,8 @@ func TestGitignoreCoversTheSecretsAndTheGeneratedFiles(t *testing.T) {
 	}
 }
 
-// The environment directory may already be the user's repository, with a
-// .gitignore they wrote. tamp writes that file once and never again.
+// The directory may be the user's own repository, with a .gitignore they
+// wrote.
 func TestGitignoreIsNotOverwritten(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/" + GitignoreFile
@@ -214,9 +203,8 @@ func TestGitignoreIsNotOverwritten(t *testing.T) {
 	}
 }
 
-// The bench container mounts the four layers tamp manages separately, plus
-// the volumes shared with every other environment on the machine. A layer that
-// is not its own volume cannot be cleaned, snapshotted or shared.
+// A layer that is not its own volume cannot be cleaned, snapshotted or
+// shared.
 func TestTheBenchContainerMountsEveryLayerAndTheSharedVolumes(t *testing.T) {
 	_, body := generated(t)
 
@@ -234,9 +222,8 @@ func TestTheBenchContainerMountsEveryLayerAndTheSharedVolumes(t *testing.T) {
 	}
 }
 
-// The bench container decides at boot whether it has a bench to run, which is
-// what lets 'tamp start' revive an environment's processes with nothing tamp
-// has to remember about it.
+// The boot-time check is what lets 'tamp start' revive the processes with
+// nothing tamp has to remember.
 func TestTheBenchContainerRunsHonchoOnlyOnceThereIsABench(t *testing.T) {
 	_, body := generated(t)
 
@@ -264,9 +251,7 @@ func firstLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// The two sync modes differ in the compose file by exactly one mount, and that
-// mount is the whole of the Linux answer: the container reads the host's own
-// filesystem, so there is nothing to mirror.
+// The sync modes differ in the compose file by exactly one mount.
 func TestGenerateBindsTheHostSourceOnlyInBindMode(t *testing.T) {
 	bind := frappe.AppsDir
 	if _, body := generatedWithSync(t, syncer.UseBind); !strings.Contains(body, "./"+syncer.AppsDirName+":"+bind) {

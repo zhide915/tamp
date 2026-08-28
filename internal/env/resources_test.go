@@ -37,8 +37,6 @@ func TestResourceNamesFollowTheDocumentedShape(t *testing.T) {
 	}
 }
 
-// The whole point of the hash: the same name in two directories is two
-// environments whose resources never touch.
 func TestSameNameInDifferentDirectoriesGetsDifferentResources(t *testing.T) {
 	a := mustResources(t, "erp15", t.TempDir())
 	b := mustResources(t, "erp15", t.TempDir())
@@ -48,8 +46,7 @@ func TestSameNameInDifferentDirectoriesGetsDifferentResources(t *testing.T) {
 	}
 }
 
-// Re-adoption finds surviving volumes by name and path hash, so reaching
-// the same directory by a different spelling has to hash the same.
+// Re-adoption finds surviving volumes by name and path hash.
 func TestHashIsStableAcrossSpellingsOfTheSamePath(t *testing.T) {
 	dir := t.TempDir()
 	want := mustResources(t, "erp15", dir).Hash
