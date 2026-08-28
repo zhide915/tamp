@@ -104,6 +104,8 @@ type Fake struct {
 	Files map[string]string
 	// Volumes names each volume asked to exist, in order.
 	Volumes []string
+	// Removed names each volume asked to be removed, in order.
+	Removed []string
 	// Log is every container's log body; tests care which container was
 	// read and how, not what was stored.
 	Log string
@@ -319,6 +321,12 @@ func (f *Fake) Attached(network string) []string {
 func (f *Fake) EnsureVolume(_ context.Context, name string) error {
 	f.Calls = append(f.Calls, "EnsureVolume")
 	f.Volumes = append(f.Volumes, name)
+	return nil
+}
+
+func (f *Fake) RemoveVolume(_ context.Context, name string) error {
+	f.Calls = append(f.Calls, "RemoveVolume")
+	f.Removed = append(f.Removed, name)
 	return nil
 }
 

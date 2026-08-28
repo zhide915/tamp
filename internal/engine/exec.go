@@ -231,6 +231,39 @@ func (d *Docker) EnsureVolume(ctx context.Context, name string) error {
 	return nil
 }
 
+func (d *Docker) RemoveVolume(ctx context.Context, name string) error {
+	_, api, err := d.connect()
+	if err != nil {
+		return err
+	}
+	// Listed first because a volume that is already gone is the asked-for
+	// outcome, not an error. The name filter matches substrings, so re-check.
+	res, err := api.VolumeList(ctx, client.VolumeListOptions{
+		Filters: make(client.Filters).Add("name", name),
+	})
+	if err != nil {
+		return exitcode.New(exitcode.CodeEngineUnavailable,
+			fmt.Sprintf("cannot list Docker volumes: %v", rootCause(err)),
+			"start Docker and try again")
+	}
+	exists := false
+	for _, v := range res.Items {
+		if v.Name == name {
+			exists = true
+			break
+		}
+	}
+	if !exists {
+		return nil
+	}
+	if _, err := api.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); err != nil {
+		return exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("cannot remove the %s volume: %v", name, rootCause(err)),
+			"remove it yourself with 'docker volume rm "+name+"'")
+	}
+	return nil
+}
+
 func execError(req ExecRequest, err error) error {
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("cannot run %s in %s: %v", commandLine(req.Cmd), req.Container, rootCause(err)),

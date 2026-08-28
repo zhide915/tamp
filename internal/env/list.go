@@ -6,14 +6,21 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"runtime"
+	"strings"
 
 	"github.com/zhide915/tamp/internal/router"
+	"github.com/zhide915/tamp/internal/syncer"
 )
 
 // listing is one row of `tamp list`.
 type listing struct {
-	Name  string
-	Mail  string
+	Name string
+	Mail string
+	// Sites are the environment's site URLs, from the registry cache so a
+	// stopped environment still shows them.
+	Sites []string
+	Sync  string
 	State State
 	Cfg   *Config
 	Path  string
@@ -52,7 +59,10 @@ func (m *Manager) List(ctx context.Context) error {
 			continue
 		}
 
-		row := listing{Name: name, Mail: MailURL(Name(name), status), State: StateUnknown, Path: entry.Path}
+		row := listing{Name: name, Mail: MailURL(Name(name), status), State: StateUnknown, Path: entry.Path, Sync: unknownField}
+		for _, host := range entry.Sites {
+			row.Sites = append(row.Sites, status.URL(host))
+		}
 		cfg, warnings, err := LoadConfig(ConfigPath(entry.Path))
 		if err != nil {
 			// An unreadable config is still an environment that exists — it
@@ -60,6 +70,7 @@ func (m *Manager) List(ctx context.Context) error {
 			m.Out.Warn(err.Error())
 		} else {
 			row.Cfg = cfg
+			row.Sync = string(syncer.Resolve(cfg.Sync.Mode, runtime.GOOS))
 			for _, w := range warnings {
 				m.Out.Warn(w)
 			}
@@ -145,10 +156,14 @@ func (m *Manager) printListing(rows []listing) {
 			frappe = string(row.Cfg.Frappe.Version)
 			python, node, mariadb = row.Cfg.Toolchain.Python, row.Cfg.Toolchain.Node, row.Cfg.Toolchain.MariaDB
 		}
+		sites := "none yet"
+		if len(row.Sites) > 0 {
+			sites = strings.Join(row.Sites, " ")
+		}
 		table = append(table, []string{
-			row.Name, string(row.State), frappe, python, node, mariadb, row.Mail, row.Path})
+			row.Name, string(row.State), frappe, python, node, mariadb, sites, row.Mail, row.Sync, row.Path})
 	}
-	m.Out.Table([]string{"NAME", "STATE", "FRAPPE", "PYTHON", "NODE", "MARIADB", "MAIL", "PATH"}, table)
+	m.Out.Table([]string{"NAME", "STATE", "FRAPPE", "PYTHON", "NODE", "MARIADB", "SITES", "MAIL", "SYNC", "PATH"}, table)
 }
 
 // unknownField fills a column tamp could not read.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -20,10 +21,30 @@ func TestDoctorReportsEveryCheckWhenTheEngineIsHealthy(t *testing.T) {
 		"unix:///var/run/docker.sock",
 		"✓ Docker Compose",
 		"2.39.1",
+		"✓ Hostnames",
+		"*.localhost",
+		"✓ Paths",
 	)
 	if r.stderr != "" {
 		t.Errorf("stderr = %q, want empty — a healthy report is not a diagnostic", r.stderr)
 	}
+}
+
+// The create-time path warning must not be the only one: a directory can
+// start syncing to the cloud long after create.
+func TestDoctorWarnsAboutAnEnvironmentInACloudSyncedPath(t *testing.T) {
+	c := sandbox(t)
+	parent := c.path("OneDrive")
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c.run(t, "create", "demo", "--frappe", "version-15", "--sync", "bind", "--dir", parent).
+		assertCode(t, exitcode.CodeOK)
+
+	r := c.run(t, "doctor")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStdoutContains(t, "! Paths", "OneDrive")
 }
 
 // The report must survive redirection; failures on stderr would leave an

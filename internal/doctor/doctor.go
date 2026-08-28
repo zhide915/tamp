@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -52,13 +53,16 @@ type Report struct {
 	Checks []Check
 }
 
-// Run performs every check tamp knows.
-func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutagen) Report {
+// Run performs every check tamp knows. envDirs are the registered
+// environments' directories, for the path check.
+func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutagen, envDirs []string) Report {
 	return Report{Checks: []Check{
 		dockerCheck(ctx, e),
 		composeCheck(ctx, e),
 		routerCheck(ctx, r),
 		syncCheck(ctx, s, runtime.GOOS),
+		localhostCheck(),
+		pathsCheck(envDirs),
 	}}
 }
 
@@ -171,6 +175,39 @@ func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
 		Name:   name,
 		Status: Pass,
 		Detail: fmt.Sprintf("Mutagen %s, %s, at %s", binary.Version, where, binary.Path),
+	}
+}
+
+// localhostCheck is information rather than a diagnosis: *.localhost needs no
+// setup in a browser, and that surprises people testing with plain resolvers.
+func localhostCheck() Check {
+	return Check{
+		Name:   "Hostnames",
+		Status: Pass,
+		Detail: "*.localhost resolves in browsers with no setup; command-line tools may need 'curl --resolve'",
+	}
+}
+
+// pathsCheck re-runs the create-time path warnings for every registered
+// environment: a directory can start syncing to the cloud long after create.
+func pathsCheck(envDirs []string) Check {
+	const name = "Paths"
+	var problems []string
+	for _, dir := range envDirs {
+		problems = append(problems, syncer.PathWarnings(dir)...)
+	}
+	if len(problems) > 0 {
+		return Check{
+			Name:   name,
+			Status: Warn,
+			Detail: strings.Join(problems, "; "),
+			Fix:    "move the environment directory, or expect sync conflicts and quoting trouble",
+		}
+	}
+	return Check{
+		Name:   name,
+		Status: Pass,
+		Detail: "no environment lives in a cloud-synced or space-containing path",
 	}
 }
 

@@ -146,6 +146,9 @@ type Engine interface {
 	// EnsureVolume creates a volume if absent: compose refuses to start with
 	// missing external volumes and will not create them.
 	EnsureVolume(ctx context.Context, name string) error
+	// RemoveVolume deletes one volume; a volume that does not exist is not an
+	// error.
+	RemoveVolume(ctx context.Context, name string) error
 	// HasVolumes reports whether any of the project's volumes exist.
 	HasVolumes(ctx context.Context, project string) (bool, error)
 

@@ -361,7 +361,19 @@ func (m *Manager) knownSites(e *Environment) ([]string, error) {
 
 // recordSites also reports the hostnames the ledger refused to route.
 func (m *Manager) recordSites(e *Environment, hosts []string) error {
-	skipped, err := RecordSites(m.Home, e.Name(), hosts)
+	routable := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		// A malformed directory name must not reach the Caddyfile: one bad
+		// address there takes down every route on the machine.
+		if _, err := ParseHost(host); err != nil {
+			m.Out.Warn(fmt.Sprintf(
+				"%s is on %s's bench but is not a hostname tamp can route, so tamp is not routing it",
+				host, e.Name()))
+			continue
+		}
+		routable = append(routable, host)
+	}
+	skipped, err := RecordSites(m.Home, e.Name(), routable)
 	for _, c := range skipped {
 		m.Out.Warn(fmt.Sprintf(
 			"%s is on %s's bench but is already %s of %q, so tamp is not routing it",

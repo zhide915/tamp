@@ -31,8 +31,16 @@ func newDoctorCommand(d deps) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			reg, err := env.LoadRegistry(home)
+			if err != nil {
+				return err
+			}
+			envDirs := make([]string, 0, len(reg))
+			for _, name := range reg.Names() {
+				envDirs = append(envDirs, reg[name].Path)
+			}
 
-			report := doctor.Run(ctx, d.eng, router.New(home, d.eng), d.sync)
+			report := doctor.Run(ctx, d.eng, router.New(home, d.eng), d.sync, envDirs)
 			report.Print(d.p)
 
 			if report.OK() {

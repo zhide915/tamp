@@ -372,6 +372,38 @@ func TestSiteListAdoptsASiteTampDidNotCreate(t *testing.T) {
 	}
 }
 
+// The refresh on start is what routes a site made through the exec bridge
+// without waiting for a site command.
+func TestStartRoutesASiteTampDidNotCreate(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.run(t, "exec", "demo", "--", "bench", "new-site", "smuggled.localhost").
+		assertCode(t, exitcode.CodeOK)
+
+	c.run(t, "start", "demo").assertCode(t, exitcode.CodeOK)
+
+	if !strings.Contains(c.caddyfile(t), "http://smuggled.localhost {") {
+		t.Errorf("the site found on the bench is not routed:\n%s", c.caddyfile(t))
+	}
+}
+
+// One malformed address in the Caddyfile stops the router loading it, taking
+// every site on the machine down with it.
+func TestStartDoesNotRouteABenchSiteThatIsNotAHostname(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.run(t, "exec", "demo", "--", "bench", "new-site", "SHOUTY.localhost").
+		assertCode(t, exitcode.CodeOK)
+
+	r := c.run(t, "start", "demo")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStderrContains(t, "SHOUTY.localhost", "not routing it")
+	if strings.Contains(c.caddyfile(t), "SHOUTY.localhost") {
+		t.Errorf("the malformed hostname reached the Caddyfile:\n%s", c.caddyfile(t))
+	}
+}
+
 // Adopting a hostname another environment owns would duplicate it in the
 // Caddyfile, which the router refuses to load; report it, leave it unrouted.
 func TestSiteListRefusesToAdoptAHostnameAnotherEnvironmentOwns(t *testing.T) {

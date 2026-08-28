@@ -111,7 +111,9 @@ volumes:
   # 'tamp rm'; 'tamp rm --volumes' and 'tamp clean --data' destroy it.
   db:
     name: {{ .DBVolume }}
-  # The source layer, holding apps/ — the one tamp never deletes.
+  # The bench, including apps/. With sync off it holds the only copy of the
+  # source, so 'tamp rm --volumes' spares it; in the other modes the source
+  # lives on the host and this copy is disposable.
   code:
     name: {{ .CodeVolume }}
   # The deps layer: the virtualenv, rebuilt rather than backed up.

@@ -15,7 +15,8 @@ The Frappe-side workspace an environment contains (apps, sites, Procfile). Only 
 A Frappe site on a bench, named exactly as its hostname. One site = one database inside the environment's MariaDB.
 
 **Layer**:
-One of the four independently managed storage areas of an environment: source (`apps/`, never deleted by tamp), deps, assets, data.
+One of the three independently managed storage areas of an environment: source (the bench's apps, wherever they live — the host `apps/` folder in synced and bind modes, the code volume when sync is off), deps, and data (every site's database and files, built assets included). tamp never deletes source.
+_Avoid_: assets (as a layer)
 
 **Router**:
 The single global Caddy container routing all sites and mail UIs by Host header. There is exactly one per machine.

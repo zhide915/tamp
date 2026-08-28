@@ -71,10 +71,14 @@ type SyncSection struct {
 	Mode syncer.Mode `toml:"mode"`
 }
 
-// RouterSection selects hostname routing or the published-port fallback.
+// RouterSection selects the routing mode; "ports" is reserved.
 type RouterSection struct {
 	Mode string `toml:"mode"`
 }
+
+// RouterModeAuto — hostname routing through the shared router — is the only
+// mode tamp v1 accepts.
+const RouterModeAuto = "auto"
 
 // PortsSection holds the MariaDB host port — the one port an environment
 // publishes, because database GUI clients need real TCP.
@@ -96,7 +100,7 @@ func NewConfig(name Name, version FrappeVersion, apps []App, tc Toolchain, dbPor
 		Toolchain: tc,
 		Engine:    EngineSection{Kind: EngineDocker},
 		Sync:      SyncSection{Mode: syncer.ModeAuto},
-		Router:    RouterSection{Mode: "auto"},
+		Router:    RouterSection{Mode: RouterModeAuto},
 		Ports:     PortsSection{DB: dbPort},
 	}
 }
@@ -161,6 +165,11 @@ func (c *Config) validate(path string) error {
 	if _, err := syncer.ParseMode(string(c.Sync.Mode)); err != nil {
 		return invalid(fmt.Sprintf("[sync] mode = %q is not a way of syncing source", c.Sync.Mode),
 			"modes: "+strings.Join(syncer.ModeNames(), ", "))
+	}
+	// Empty means the default; only a mode tamp does not have is refused.
+	if c.Router.Mode != "" && c.Router.Mode != RouterModeAuto {
+		return invalid(fmt.Sprintf("[router] mode = %q is not supported", c.Router.Mode),
+			`tamp v1 routes by hostname only — set mode = "auto"`)
 	}
 	if c.Ports.DB <= 0 {
 		return invalid(fmt.Sprintf("[ports] db = %d is not a port", c.Ports.DB),

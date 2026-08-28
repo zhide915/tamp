@@ -329,6 +329,35 @@ func TestRemoveWithVolumesDestroysTheDataLayer(t *testing.T) {
 	}
 }
 
+// With sync off the code volume holds the only copy of the source, and tamp
+// never deletes source.
+func TestRemoveWithVolumesSparesTheSourceVolumeWhenSyncIsOff(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "off")
+	c.engine.Ops = nil
+
+	preview := c.run(t, "rm", "demo", "--volumes")
+	preview.assertCode(t, exitcode.CodeConfirmationRequired)
+	preview.assertStdoutContains(t, "it would keep", "-code", "your source")
+
+	r := c.run(t, "rm", "demo", "--volumes", "--yes")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStdoutContains(t, "holds your source")
+	downs := c.ops("ComposeDown")
+	if len(downs) != 1 || downs[0].Removal != engine.KeepVolumes {
+		t.Errorf("compose downs = %v, want one keeping volumes for tamp to remove selectively", downs)
+	}
+	if len(c.engine.Removed) != 3 {
+		t.Errorf("removed volumes = %v, want the db, deps and sites volumes", c.engine.Removed)
+	}
+	for _, volume := range c.engine.Removed {
+		if strings.Contains(volume, "-code") {
+			t.Errorf("rm removed the code volume %s, which holds the source", volume)
+		}
+	}
+}
+
 // --- coexistence -----------------------------------------------------------
 
 func TestTwoEnvironmentsShareNoResources(t *testing.T) {
@@ -472,8 +501,22 @@ func TestListReportsWhatEachEnvironmentIs(t *testing.T) {
 	r := c.run(t, "ls")
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertStdoutContains(t, "NAME", "STATE", "FRAPPE", "PYTHON", "NODE", "MARIADB", "PATH")
-	r.assertStdoutContains(t, "demo", "running", "version-15", "3.11", "18", "10.11", c.path("demo"))
+	r.assertStdoutContains(t, "NAME", "STATE", "FRAPPE", "PYTHON", "NODE", "MARIADB", "SITES", "MAIL", "SYNC", "PATH")
+	r.assertStdoutContains(t, "demo", "running", "version-15", "3.11", "18", "10.11", "none yet", c.path("demo"))
+}
+
+func TestListShowsEachSiteURLAndTheSyncMode(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "off")
+	c.siteNew(t, "demo", "shop.localhost")
+	// Stopped on purpose: the sites must come from the registry cache, not
+	// the bench.
+	c.run(t, "stop", "demo").assertCode(t, exitcode.CodeOK)
+
+	r := c.run(t, "list")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStdoutContains(t, "http://shop.localhost", "off")
 }
 
 // list reads tamp's own registry; Docker down costs only the state column.

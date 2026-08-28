@@ -209,6 +209,12 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err := m.handGitToHost(ctx, e, sync); err != nil {
 		return err
 	}
+	// Refreshed before routing, so a site created through the exec bridge
+	// since the last start gets its route now. Best-effort: a bench that
+	// cannot answer must not stop its environment from starting.
+	if _, _, err := m.sites(ctx, e); err != nil {
+		m.Out.Warn(fmt.Sprintf("could not refresh the site list: %v", err))
+	}
 
 	m.Out.Step(4, startSteps, "routing "+router.MailHost(string(e.Name())))
 	status, err := m.applyRoutes(ctx, m.Out.Stream())

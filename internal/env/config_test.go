@@ -78,6 +78,8 @@ func TestInvalidConfigsAreRejectedWithAFix(t *testing.T) {
 		"engine that is not docker":  strings.Replace(validConfig, `kind = "docker"`, `kind = "podman"`, 1),
 		"name that cannot be a host": strings.Replace(validConfig, `name = "erp15"`, `name = "ERP 15"`, 1),
 		"no db port":                 strings.Replace(validConfig, "db = 33061", "db = 0", 1),
+		"router mode tamp does not have": strings.Replace(validConfig,
+			"[router]\nmode = \"auto\"", "[router]\nmode = \"ports\"", 1),
 	}
 	for what, body := range cases {
 		t.Run(what, func(t *testing.T) {

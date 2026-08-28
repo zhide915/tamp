@@ -18,7 +18,7 @@ func run(t *testing.T, e engine.Engine) doctor.Report {
 	t.Helper()
 	// Fresh home and an installed Mutagen: these tests are about the engine
 	// and the router, not the developer's machine.
-	return doctor.Run(context.Background(), e, router.New(t.TempDir(), e), synctest.Installed())
+	return doctor.Run(context.Background(), e, router.New(t.TempDir(), e), synctest.Installed(), nil)
 }
 
 func find(t *testing.T, r doctor.Report, name string) doctor.Check {
@@ -52,7 +52,7 @@ func TestBrokenRouterStateIsAFailureRatherThanAWarning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := doctor.Run(context.Background(), enginetest.Running(), router.New(home, enginetest.Running()), synctest.Installed())
+	r := doctor.Run(context.Background(), enginetest.Running(), router.New(home, enginetest.Running()), synctest.Installed(), nil)
 
 	c := find(t, r, "Router")
 	if c.Status != doctor.Fail {
