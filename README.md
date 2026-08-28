@@ -56,6 +56,21 @@ you.
 `tamp init` does the same for a directory you already have: run it inside an
 empty folder and the environment takes the folder's name.
 
+## Private app repositories
+
+Give a private repository's https URL like any other app. When the fetch
+needs credentials, tamp asks the credential system your own git uses. Its
+usual sign-in prompt may appear, once per machine per git host. The
+credential serves that one fetch and is never stored. The clone in `apps/`
+keeps a clean URL, so host git pushes and pulls normally afterwards.
+
+tamp checks every app source right after the containers start, so a typo, a
+deleted repository, or a missing sign-in fails in seconds instead of after
+the bench build. Two spellings are refused up front: ssh URLs (use the
+https form) and URLs with an embedded token (drop it; tamp asks your
+credential system instead). Only private fetches need git installed on the
+host. `tamp doctor` reports whether it was found.
+
 ## Add a site
 
 ```sh

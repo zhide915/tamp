@@ -14,6 +14,8 @@ Frappe-side workspace inside one).
 - `internal/engine` — the Docker boundary, and the **only fake point**.
   Tests use `enginetest.Fake`, a recording fake; assert on what tamp asked
   the engine to do, never by mocking anything else.
+- `internal/gitcred` — the host git credential protocol (the credential
+  bridge's host half, ADR 0002). A real boundary, never faked.
 - `internal/frappe`, `internal/toolchain`, `internal/router`,
   `internal/syncer`, `internal/doctor`, `internal/ui`, `internal/exitcode`.
 
@@ -39,6 +41,10 @@ Frappe-side workspace inside one).
   `cmd/tamp/harness_test.go` runs commands through the cobra root against a
   temp home and the engine fake. Test names are sentences stating the rule
   they pin; pin contracts (exit codes, output, engine requests), not wiring.
+- Host git runs real in tests, steered by the sandbox's `GIT_CONFIG_GLOBAL`
+  at a canned credential helper (`cannedCredentials` in
+  `cmd/tamp/bridge_test.go`); that isolation also keeps tests from opening
+  the developer's sign-in GUI.
 - Verify with `go build ./...`, `go vet ./...`, `go test ./...`, and
   `gofmt -l`. CI also runs golangci-lint on ubuntu, windows, and macos.
 
