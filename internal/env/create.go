@@ -130,7 +130,7 @@ func (m *Manager) raise(ctx context.Context, dir string, p plan) error {
 	// One numbered step per app: fetching one is minutes of cloning and
 	// pip-installing, and a create that spent them under a single line would
 	// look stuck.
-	log := &createLog{out: m.Out, total: createSteps + len(p.Apps)}
+	log := &createLog{out: m.Out, steps: m.Out.Steps(createSteps + len(p.Apps))}
 	defer log.save(dir)
 
 	log.step("checking Docker")
@@ -505,14 +505,12 @@ func (m *Manager) unregister(name Name) {
 type createLog struct {
 	buf   bytes.Buffer
 	out   *ui.Printer
-	n     int
-	total int
+	steps *ui.Stepper
 }
 
 func (l *createLog) step(msg string) {
-	l.n++
-	l.out.Step(l.n, l.total, msg)
-	fmt.Fprintf(&l.buf, "[%d/%d] %s\n", l.n, l.total, msg)
+	n, total := l.steps.Step(msg)
+	fmt.Fprintf(&l.buf, "[%d/%d] %s\n", n, total, msg)
 }
 
 func (l *createLog) note(msg string) {

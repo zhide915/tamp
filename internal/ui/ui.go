@@ -63,6 +63,28 @@ func (p *Printer) Step(n, total int, msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, fmt.Sprintf("[%d/%d] %s", n, total, msg)))
 }
 
+// Stepper numbers the steps of a long operation, so that no caller ever does
+// the [n/total] arithmetic itself — hand-computed step numbers have to be
+// edited in lockstep every time a step is added.
+type Stepper struct {
+	p     *Printer
+	n     int
+	total int
+}
+
+// Steps starts a numbered sequence of total steps.
+func (p *Printer) Steps(total int) *Stepper {
+	return &Stepper{p: p, total: total}
+}
+
+// Step prints the next numbered step, and reports the numbers it used for
+// callers that mirror the line somewhere else — create's log file.
+func (s *Stepper) Step(msg string) (n, total int) {
+	s.n++
+	s.p.Step(s.n, s.total, msg)
+	return s.n, s.total
+}
+
 // Hint prints a dim follow-up line under a result, e.g.
 // "next: tamp site new <host>". Callers write the whole line, prefix included.
 func (p *Printer) Hint(msg string) {

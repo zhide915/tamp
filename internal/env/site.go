@@ -78,8 +78,8 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		return err
 	}
 
-	steps := siteSteps + len(apps)
-	m.Out.Step(1, steps, "creating "+host.String()+" and its database")
+	steps := m.Out.Steps(siteSteps + len(apps))
+	steps.Step("creating " + host.String() + " and its database")
 	if err := bench.NewSite(ctx, frappe.NewSiteRequest{
 		Host:           host.String(),
 		DBRootPassword: password,
@@ -89,8 +89,8 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		return err
 	}
 
-	for i, app := range apps {
-		m.Out.Step(2+i, steps, "installing "+app+" on "+host.String())
+	for _, app := range apps {
+		steps.Step("installing " + app + " on " + host.String())
 		if err := bench.InstallApp(ctx, host.String(), app); err != nil {
 			return m.salvageSite(ctx, generated, admin, err)
 		}
@@ -99,12 +99,12 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	// The bench-wide config already says this, and the site says it again for
 	// itself: a per-site key survives whatever later happens to the shared
 	// file, and this is the setting that makes Frappe reload changed code.
-	m.Out.Step(2+len(apps), steps, "turning on developer mode")
+	steps.Step("turning on developer mode")
 	if err := bench.SetSiteConfig(ctx, host.String(), "developer_mode", "1"); err != nil {
 		return m.salvageSite(ctx, generated, admin, err)
 	}
 
-	m.Out.Step(3+len(apps), steps, "routing "+host.String())
+	steps.Step("routing " + host.String())
 	status, err := m.applyRoutes(ctx, m.Out.Stream())
 	if err != nil {
 		m.revealAdmin(generated, admin)

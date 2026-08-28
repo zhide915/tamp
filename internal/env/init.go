@@ -190,7 +190,7 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 		return err
 	}
 
-	log := &createLog{out: m.Out, total: readoptSteps + len(cfg.Frappe.Apps)}
+	log := &createLog{out: m.Out, steps: m.Out.Steps(readoptSteps + len(cfg.Frappe.Apps))}
 	defer log.save(dir)
 
 	log.step("checking Docker")
