@@ -130,6 +130,32 @@ func TestConfiguringPutsTheBenchInDeveloperMode(t *testing.T) {
 	}
 }
 
+// Pointing the bench at the catcher is not enough on its own. Frappe builds an
+// outgoing account out of these keys when a site has none of its own, and then
+// looks up an SMTP password nobody ever set — so without the switch below every
+// mail a site sends fails on a credential the catcher does not want.
+func TestConfiguringLetsTheBenchSendToACatcherThatWantsNoPassword(t *testing.T) {
+	b, fake := initialized(t)
+
+	if err := b.Configure(t.Context()); err != nil {
+		t.Fatalf("Configure = %v", err)
+	}
+	config := siteConfig(t, fake)
+
+	if config["disable_mail_smtp_authentication"] != float64(1) {
+		t.Errorf("disable_mail_smtp_authentication = %v, so every send asks for a password that does not exist",
+			config["disable_mail_smtp_authentication"])
+	}
+	// use_tls is the key Frappe reads for an outgoing account. use_ssl is the
+	// incoming one, and tamp configures no incoming account at all.
+	if config["use_tls"] != float64(0) {
+		t.Errorf("use_tls = %v, want 0", config["use_tls"])
+	}
+	if _, ok := config["use_ssl"]; ok {
+		t.Error("tamp still writes use_ssl, which says nothing about the connection it is describing")
+	}
+}
+
 // bench init writes things tamp has no opinion about, and tamp adding its
 // own keys must not cost the bench them.
 func TestConfiguringKeepsTheKeysBenchInitWrote(t *testing.T) {

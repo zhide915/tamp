@@ -63,19 +63,8 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) error {
 		}
 	}
 
-	if _, err := m.Engine.Ping(ctx); err != nil {
+	if err := m.requireRunning(ctx, e, "so there is nothing to run the command in"); err != nil {
 		return err
-	}
-	containers, err := m.Engine.Containers(ctx, e.Resources.Project())
-	if err != nil {
-		return err
-	}
-	// The bench container is the one this runs in, so it is the one that has
-	// to be up. An environment missing something else is still worth a shell.
-	if !isRunning(containers, FrappeService) {
-		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("%s is not running, so there is nothing to run the command in", e.Name()),
-			fmt.Sprintf("start it with 'tamp start %s'", e.Name()))
 	}
 
 	exec := engine.ExecRequest{

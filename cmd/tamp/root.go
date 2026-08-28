@@ -62,6 +62,7 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, stdin io.Reader) *cobra.Co
 	root.AddCommand(newStopCommand(p, eng))
 	root.AddCommand(newRestartCommand(p, eng))
 	root.AddCommand(newRemoveCommand(p, eng))
+	root.AddCommand(newSiteCommand(p, eng))
 	root.AddCommand(newExecCommand(p, eng, stdin))
 	root.AddCommand(newDoctorCommand(p, eng))
 	root.AddCommand(newVersionCommand(p))

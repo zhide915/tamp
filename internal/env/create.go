@@ -197,6 +197,15 @@ func (m *Manager) provision(dir string, name Name, version FrappeVersion, tc Too
 				fmt.Sprintf("an environment named %q is already registered, at %s", name, existing.Path),
 				"pick another name, or remove the old one with 'tamp rm "+string(name)+"'")
 		}
+		// The name decides a hostname too — the mail UI's — and the router
+		// would refuse a configuration holding that address twice.
+		mailHost := router.MailHost(string(name))
+		if owner, what, clash := hostClaimedBy(reg, "", mailHost); clash {
+			return exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("an environment named %q would take the hostname %s, which is already %s of %q",
+					name, mailHost, what, owner),
+				"pick another name, or remove that site with 'tamp site rm "+owner+" "+mailHost+" --yes'")
+		}
 		port, err = AllocateDBPort(reg)
 		if err != nil {
 			return err

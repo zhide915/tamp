@@ -258,9 +258,18 @@ func (b *Bench) siteConfig() map[string]any {
 		"developer_mode": 1,
 
 		// Every mail the environment sends is caught rather than delivered.
-		"mail_server": b.MailHost,
-		"mail_port":   MailSMTPPort,
-		"use_ssl":     0,
+		//
+		// The last two keys are what make that work. Frappe builds an outgoing
+		// account out of these when a site has none of its own, and it then
+		// looks up an SMTP password that was never set. Without the switch
+		// every send fails on a credential nothing needs — the catcher accepts
+		// unauthenticated mail. use_tls is the key Frappe reads for an outgoing
+		// account; use_ssl belongs to incoming, and setting that one says
+		// nothing about the connection tamp is describing.
+		"mail_server":                      b.MailHost,
+		"mail_port":                        MailSMTPPort,
+		"use_tls":                          0,
+		"disable_mail_smtp_authentication": 1,
 	}
 }
 

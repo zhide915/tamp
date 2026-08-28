@@ -109,6 +109,42 @@ func (m *Manager) ensureSharedVolumes(ctx context.Context) error {
 	return nil
 }
 
+// requireRunning refuses an operation that needs the bench container up, in
+// tamp's own words rather than in whatever the engine would have said several
+// steps later.
+//
+// The bench container is the one every such operation happens in, so it is the
+// one that has to be up: an environment missing something else is still worth
+// a shell. because completes the sentence "<env> is not running, ...".
+func (m *Manager) requireRunning(ctx context.Context, e *Environment, because string) error {
+	running, err := m.benchRunning(ctx, e)
+	if err != nil {
+		return err
+	}
+	if !running {
+		return exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("%s is not running, %s", e.Name(), because),
+			fmt.Sprintf("start it with 'tamp start %s'", e.Name()))
+	}
+	return nil
+}
+
+// benchRunning asks the engine whether an environment's bench container is up.
+//
+// It is separate from requireRunning because not every caller refuses: listing
+// an environment's sites falls back to what tamp last recorded rather than
+// failing, which is the reason that record is kept.
+func (m *Manager) benchRunning(ctx context.Context, e *Environment) (bool, error) {
+	if _, err := m.Engine.Ping(ctx); err != nil {
+		return false, err
+	}
+	containers, err := m.Engine.Containers(ctx, e.Resources.Project())
+	if err != nil {
+		return false, err
+	}
+	return isRunning(containers, FrappeService), nil
+}
+
 // State is what tamp reports an environment is doing.
 type State string
 

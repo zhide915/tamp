@@ -131,6 +131,11 @@ type Fake struct {
 	// so the two have to be modelled together for either to be testable.
 	networks map[string]map[string]bool
 
+	// sites is the set of sites on the fake's bench. tamp creates one and
+	// then reads the bench back to find out what it has, so the two commands
+	// have to be modelled together for either to be testable.
+	sites map[string]bool
+
 	// running tracks, per project, whether its containers exist and whether
 	// they are running — so that up, stop, down and Containers tell one
 	// consistent story to the code under test.
@@ -342,7 +347,70 @@ func (f *Fake) Exec(_ context.Context, req engine.ExecRequest) error {
 	if strings.Contains(exec.Line(), "bench init") {
 		f.put(frappe.CommonSiteConfigPath, BenchInitConfig)
 	}
+	return f.answerSiteCommand(exec, req.Stdout)
+}
+
+// answerSiteCommand keeps the fake's idea of which sites a bench has in step
+// with the commands tamp runs, and answers the two that ask.
+//
+// A recording alone would not do here: tamp creates a site and then lists the
+// bench to find out what it now holds, so a fake that forgot the create would
+// let a broken round trip pass. Arguments travel beside the script rather than
+// inside it, which is what makes the hostname readable at a fixed position.
+func (f *Fake) answerSiteCommand(exec Exec, stdout io.Writer) error {
+	switch {
+	case strings.Contains(exec.Line(), "bench new-site"):
+		f.addSite(siteArg(exec.Cmd, "new-site"))
+	case strings.Contains(exec.Line(), "bench drop-site"):
+		delete(f.sites, siteArg(exec.Cmd, "drop-site"))
+	// The listing script names a site by the config file every site has.
+	case strings.Contains(exec.Line(), "site_config.json"):
+		for _, host := range f.Sites() {
+			fmt.Fprintln(stdout, host)
+		}
+	case strings.Contains(exec.Line(), "list-apps"):
+		// Every Frappe site has frappe installed; anything else got there
+		// through an install tamp has not learned to run yet.
+		fmt.Fprintln(stdout, "frappe")
+	}
 	return nil
+}
+
+// siteArg is the hostname a bench site command was pointed at.
+//
+// It reads both spellings the fake sees. tamp's own scripts carry the
+// hostname beside the script as its first argument; a user reaching the same
+// bench command through 'tamp exec' types it straight after the subcommand,
+// and a fake that only understood the first would make a site created that way
+// invisible to the code that goes looking for it.
+func siteArg(cmd []string, subcommand string) string {
+	if len(cmd) > 0 && cmd[0] == "bash" {
+		const firstScriptArg = 4 // bash -c <script> tamp <arg>
+		if len(cmd) > firstScriptArg {
+			return cmd[firstScriptArg]
+		}
+		return ""
+	}
+	for i, word := range cmd {
+		if word == subcommand && i+1 < len(cmd) {
+			return cmd[i+1]
+		}
+	}
+	return ""
+}
+
+// Sites names the sites the fake's bench holds, sorted — what tamp created
+// through it, less what tamp dropped.
+func (f *Fake) Sites() []string { return slices.Sorted(maps.Keys(f.sites)) }
+
+func (f *Fake) addSite(host string) {
+	if host == "" {
+		return
+	}
+	if f.sites == nil {
+		f.sites = map[string]bool{}
+	}
+	f.sites[host] = true
 }
 
 func (f *Fake) ReadFile(_ context.Context, container, path string) ([]byte, error) {
