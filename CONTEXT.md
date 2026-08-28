@@ -38,5 +38,9 @@ A cached tarball of a freshly initialized bench per Frappe version, used to make
 **Sync session**:
 The Mutagen two-way sync between an environment's host `apps/` folder and its container. On Linux there is none — bind mount instead — and that is a mode, not an error.
 
+**Credential bridge**:
+The relay of the host's git credentials to a single fetch inside a container: read from the host's credential system at use time, never stored.
+_Avoid_: token, credential store
+
 **Toolchain**:
 The pinned Python/Node/MariaDB set matched to a Frappe version via tamp's version matrix, provisioned into the shared `tamp-toolchain` volume.

@@ -22,6 +22,12 @@ domains.
 - **R-06** hosts sync, custom domains & doctor completion — [#20](https://github.com/zhide915/tamp/issues/20)
 - **R-07** `open` & `sync` subcommands — [#21](https://github.com/zhide915/tamp/issues/21)
 
+### Private app repositories ([#29](https://github.com/zhide915/tamp/issues/29))
+
+Private git sources: preflight, credential bridge, no stored secrets.
+
+- **R-13** Credential bridge: source preflight, host credential relay, parse-time refusals — [#29](https://github.com/zhide915/tamp/issues/29)
+
 ### Agent & editor surface ([#22](https://github.com/zhide915/tamp/issues/22))
 
 Nicer to drive: machine-readable output, editor wiring, HTTPS.
@@ -42,9 +48,10 @@ issue.
 - **R-52** MCP server
 - **R-53** Production profile (`tamp build` / `tamp deploy`)
 - **R-54** `tamp update` convenience command
-- **R-55** First-class `tamp app add`
+- **R-55** First-class `tamp app get`
 - **R-56** Frappe v14 support
 - **R-57** Podman engine
 - **R-58** Any GUI
+- **R-59** ssh app sources
 
 Release procedure: [docs/releasing.md](docs/releasing.md)
