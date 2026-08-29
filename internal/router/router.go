@@ -45,9 +45,11 @@ const (
 	DirName = "router"
 	// CaddyfileName is the assembled file the container reads.
 	CaddyfileName = "Caddyfile"
+	// StateFileName holds the settled host port, which is what makes every
+	// URL tamp prints carry the right one.
+	StateFileName = "router.json"
 
 	composeFileName = "compose.yaml"
-	stateFileName   = "router.json"
 
 	// containerCaddyfile is the bind-mount target a reload points at.
 	containerCaddyfile = "/etc/caddy/Caddyfile"
@@ -235,7 +237,7 @@ func (r *Router) project() engine.ComposeProject {
 
 func (r *Router) composePath() string   { return filepath.Join(r.Dir, composeFileName) }
 func (r *Router) caddyfilePath() string { return filepath.Join(r.Dir, CaddyfileName) }
-func (r *Router) statePath() string     { return filepath.Join(r.Dir, stateFileName) }
+func (r *Router) statePath() string     { return filepath.Join(r.Dir, StateFileName) }
 
 // writeCaddyfile writes the assembled routes in place. os.WriteFile truncates
 // rather than replaces, which the container's bind mount requires — a rename
