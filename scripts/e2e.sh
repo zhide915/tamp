@@ -54,12 +54,32 @@ resolved() {
 say "create fifteen — version-15, with erpnext pinned to its branch"
 "$TAMP" create fifteen --frappe version-15 --apps erpnext:version-15 --dir "$WORK"
 
-say "site on fifteen"
-"$TAMP" site new fifteen fifteen.localhost --admin-password admin
+say "site on fifteen, with erpnext installed on it"
+install_start=$(date +%s)
+"$TAMP" site new fifteen fifteen.localhost --apps erpnext --admin-password admin
+install_seconds=$(( $(date +%s) - install_start ))
+echo "installing erpnext onto a site took ${install_seconds}s"
 
 say "fifteen serves through the router"
 expect fifteen.localhost /api/method/ping
 expect mail.fifteen.localhost /
+
+say "a second site of the same app set restores that seed instead of installing"
+seed_start=$(date +%s)
+"$TAMP" site new fifteen seeded.localhost --apps erpnext --seed --admin-password admin > "$WORK/seeded.log" 2>&1 || {
+  cat "$WORK/seeded.log"
+  fail "the seeded site creation failed"
+}
+seed_seconds=$(( $(date +%s) - seed_start ))
+echo "restoring the seed took ${seed_seconds}s against ${install_seconds}s"
+grep -q "seed, restored and migrated" "$WORK/seeded.log"   || fail "site new --seed did not say it restored a seed: $(cat "$WORK/seeded.log")"
+# The promise is a small fraction of the install; half is the generous form
+# of it, and a regression to the install path fails it outright.
+[ $(( seed_seconds * 2 )) -lt "$install_seconds" ]   || fail "the seeded site took ${seed_seconds}s against an install of ${install_seconds}s"
+# A working ERPNext site, not merely a routed one: list-apps reads its
+# database, which is the part the seed carried.
+expect seeded.localhost /api/method/ping
+"$TAMP" exec fifteen -- bench --site seeded.localhost list-apps | grep -q erpnext   || fail "the seeded site does not have erpnext installed"
 
 say "create sixteen — version-16, alongside fifteen, under Mutagen"
 # fifteen keeps bind, the Linux default; Mutagen here puts its pin under

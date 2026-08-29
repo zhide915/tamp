@@ -10,11 +10,13 @@ import (
 
 // A snapshot is assembled here and then streamed straight out of the
 // container to the host, so nothing but the staging area is ever written
-// twice. The area sits under the sites tree on purpose: a fresh backup lands
-// there too, so moving it in is a rename rather than a second copy of
-// everything the site holds. The leading dot keeps it out of the site
-// listing, which counts directories holding a site_config.json.
-const snapshotWorkDir = SitesDir + "/.tamp-snapshot"
+// twice; a seed is stored from and restored through the same area. It sits
+// under the sites tree on purpose: a fresh backup lands there too, so moving
+// it in is a rename rather than a second copy of everything the site holds.
+// The leading dot keeps it out of the site listing, which counts directories
+// holding a site_config.json; the name is the one snapshots gave it, kept so
+// that an interrupted run's leftovers are still the ones tamp clears.
+const stageDir = SitesDir + "/.tamp-snapshot"
 
 // The fixed names a staged site's parts take. bench names its output after
 // the minute it ran, which a restore would then have to go looking for.
@@ -28,7 +30,7 @@ const (
 // StageBackup backs one site up with its files and moves the result into the
 // staging area under fixed names.
 func (b *Bench) StageBackup(ctx context.Context, host string) error {
-	return b.run(ctx, stageBackupScript, host, snapshotWorkDir)
+	return b.run(ctx, stageBackupScript, host, stageDir)
 }
 
 // The newest dump is found by comparing the glob's matches rather than
@@ -74,7 +76,7 @@ fi
 // rather than zstd, for the same reason the template store uses it: zstd is
 // not in the pinned bench image.
 func (b *Bench) BundleSnapshot(ctx context.Context, out io.Writer) error {
-	return b.stream(ctx, out, nil, bundleScript, snapshotWorkDir)
+	return b.stream(ctx, out, nil, bundleScript, stageDir)
 }
 
 const bundleScript = `
@@ -85,7 +87,7 @@ tar -cf - . | gzip -1
 
 // UnpackSnapshot reads a bundle from in and lays it out in the staging area.
 func (b *Bench) UnpackSnapshot(ctx context.Context, in io.Reader) error {
-	return b.stream(ctx, nil, in, unpackScript, snapshotWorkDir)
+	return b.stream(ctx, nil, in, unpackScript, stageDir)
 }
 
 const unpackScript = `
@@ -95,13 +97,13 @@ mkdir -p "$1"
 tar -C "$1" -xzf -
 `
 
-// ClearSnapshotWork empties the staging area. Both a snapshot and a restore
-// end with it: what it holds is a whole copy of the data layer.
-func (b *Bench) ClearSnapshotWork(ctx context.Context) error {
-	return b.run(ctx, clearSnapshotWorkScript, snapshotWorkDir)
+// ClearStage empties the staging area. Every snapshot, restore and seed ends
+// with it: what it holds is a whole copy of a site.
+func (b *Bench) ClearStage(ctx context.Context) error {
+	return b.run(ctx, clearStageScript, stageDir)
 }
 
-const clearSnapshotWorkScript = `
+const clearStageScript = `
 set -eo pipefail
 rm -rf "$1"
 `
@@ -110,7 +112,7 @@ rm -rf "$1"
 // ones. The site has to be there already — bench restore drops and refills a
 // database that a site config names.
 func (b *Bench) RestoreSite(ctx context.Context, host, dbRootPassword string) error {
-	return b.run(ctx, restoreSiteScript, host, snapshotWorkDir, dbRootPassword)
+	return b.run(ctx, restoreSiteScript, host, stageDir, dbRootPassword)
 }
 
 // --force: the confirmation happened at tamp's own prompt, and bench would

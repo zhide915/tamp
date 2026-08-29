@@ -103,6 +103,37 @@ tamp exec erp15 -- bench get-app hrms --branch version-15
 Hostnames are unique across the whole machine, because one router serves them
 all.
 
+## Fast sites
+
+Installing ERPNext onto a site takes minutes. tamp pays that once: the first
+site of a Frappe version and app set is backed up into a machine-wide seed
+store, and `--seed` restores that backup instead of installing the apps
+again.
+
+```sh
+tamp site new erp15 shop.localhost --apps erpnext            # installs, and caches the result
+tamp site new erp15 second.localhost --apps erpnext --seed   # restores it, in seconds
+```
+
+A seed never expires: tamp migrates the restored site, which absorbs whatever
+the apps' schemas did since. Seeds don't cross versions or app sets — a
+`version-16` bench never restores a `version-15` seed — and `--seed` with no
+matching seed exits 3, naming the combination, having created nothing.
+
+`--seed` goes with `--apps`. A seed stands in for the app installs and
+nothing else, so a site with no apps neither fills the store nor reads it.
+
+A seed is keyed by app *names*, not by the branch each app is on. If you keep
+two environments of one Frappe version with the same app on different
+branches, empty the store between them or leave `--seed` off.
+
+Emptying the store is safe. It costs the next site its install and nothing
+else:
+
+```sh
+docker run --rm -v tamp-seeds:/store alpine sh -c 'rm -f /store/*'
+```
+
 ## Custom domains
 
 `*.localhost` names resolve in browsers with no setup. Any other name, such
@@ -273,7 +304,7 @@ curl --resolve shop.localhost:80:127.0.0.1 http://shop.localhost
 | 0 | success |
 | 1 | operation failed |
 | 2 | usage error |
-| 3 | environment, site or snapshot not found |
+| 3 | environment, site, snapshot or seed not found |
 | 4 | Docker unavailable |
 | 5 | confirmation required (add `--yes`) |
 

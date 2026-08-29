@@ -109,7 +109,7 @@ func (b *Bench) Provision(ctx context.Context) error {
 func (b *Bench) prepareDirs(ctx context.Context) error {
 	dirs := []string{
 		WorkspaceDir, BenchDir, EnvDir, SitesDir, AppsDir,
-		toolchain.Dir, PipCacheDir, YarnCacheDir, TemplateDir,
+		toolchain.Dir, PipCacheDir, YarnCacheDir, TemplateDir, SeedDir,
 	}
 	script := fmt.Sprintf("set -e; mkdir -p %[1]s; chown %[2]s:%[2]s %[1]s",
 		strings.Join(dirs, " "), toolchain.User)

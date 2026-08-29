@@ -47,6 +47,8 @@ type composeData struct {
 	YarnCacheDir    string
 	TemplateVolume  string
 	TemplateDir     string
+	SeedVolume      string
+	SeedDir         string
 
 	WorkspaceDir string
 	BenchDir     string
@@ -102,6 +104,8 @@ func (e *Environment) Generate(sync syncer.Effective) error {
 		YarnCacheDir:    frappe.YarnCacheDir,
 		TemplateVolume:  frappe.TemplateVolume,
 		TemplateDir:     frappe.TemplateDir,
+		SeedVolume:      frappe.SeedVolume,
+		SeedDir:         frappe.SeedDir,
 
 		WorkspaceDir: frappe.WorkspaceDir,
 		BenchDir:     frappe.BenchDir,

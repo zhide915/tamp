@@ -11,7 +11,8 @@ import (
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// siteSteps is the numbered step count before the per-app steps.
+// siteSteps is the numbered step count before the per-app steps: the site
+// itself, developer mode, and the route.
 const siteSteps = 3
 
 // SiteNewRequest is what `tamp site new` was asked for.
@@ -23,6 +24,9 @@ type SiteNewRequest struct {
 	Apps string
 	// AdminPassword empty means tamp generates one and prints it.
 	AdminPassword string
+	// Seed restores this version and app set's cached backup instead of
+	// installing the apps.
+	Seed bool
 }
 
 // SiteNew creates a site and routes it. The hostname is the site's name, its
@@ -50,6 +54,12 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	if err := m.requireApps(ctx, e, bench, apps); err != nil {
 		return err
 	}
+	// Settled here for the same reason: --seed with nothing to restore must
+	// refuse before the hostname is claimed or the site is made.
+	seed, err := m.planSeed(ctx, e, bench, apps, req.Seed)
+	if err != nil {
+		return err
+	}
 
 	password, err := ReadDBRootPassword(e.Dir)
 	if err != nil {
@@ -70,7 +80,7 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		return err
 	}
 
-	steps := m.Out.Steps(siteSteps + len(apps))
+	steps := m.Out.Steps(siteSteps + seed.steps(apps))
 	steps.Step("creating " + host.String() + " and its database")
 	if err := bench.NewSite(ctx, frappe.NewSiteRequest{
 		Host:           host.String(),
@@ -81,10 +91,21 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 		return err
 	}
 
-	for _, app := range apps {
-		steps.Step("installing " + app + " on " + host.String())
-		if err := bench.InstallApp(ctx, host.String(), app); err != nil {
+	if seed.Restore {
+		steps.Step("restoring the " + seed.Key + " seed onto " + host.String())
+		if err := m.restoreSeed(ctx, bench, seed.Key, host.String(), password, admin); err != nil {
 			return m.salvageSite(ctx, generated, admin, err)
+		}
+	} else {
+		for _, app := range apps {
+			steps.Step("installing " + app + " on " + host.String())
+			if err := bench.InstallApp(ctx, host.String(), app); err != nil {
+				return m.salvageSite(ctx, generated, admin, err)
+			}
+		}
+		if seed.Store {
+			steps.Step("caching " + host.String() + " as the " + seed.Key + " seed")
+			m.storeSeed(ctx, e, bench, seed.Key, host.String(), apps)
 		}
 	}
 
@@ -105,6 +126,9 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 
 	m.Out.OK(host.String() + " is ready on " + e.Name().String())
 	m.Out.Note("site: " + status.URL(host.String()))
+	if seed.Restore {
+		m.Out.Note("its apps came from the " + seed.Key + " seed, restored and migrated")
+	}
 	m.revealAdmin(generated, admin)
 	m.notePendingHostsEntries([]string{host.String()})
 	return nil

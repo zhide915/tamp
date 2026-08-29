@@ -26,6 +26,11 @@ type benchSim struct {
 	// a file beside the environment, outliving the bench it came from.
 	staged map[string][]string
 
+	// seeds is what each stored seed holds, keyed by its path in the store.
+	// Like the staging area it outlives any one bench: the store is shared by
+	// every environment on the machine.
+	seeds map[string][]string
+
 	// Hooks back into the Fake: the alias, private and missing tables are
 	// the test's to script, and site configs land in the shared container
 	// filesystem.
@@ -98,14 +103,25 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 		return nil
 	}
 
-	// The template store, modelled as the files it is: a save puts the
-	// tarball there, a restore unpacks the bench a save was taken from, and
-	// the probe answers from what is actually in the store.
+	// The template and seed stores, modelled as the files they are: a save
+	// puts the tarball there, a restore lays out what that save was taken
+	// from, and the probe answers from what is actually in the store. Which
+	// store a command means is its path, since both tar and gzip.
 	if strings.Contains(exec.Line(), "gzip -1") {
-		s.put(scriptArg(exec.Cmd, 0), "a tarred bench")
+		path := scriptArg(exec.Cmd, 0)
+		if isSeed(path) {
+			s.saveSeed(path, scriptArg(exec.Cmd, 2))
+			return nil
+		}
+		s.put(path, "a tarred bench")
 		return nil
 	}
 	if strings.Contains(exec.Line(), "-xzf") {
+		path := scriptArg(exec.Cmd, 0)
+		if isSeed(path) {
+			s.stage(scriptArg(exec.Cmd, 2), s.seeds[path])
+			return nil
+		}
 		s.initialize(b)
 		return nil
 	}
@@ -137,10 +153,7 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 	// bench's own state cannot take them with it.
 	case strings.Contains(exec.Line(), "backup --with-files"):
 		host := siteArg(exec.Cmd, "backup")
-		if s.staged == nil {
-			s.staged = map[string][]string{}
-		}
-		s.staged[host] = slices.Clone(b.siteApps[host])
+		s.stage(host, b.siteApps[host])
 	case strings.Contains(exec.Line(), `"$1" restore`):
 		host := scriptArg(exec.Cmd, 0)
 		s.addSite(b, host)
@@ -200,6 +213,31 @@ func (s *benchSim) remoteRefusal(exec Exec, source string, stderr io.Writer) err
 	}
 	fmt.Fprintf(stderr, "fatal: could not read Username for '%s': terminal prompts disabled\n", source)
 	return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
+}
+
+// isSeed tells the two stores apart by where the tarball lives.
+func isSeed(path string) bool { return strings.HasPrefix(path, frappe.SeedDir+"/") }
+
+// stage records what the staging area holds for a site: the app list a
+// restore from it brings back.
+func (s *benchSim) stage(host string, apps []string) {
+	if host == "" {
+		return
+	}
+	if s.staged == nil {
+		s.staged = map[string][]string{}
+	}
+	s.staged[host] = slices.Clone(apps)
+}
+
+// saveSeed stores what the staged site holds, so restoring the seed later
+// gives a new site the same apps.
+func (s *benchSim) saveSeed(path, host string) {
+	if s.seeds == nil {
+		s.seeds = map[string][]string{}
+	}
+	s.seeds[path] = slices.Clone(s.staged[host])
+	s.put(path, "a tarred site backup")
 }
 
 // initialize is what leaves a bench where there was none — bench init, or a

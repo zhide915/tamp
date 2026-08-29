@@ -76,7 +76,7 @@ func (m *Manager) SnapshotRestore(ctx context.Context, req SnapshotRestoreReques
 			return err
 		}
 	}
-	if err := bench.ClearSnapshotWork(ctx); err != nil {
+	if err := bench.ClearStage(ctx); err != nil {
 		return err
 	}
 

@@ -33,6 +33,7 @@ func newSiteCommand(d deps) *cobra.Command {
 
 func newSiteNewCommand(d deps) *cobra.Command {
 	var adminPassword, apps string
+	var seed bool
 
 	cmd := &cobra.Command{
 		Use:   "new [env] <host>",
@@ -44,7 +45,10 @@ func newSiteNewCommand(d deps) *cobra.Command {
 			"hosts entry pending, and 'tamp hosts sync' writes it.\n\n" +
 			"The environment has to be running: tamp never starts one for you.\n\n" +
 			"Apps named with --apps have to be on the bench already: tamp fetches\n" +
-			"none of them, because it has no way to know which branch you want.\n\n" + envArgHelp,
+			"none of them, because it has no way to know which branch you want.\n\n" +
+			"The first site of a Frappe version and app set is cached as that\n" +
+			"combination's seed. --seed restores the cached backup instead of\n" +
+			"installing the apps again, which takes seconds rather than minutes.\n\n" + envArgHelp,
 		Args: envAndOneArg("tamp site new needs a hostname for the site"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := d.manager()
@@ -57,6 +61,7 @@ func newSiteNewCommand(d deps) *cobra.Command {
 				Host:          host,
 				Apps:          apps,
 				AdminPassword: adminPassword,
+				Seed:          seed,
 			})
 		},
 	}
@@ -65,6 +70,8 @@ func newSiteNewCommand(d deps) *cobra.Command {
 		"apps to install on the site, comma-separated; each must already be on the bench")
 	cmd.Flags().StringVar(&adminPassword, "admin-password", "",
 		"the site Administrator's password (tamp generates and prints one otherwise)")
+	cmd.Flags().BoolVar(&seed, "seed", false,
+		"restore this Frappe version and app set's cached seed instead of installing the apps")
 	return cmd
 }
 

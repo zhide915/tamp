@@ -59,6 +59,19 @@ set -eo pipefail
 bench --site "$1" set-config -p "$2" "$3"
 `
 
+// SetAdminPassword resets a site's Administrator password. A site restored
+// from a seed carries the password of the site the seed was taken from, and
+// this is what makes it the one the user asked for.
+func (b *Bench) SetAdminPassword(ctx context.Context, host, password string) error {
+	return b.run(ctx, setAdminPasswordScript, host, password)
+}
+
+const setAdminPasswordScript = `
+set -eo pipefail
+. ` + toolchain.EnvScript + `
+bench --site "$1" set-admin-password "$2"
+`
+
 // DropSite destroys one site's database and files; other sites keep theirs.
 func (b *Bench) DropSite(ctx context.Context, host, dbRootPassword string) error {
 	return b.run(ctx, dropSiteScript, host, dbRootPassword)

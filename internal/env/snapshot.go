@@ -122,7 +122,7 @@ func (m *Manager) SnapshotCreate(ctx context.Context, req SnapshotCreateRequest)
 	bench := e.bench(m.Engine, m.Out.Stream())
 	// A staging area left behind by an interrupted run would otherwise
 	// travel into this bundle.
-	if err := bench.ClearSnapshotWork(ctx); err != nil {
+	if err := bench.ClearStage(ctx); err != nil {
 		return err
 	}
 
@@ -151,7 +151,7 @@ func (m *Manager) SnapshotCreate(ctx context.Context, req SnapshotCreateRequest)
 	if err != nil {
 		return err
 	}
-	if err := bench.ClearSnapshotWork(ctx); err != nil {
+	if err := bench.ClearStage(ctx); err != nil {
 		return err
 	}
 

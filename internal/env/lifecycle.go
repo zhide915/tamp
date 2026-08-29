@@ -31,7 +31,10 @@ type Manager struct {
 	// Sync mirrors an environment's source to the host — tamp's second
 	// external-process seam after the engine.
 	Sync syncer.Mutagen
-	Out  *ui.Printer
+	// Browser opens a URL. A field because a test that ran the real one
+	// would put a window on the developer's screen.
+	Browser func(ctx context.Context, url string) error
+	Out     *ui.Printer
 
 	// HostsFile is the hosts file 'tamp hosts sync' reconciles, and
 	// HostsRedirected says it is not the system's own — which is what
@@ -105,11 +108,14 @@ func (e *Environment) bench(eng engine.Engine, out io.Writer) *frappe.Bench {
 }
 
 // SharedVolumes are common to every environment: the toolchain, the two
-// package caches and the bench template store. The compose file declares them
-// external so `tamp rm --volumes` on one environment cannot empty them for the
-// rest — which means tamp must create them itself.
+// package caches, the bench template store and the seed store. The compose
+// file declares them external so `tamp rm --volumes` on one environment
+// cannot empty them for the rest — which means tamp must create them itself.
 func SharedVolumes() []string {
-	return []string{toolchain.Volume, frappe.PipCacheVolume, frappe.YarnCacheVolume, frappe.TemplateVolume}
+	return []string{
+		toolchain.Volume, frappe.PipCacheVolume, frappe.YarnCacheVolume,
+		frappe.TemplateVolume, frappe.SeedVolume,
+	}
 }
 
 func (m *Manager) ensureSharedVolumes(ctx context.Context) error {

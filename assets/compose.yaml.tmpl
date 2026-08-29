@@ -58,6 +58,7 @@ services:
       - pip-cache:{{ .PipCacheDir }}
       - yarn-cache:{{ .YarnCacheDir }}
       - templates:{{ .TemplateDir }}
+      - seeds:{{ .SeedDir }}
 
   # One MariaDB per environment, at the version this Frappe release wants.
   # The character-set flags are not optional: without them site creation fails
@@ -145,6 +146,11 @@ volumes:
   # 'bench init' on this machine is the only slow one.
   templates:
     name: {{ .TemplateVolume }}
+    external: true
+  # The seed store: one pristine site backup per Frappe version and app set,
+  # so an app set is installed onto a site once on this machine.
+  seeds:
+    name: {{ .SeedVolume }}
     external: true
 
 networks:

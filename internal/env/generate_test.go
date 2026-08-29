@@ -216,6 +216,7 @@ func TestTheBenchContainerMountsEveryLayerAndTheSharedVolumes(t *testing.T) {
 		"pip-cache:" + frappe.PipCacheDir,
 		"yarn-cache:" + frappe.YarnCacheDir,
 		"templates:" + frappe.TemplateDir,
+		"seeds:" + frappe.SeedDir,
 	} {
 		if !strings.Contains(body, mount) {
 			t.Errorf("the bench container does not mount %s:\n%s", mount, body)
