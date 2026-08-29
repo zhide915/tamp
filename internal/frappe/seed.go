@@ -8,31 +8,23 @@ import (
 )
 
 // The seed store: one pristine site backup per key, in a volume shared by
-// every environment, so an app set is installed onto a site once per machine
-// and restored after that. Nothing here is irreplaceable — wiping it costs
-// the next site its full install and nothing else.
+// every environment. Wiping it only costs the next site its full install.
 const (
 	SeedVolume = "tamp-seeds"
 	SeedDir    = "/home/frappe/.tamp-seeds"
 )
 
 // A seed is two files: the backup, and what tamp knows about it.
-func SeedPath(key string) string         { return SeedDir + "/" + key + ".tar.gz" }
-func SeedManifestPath(key string) string { return SeedDir + "/" + key + ".json" }
+func SeedPath(key string) string         { return storePath(SeedDir, key) }
+func SeedManifestPath(key string) string { return storeManifestPath(SeedDir, key) }
 
-// HasSeed reports whether the store holds this seed's tarball. An
-// unreachable container is an error, not "no seed" — engine.Probe draws that
-// line.
+// HasSeed reports whether the store holds this seed's tarball.
 func (b *Bench) HasSeed(ctx context.Context, key string) (bool, error) {
-	return engine.Probe(ctx, b.Engine, engine.ExecRequest{
-		Container: b.Container,
-		Cmd:       engine.Script(`test -f "$1"`, SeedPath(key)),
-	})
+	return b.hasStored(ctx, SeedPath(key))
 }
 
-// SaveSeed stores one staged site's backup as this key's seed. The caller
-// stages it with StageBackup first, which is the same choreography a
-// snapshot goes through.
+// SaveSeed stores one staged site's backup as this key's seed; StageBackup
+// stages it, the same choreography a snapshot uses.
 func (b *Bench) SaveSeed(ctx context.Context, key, host string) error {
 	if err := b.ensureSeedDir(ctx); err != nil {
 		return err
@@ -41,10 +33,8 @@ func (b *Bench) SaveSeed(ctx context.Context, key, host string) error {
 }
 
 // ensureSeedDir hands the store's mount point to the bench user. Docker
-// creates a newly mounted volume root-owned, and only a create runs the
-// provisioning that chowns the other shared directories — so an environment
-// made before this store existed would never be able to write to it.
-// Reading needs no such repair, which is why only a save asks for it.
+// creates a new volume root-owned, and an environment made before this store
+// existed never ran the provisioning that chowns it; only a save writes.
 func (b *Bench) ensureSeedDir(ctx context.Context) error {
 	return b.Engine.Exec(ctx, engine.ExecRequest{
 		Container: b.Container,
@@ -56,16 +46,7 @@ func (b *Bench) ensureSeedDir(ctx context.Context) error {
 	})
 }
 
-// Written beside the target and renamed: an interrupted save must never
-// leave a half-written tarball for the next site to restore.
-const saveSeedScript = `
-set -eo pipefail
-mkdir -p "$(dirname "$1")"
-tmp="$1.part.$$"
-trap 'rm -f "$tmp"' EXIT
-tar -C "$2/$3" -cf - . | gzip -1 > "$tmp"
-mv -f "$tmp" "$1"
-`
+var saveSeedScript = saveScript(`tar -C "$2/$3" -cf - .`)
 
 // RestoreSeed lays a stored seed out in the staging area under host's name,
 // where RestoreSite reads it.
@@ -86,14 +67,7 @@ func (b *Bench) ReadSeedManifest(ctx context.Context, key string) ([]byte, error
 	return b.Engine.ReadFile(ctx, b.Container, SeedManifestPath(key))
 }
 
-// WriteSeedManifest records what a stored seed is. Written after the
-// tarball, so a manifest never describes a seed that is not there.
+// WriteSeedManifest records what a stored seed is, after its tarball.
 func (b *Bench) WriteSeedManifest(ctx context.Context, key string, body []byte) error {
-	return b.Engine.WriteFile(ctx, b.Container, engine.FileSpec{
-		Path: SeedManifestPath(key),
-		Data: body,
-		Mode: 0o644,
-		UID:  toolchain.UID,
-		GID:  toolchain.GID,
-	})
+	return b.writeStoredManifest(ctx, SeedManifestPath(key), body)
 }
