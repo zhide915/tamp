@@ -19,6 +19,9 @@ Frappe-side workspace inside one).
 - `internal/hosts` — the OS hosts file: the block tamp owns, the in-place
   write, and the elevation that write alone may ask for. A real boundary,
   never faked, and the only place in tamp that elevates.
+- `internal/browser` — handing a URL to the machine's default browser.
+  A real boundary, replaced in tests only so none opens a window on the
+  developer's screen.
 - `internal/frappe`, `internal/toolchain`, `internal/router`,
   `internal/syncer`, `internal/doctor`, `internal/ui`, `internal/exitcode`.
 

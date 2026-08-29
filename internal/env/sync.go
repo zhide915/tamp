@@ -31,20 +31,29 @@ func (m *Manager) syncMode(ctx context.Context, want syncer.Mode) syncer.Effecti
 	return mode
 }
 
-// syncSession makes the host side alpha: it is where editing happens, and the
-// side two-way-resolved settles conflicts toward.
-func (m *Manager) syncSession(ctx context.Context, e *Environment) (syncer.Session, error) {
-	info, err := m.Engine.Ping(ctx)
-	if err != nil {
-		return syncer.Session{}, err
-	}
+// syncEndpoints names the two sides of an environment's session. The host
+// side is alpha: it is where editing happens, and the side two-way-resolved
+// settles conflicts toward. Both names are tamp's own, so reporting on a
+// session needs no engine.
+func (e *Environment) syncEndpoints() syncer.Session {
 	return syncer.Session{
 		Name:  e.Resources.Project(),
 		Alpha: syncer.AppsDir(e.Dir),
 		Beta: syncer.BetaURL(toolchain.User,
 			e.Resources.Container(FrappeService), frappe.AppsDir),
-		DockerHost: info.Address.Host,
-	}, nil
+	}
+}
+
+// syncSession is the session to create or rebuild, pinned to the engine tamp
+// resolved rather than whatever Mutagen would detect.
+func (m *Manager) syncSession(ctx context.Context, e *Environment) (syncer.Session, error) {
+	info, err := m.Engine.Ping(ctx)
+	if err != nil {
+		return syncer.Session{}, err
+	}
+	session := e.syncEndpoints()
+	session.DockerHost = info.Address.Host
+	return session, nil
 }
 
 // startSync resumes the environment's session or creates one. Bind and off

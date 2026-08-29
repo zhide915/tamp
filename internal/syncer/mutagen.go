@@ -69,6 +69,22 @@ func (c *CLI) Terminate(ctx context.Context, name string) error {
 	return c.run(ctx, "", nil, "sync", "terminate", name)
 }
 
+func (c *CLI) Flush(ctx context.Context, name string) error {
+	return c.run(ctx, "", nil, "sync", "flush", name)
+}
+
+func (c *CLI) Report(ctx context.Context, name string) (string, error) {
+	var out bytes.Buffer
+	if err := c.run(ctx, "", &out, "sync", "list", name); err != nil {
+		return "", err
+	}
+	return out.String(), nil
+}
+
+func (c *CLI) StopDaemon(ctx context.Context) error {
+	return c.run(ctx, "", nil, "daemon", "stop")
+}
+
 // sessionTemplate asks Mutagen for names directly rather than parsing its
 // human-oriented table.
 const sessionTemplate = `{{range .}}{{.Name}}
@@ -110,15 +126,15 @@ func (c *CLI) run(ctx context.Context, dockerHost string, out io.Writer, args ..
 	if dockerHost != "" {
 		cmd.Env = append(cmd.Env, "DOCKER_HOST="+dockerHost)
 	}
-	if out != nil {
-		cmd.Stdout, cmd.Stderr = out, out
-	}
 
-	// Capture output when not streaming, so a failure can still say why.
+	// Always captured, streamed as well when the caller wants it: a failure
+	// has to be able to say why even when its words already went somewhere.
 	var captured bytes.Buffer
-	if out == nil {
-		cmd.Stdout, cmd.Stderr = &captured, &captured
+	sink := io.Writer(&captured)
+	if out != nil {
+		sink = io.MultiWriter(out, &captured)
 	}
+	cmd.Stdout, cmd.Stderr = sink, sink
 	if err := cmd.Run(); err != nil {
 		reason := strings.TrimSpace(captured.String())
 		if reason == "" {

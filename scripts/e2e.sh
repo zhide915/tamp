@@ -185,6 +185,9 @@ fi
 "$TAMP" snapshot restore warm --name e2e --yes
 expect warm.localhost /api/method/ping
 
+say "sync status names the bind mode and exits 0, because Linux has no session"
+"$TAMP" sync status warm | grep -q "mode: bind" || fail "sync status did not report the bind mode"
+
 "$TAMP" rm warm --volumes --yes
 
 # develop tracks a branch that moves, so it belongs to the run that exists to

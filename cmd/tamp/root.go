@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -18,19 +19,22 @@ type deps struct {
 	p    *ui.Printer
 	eng  engine.Engine
 	sync syncer.Mutagen
+	// browser hands a URL to the machine's browser — a seam, so a test never
+	// opens a window on the developer's screen.
+	browser func(context.Context, string) error
 	// lookupEnv is the process environment as a seam: the hosts file tamp
 	// reconciles is read through it, so tests never aim at the real one.
 	lookupEnv func(string) (string, bool)
 }
 
 func (d deps) manager() (*env.Manager, error) {
-	return env.NewManager(d.eng, d.sync, d.p, d.lookupEnv)
+	return env.NewManager(d.eng, d.sync, d.browser, d.p, d.lookupEnv)
 }
 
 // newRootCommand builds the command tree; one shared Printer applies
 // --quiet and --no-color in a single place.
-func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin io.Reader, lookupEnv func(string) (string, bool)) *cobra.Command {
-	d := deps{p: p, eng: eng, sync: sync, lookupEnv: lookupEnv}
+func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, browser func(context.Context, string) error, stdin io.Reader, lookupEnv func(string) (string, bool)) *cobra.Command {
+	d := deps{p: p, eng: eng, sync: sync, browser: browser, lookupEnv: lookupEnv}
 	var noColor, quiet bool
 
 	root := &cobra.Command{
@@ -79,6 +83,8 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 	root.AddCommand(newRemoveCommand(d))
 	root.AddCommand(newSiteCommand(d))
 	root.AddCommand(newSnapshotCommand(d))
+	root.AddCommand(newOpenCommand(d))
+	root.AddCommand(newSyncCommand(d))
 	root.AddCommand(newHostsCommand(d))
 	root.AddCommand(newCleanCommand(d))
 	root.AddCommand(newRebuildCommand(d))

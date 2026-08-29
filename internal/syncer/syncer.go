@@ -146,6 +146,17 @@ type Mutagen interface {
 	Resume(ctx context.Context, name string) error
 	Terminate(ctx context.Context, name string) error
 	Sessions(ctx context.Context) ([]string, error)
+
+	// Flush forces a full synchronization pass and waits for it.
+	Flush(ctx context.Context, name string) error
+	// Report is Mutagen's own account of one session, quoted rather than
+	// parsed: what Mutagen knows about endpoints, conflicts and errors is
+	// exactly what its own listing prints.
+	Report(ctx context.Context, name string) (string, error)
+	// StopDaemon stops the Mutagen daemon tamp runs. It keeps running after
+	// the last session is terminated, which is the one thing that outlives
+	// every environment.
+	StopDaemon(ctx context.Context) error
 }
 
 // cloudFolders are path segments (matched whole, case-folded) that mean a

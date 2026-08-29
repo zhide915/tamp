@@ -43,7 +43,7 @@ type Manager struct {
 	HostsRedirected bool
 }
 
-func NewManager(eng engine.Engine, sync syncer.Mutagen, out *ui.Printer, lookupEnv func(string) (string, bool)) (*Manager, error) {
+func NewManager(eng engine.Engine, sync syncer.Mutagen, open func(context.Context, string) error, out *ui.Printer, lookupEnv func(string) (string, bool)) (*Manager, error) {
 	home, err := Home()
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func NewManager(eng engine.Engine, sync syncer.Mutagen, out *ui.Printer, lookupE
 			"run tamp from a directory that still exists")
 	}
 	return &Manager{
-		Home: home, Cwd: cwd, cwdErr: cwdErr, Engine: eng, Sync: sync, Out: out,
+		Home: home, Cwd: cwd, cwdErr: cwdErr, Engine: eng, Sync: sync, Browser: open, Out: out,
 		HostsFile:       hosts.Path(lookupEnv),
 		HostsRedirected: hosts.Redirected(lookupEnv),
 	}, nil

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/zhide915/tamp/internal/browser"
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -29,14 +30,14 @@ func main() {
 	ui.EnableColorSupport()
 	// Error ignored: commands that need a home report its absence themselves.
 	home, _ := env.Home()
-	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, engine.New(), syncer.New(home))))
+	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, engine.New(), syncer.New(home), browser.Open)))
 }
 
 // run is the CLI without the process: tests call it directly, so all I/O,
 // the environment and the engine arrive as parameters.
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine, sync syncer.Mutagen) exitcode.Code {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine, sync syncer.Mutagen, browser func(context.Context, string) error) exitcode.Code {
 	p := ui.NewPrinter(stdout, stderr, lookupEnv)
-	root := newRootCommand(p, eng, sync, stdin, lookupEnv)
+	root := newRootCommand(p, eng, sync, browser, stdin, lookupEnv)
 	root.SetArgs(args)
 
 	// Ctrl-C cancels the context rather than killing the process, so followed

@@ -27,6 +27,10 @@ type Fake struct {
 
 	Calls   []string
 	Created []syncer.Session
+	// Flushed names each session flushed, in order.
+	Flushed []string
+	// DaemonStopped records the one thing that outlives every session.
+	DaemonStopped bool
 
 	// sessions maps name to paused. Pause and resume are modelled together
 	// because tamp pauses on stop and resumes on start.
@@ -115,6 +119,49 @@ func (f *Fake) Terminate(_ context.Context, name string) error {
 		return f.SessionErr
 	}
 	delete(f.sessions, name)
+	return nil
+}
+
+func (f *Fake) Flush(_ context.Context, name string) error {
+	f.Calls = append(f.Calls, "Flush")
+	if f.SessionErr != nil {
+		return f.SessionErr
+	}
+	if _, held := f.sessions[name]; !held {
+		return exitcode.New(exitcode.CodeFailed,
+			"mutagen sync flush "+name+" failed: no matching sessions exist",
+			"tamp manages Mutagen itself — 'tamp doctor' reports what it found")
+	}
+	f.Flushed = append(f.Flushed, name)
+	return nil
+}
+
+// Report stands in for Mutagen's own listing, which tamp quotes rather than
+// parses — so the fake's answer only has to be recognizably Mutagen's.
+func (f *Fake) Report(_ context.Context, name string) (string, error) {
+	f.Calls = append(f.Calls, "Report")
+	if f.SessionErr != nil {
+		return "", f.SessionErr
+	}
+	paused, held := f.sessions[name]
+	if !held {
+		return "", exitcode.New(exitcode.CodeFailed,
+			"mutagen sync list "+name+" failed: no matching sessions exist",
+			"tamp manages Mutagen itself — 'tamp doctor' reports what it found")
+	}
+	status := "Watching for changes"
+	if paused {
+		status = "Paused"
+	}
+	return fmt.Sprintf("Name: %s\nStatus: %s\nConflicts: none\n", name, status), nil
+}
+
+func (f *Fake) StopDaemon(context.Context) error {
+	f.Calls = append(f.Calls, "StopDaemon")
+	if f.SessionErr != nil {
+		return f.SessionErr
+	}
+	f.DaemonStopped = true
 	return nil
 }
 

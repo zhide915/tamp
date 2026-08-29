@@ -160,6 +160,121 @@ func TestCreateWarnsAboutASpaceInThePath(t *testing.T) {
 	r.assertStderrContains(t, "space in it")
 }
 
+// --- the sync subcommands ---------------------------------------------------
+
+func TestSyncStatusReportsTheSessionsEndpointsAndMutagensOwnAccount(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "mutagen")
+
+	r := c.run(t, "sync", "status", "demo")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStdoutContains(t,
+		c.session(t, "demo"),
+		c.path("demo", syncer.AppsDirName), // the host endpoint
+		"docker://",                        // the container endpoint
+		syncer.Ignores[0],
+		"never forced",
+		// Quoted from Mutagen rather than invented by tamp.
+		"Conflicts:",
+	)
+}
+
+// Every subcommand answers on Linux too: having no session is a mode.
+func TestEverySyncSubcommandReportsTheBindModeAndExitsZero(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "bind")
+
+	for _, sub := range []string{"status", "flush", "reset"} {
+		r := c.run(t, "sync", sub, "demo")
+
+		r.assertCode(t, exitcode.CodeOK)
+		r.assertStdoutContains(t, "mode: bind — sync not applicable")
+	}
+	if len(c.sync.Calls) != 0 {
+		t.Errorf("tamp went to Mutagen for a bind-mounted environment: %v", c.sync.Calls)
+	}
+}
+
+func TestSyncFlushForcesAPassAndRecordsWhen(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "mutagen")
+
+	r := c.run(t, "sync", "flush", "demo")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if got := c.sync.Flushed; len(got) != 1 || got[0] != c.session(t, "demo") {
+		t.Fatalf("tamp flushed %v, want the environment's own session", got)
+	}
+	if status := c.run(t, "sync", "status", "demo"); strings.Contains(status.stdout, "never forced") {
+		t.Errorf("the status still reports no forced flush:\n%s", status.stdout)
+	}
+}
+
+// The documented recovery after a large host-side change: the old session is
+// past settling, so it goes and a fresh one mirrors the tree again.
+func TestSyncResetTerminatesTheSessionAndCreatesItAgain(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "mutagen")
+
+	r := c.run(t, "sync", "reset", "demo")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if len(c.sync.Created) != 2 {
+		t.Fatalf("tamp created %d sessions, want the create's and the reset's", len(c.sync.Created))
+	}
+	if paused, held := c.sync.Paused(c.session(t, "demo")); !held || paused {
+		t.Errorf("after reset: held=%v paused=%v, want a running session", held, paused)
+	}
+	// A session recreated against a stale endpoint would sync nothing.
+	if made := c.sync.Created[1]; made.Alpha != c.path("demo", syncer.AppsDirName) {
+		t.Errorf("the new session's alpha = %q, want the host's apps directory", made.Alpha)
+	}
+}
+
+// Stopping an environment pauses its session rather than forgetting it, so
+// Mutagen still holds one — and a flush to a container that is down is not a
+// flush.
+func TestSyncFlushRefusesAStoppedEnvironment(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "mutagen")
+	c.run(t, "stop", "demo").assertCode(t, exitcode.CodeOK)
+
+	r := c.run(t, "sync", "flush", "demo")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertStderrContains(t, "tamp start demo")
+	if len(c.sync.Flushed) != 0 {
+		t.Errorf("tamp flushed %v against a stopped environment", c.sync.Flushed)
+	}
+}
+
+func TestSyncFlushRefusesWhenMutagenHoldsNoSession(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--sync", "mutagen")
+	// As the user's own 'mutagen sync terminate' would leave it.
+	if err := c.sync.Terminate(t.Context(), c.session(t, "demo")); err != nil {
+		t.Fatal(err)
+	}
+
+	r := c.run(t, "sync", "flush", "demo")
+
+	r.assertCode(t, exitcode.CodeNotFound)
+	r.assertStderrContains(t, "tamp start demo")
+}
+
+// The daemon outlives every session, which is the whole reason to have this.
+func TestSyncStopStopsTheMutagenDaemon(t *testing.T) {
+	c := sandbox(t)
+
+	r := c.run(t, "sync", "stop")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if !c.sync.DaemonStopped {
+		t.Error("tamp did not stop the daemon")
+	}
+}
+
 // On a platform needing no Mutagen, the honest answer is the bind mount.
 func TestDoctorReportsTheStateOfTheManagedMutagen(t *testing.T) {
 	c := sandbox(t)

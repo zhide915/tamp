@@ -183,6 +183,19 @@ reason tamp refuses `bench update`; pull on the host, then:
 tamp exec erp15 -- bash -c "bench setup requirements && bench build && bench migrate"
 ```
 
+`tamp sync` reports on and repairs the session:
+
+```sh
+tamp sync status erp15   # endpoints, ignore list, and Mutagen's own account
+tamp sync flush erp15    # force a full pass and wait for it
+tamp sync reset erp15    # rebuild the session after a big host-side change
+tamp sync stop           # stop the Mutagen daemon tamp runs
+```
+
+`reset` is the recovery when a large host-side change — a branch checkout,
+say — leaves the session with more to reconcile than it settles. On Linux
+every subcommand reports `mode: bind — sync not applicable` and exits 0.
+
 Keep environments out of OneDrive, Dropbox, and Google Drive folders, and out
 of paths with spaces. tamp warns when you create one there.
 
@@ -190,6 +203,7 @@ of paths with spaces. tamp warns when you create one there.
 
 ```sh
 tamp list                    # every environment, its versions, state, and URLs
+tamp open erp15              # open its first site in the browser; 'mail' opens Mailpit
 tamp stop erp15              # stop containers; data always survives
 tamp start erp15             # start again, regenerating files from tamp.toml
 tamp logs erp15 web -f       # follow one service: web, socketio, watch,

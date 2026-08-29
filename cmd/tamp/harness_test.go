@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,12 +22,18 @@ import (
 type cli struct {
 	home string
 	dir  string
-	// engine and sync are tamp's only two fake points, both recording.
-	// They start healthy; failure tests replace them.
+	// engine and sync are tamp's two fake points, both recording. They start
+	// healthy; failure tests replace them. The browser below is a seam of the
+	// same kind: recorded, never run.
 	engine *enginetest.Fake
 	sync   *synctest.Fake
 	// stdin defaults to an exhausted pipe: no terminal, nothing to read.
 	stdin io.Reader
+	// opened records the URLs handed to the browser. Real in a test would
+	// open a window on the developer's screen.
+	opened []string
+	// openErr fails the browser launch, for the machine with none.
+	openErr error
 }
 
 func sandbox(t *testing.T) *cli {
@@ -68,7 +75,7 @@ type result struct {
 func (c *cli) run(t *testing.T, args ...string) result {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := run(args, c.stdin, &stdout, &stderr, os.LookupEnv, c.engine, c.sync)
+	code := run(args, c.stdin, &stdout, &stderr, os.LookupEnv, c.engine, c.sync, c.open)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 
@@ -95,6 +102,15 @@ func (r result) assertStderrContains(t *testing.T, want ...string) {
 			t.Errorf("stderr does not contain %q\nstderr: %s", w, r.stderr)
 		}
 	}
+}
+
+// open stands in for the machine's browser, recording what it was handed.
+func (c *cli) open(_ context.Context, url string) error {
+	if c.openErr != nil {
+		return c.openErr
+	}
+	c.opened = append(c.opened, url)
+	return nil
 }
 
 // mark is where the recorded commands stand now, so a later assertion can ask

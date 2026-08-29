@@ -152,6 +152,34 @@ for ($i = 0; $i -lt 30; $i++) {
 Record "a file created in the container reaches the host" $synced
 & $Tamp exec $envName -- rm -f apps/frappe/tamp-acceptance-marker
 
+# --- sync status, flush and reset -------------------------------------------
+Write-Host "`n=== sync subcommands" -ForegroundColor Cyan
+$status = & $Tamp sync status $envName
+Record "sync status reports the session and its endpoints" `
+    (($status -join "`n") -match "docker://")
+
+& $Tamp sync flush $envName
+Record "sync flush succeeds" ($LASTEXITCODE -eq 0)
+
+# The documented recovery: a large host-side change leaves the session with
+# more to reconcile than it can settle, and reset rebuilds it.
+Write-Host "Scrambling the host side: deleting frappe's js tree and checking it out again"
+$frappeRepo = Join-Path $WorkDir "$envName\apps\frappe"
+Remove-Item -Recurse -Force (Join-Path $frappeRepo "frappe\public\js")
+& git -C $frappeRepo checkout -- .
+& $Tamp sync reset $envName
+Record "sync reset succeeds" ($LASTEXITCODE -eq 0)
+
+& $Tamp exec $envName -- touch apps/frappe/tamp-reset-marker
+$resetMarker = Join-Path $WorkDir "$envName\apps\frappe\tamp-reset-marker"
+$resumed = $false
+for ($i = 0; $i -lt 30; $i++) {
+    if (Test-Path $resetMarker) { $resumed = $true; break }
+    Start-Sleep -Seconds 1
+}
+Record "syncing resumes after the reset" $resumed
+& $Tamp exec $envName -- rm -f apps/frappe/tamp-reset-marker
+
 # --- Snapshots --------------------------------------------------------------
 Write-Host "`n=== snapshot create / restore" -ForegroundColor Cyan
 & $Tamp snapshot create $envName --name acceptance
