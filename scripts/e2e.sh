@@ -57,10 +57,10 @@ say "create fifteen — version-15, with erpnext pinned to its branch"
 say "a bare site, to measure what every site creation pays before any app work"
 # bench new-site dominates a small site creation and both paths below pay it,
 # so the seed's promise is only about what is left once it is subtracted.
-base_start=$(date +%s)
+bare_start=$(date +%s)
 "$TAMP" site new fifteen bare.localhost --admin-password admin
-base_seconds=$(( $(date +%s) - base_start ))
-echo "a bare site took ${base_seconds}s"
+bare_seconds=$(( $(date +%s) - bare_start ))
+echo "a bare site took ${bare_seconds}s"
 
 say "site on fifteen, with erpnext installed on it"
 install_start=$(date +%s)
@@ -81,11 +81,10 @@ seed_start=$(date +%s)
 seed_seconds=$(( $(date +%s) - seed_start ))
 grep -q "seed, restored and migrated" "$WORK/seeded.log"   || fail "site new --seed did not say it restored a seed: $(cat "$WORK/seeded.log")"
 
-# Both numbers carry the bare site's cost, which no seed can remove; what the
-# seed replaces is what is left. Compared at a third, the promise's generous
-# form, and a regression to the install path fails it outright.
-install_work=$(( install_seconds - base_seconds ))
-seed_work=$(( seed_seconds - base_seconds ))
+# Both numbers carry the bare site's cost, which no seed can remove; the seed
+# is compared only on what is left, at a third — the promise's generous form.
+install_work=$(( install_seconds - bare_seconds ))
+seed_work=$(( seed_seconds - bare_seconds ))
 # A seed can measure faster than a bare site through nothing but noise; one
 # second keeps the comparison meaningful without inventing a saving.
 if [ "$seed_work" -lt 1 ]; then

@@ -11,9 +11,10 @@ Frappe-side workspace inside one).
 - `cmd/tamp` — thin cobra layer. Commands translate flags into one call on
   `env.Manager` and nothing else; logic added here belongs in `internal/`.
 - `internal/env` — the core: create/start/stop/rm, sites, apps, init.
-- `internal/engine` — the Docker boundary, and the **only fake point**.
-  Tests use `enginetest.Fake`, a recording fake; assert on what tamp asked
-  the engine to do, never by mocking anything else.
+- `internal/engine` — the Docker boundary, faked in tests by
+  `enginetest.Fake`, a recording fake; assert on what tamp asked the engine
+  to do. The Mutagen boundary has its own fake, `synctest.Fake` in
+  `internal/syncer` — nothing else is ever mocked.
 - `internal/gitcred` — the host git credential protocol (the credential
   bridge's host half, ADR 0002). A real boundary, never faked.
 - `internal/hosts` — the OS hosts file: the block tamp owns, the in-place

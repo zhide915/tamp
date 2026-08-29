@@ -62,6 +62,13 @@ func (m *Manager) HostsSync(ctx context.Context) error {
 
 	current, err := hosts.Read(m.HostsFile)
 	if err != nil {
+		// Elevating cannot help here: staging the write needs the current
+		// content, so only a shell that can read the file can sync it.
+		if hosts.Denied(err) && !m.HostsRedirected {
+			return exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("this machine's %s is not readable without elevated rights", m.HostsFile),
+				"run 'tamp hosts sync' from an elevated shell")
+		}
 		return err
 	}
 	desired := hosts.Reconcile(current, wanted)
@@ -183,15 +190,16 @@ const (
 	hostEntryPending   = "pending"
 )
 
-// hostsEntries reads tamp's block, or reports none when the file cannot be
-// read — an unreadable hosts file must not stop a site listing.
+// hostsEntries reads every loopback name the hosts file carries — a line the
+// user keeps outside tamp's block resolves too — or reports none when the
+// file cannot be read: an unreadable hosts file must not stop a site listing.
 func (m *Manager) hostsEntries() []string {
 	body, err := hosts.Read(m.HostsFile)
 	if err != nil {
 		m.Out.Warn(err.Error())
 		return nil
 	}
-	return hosts.Entries(body)
+	return hosts.Resolved(body)
 }
 
 func hostEntryState(host string, entries []string) string {

@@ -120,6 +120,11 @@ func (m *Manager) SnapshotCreate(ctx context.Context, req SnapshotCreateRequest)
 	}
 
 	bench := e.bench(m.Engine, m.Out.Stream())
+	// The backup is a bench command, and bench runs from the virtualenv an
+	// earlier deps clean may have emptied.
+	if err := m.requireDeps(ctx, e, bench, "a snapshot"); err != nil {
+		return err
+	}
 	// A staging area left behind by an interrupted run would otherwise
 	// travel into this bundle.
 	if err := bench.ClearStage(ctx); err != nil {
@@ -329,7 +334,8 @@ func humanSize(n int64) string {
 		return fmt.Sprintf("%d B", n)
 	}
 	div, exp := int64(unit), 0
-	for size := n / unit; size >= unit; size /= unit {
+	// Capped at TiB: past the last letter the loop would index off the end.
+	for size := n / unit; size >= unit && exp < 3; size /= unit {
 		div *= unit
 		exp++
 	}

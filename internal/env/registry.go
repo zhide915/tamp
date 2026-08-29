@@ -229,6 +229,36 @@ func RecordSites(home string, name Name, hosts []string) ([]HostClaim, error) {
 	return skipped, err
 }
 
+// ClaimHosts records these hostnames against an environment in one ledger
+// write, all or nothing — a restore must not end up holding half its
+// addresses. Refused claims are returned with nothing written.
+func ClaimHosts(home string, name Name, hosts []string) ([]HostClaim, error) {
+	var clashes []HostClaim
+	err := updateSites(home, name, func(reg Registry, sites []string) ([]string, error) {
+		for _, host := range hosts {
+			if c, taken := claimant(reg, string(name), host); taken {
+				clashes = append(clashes, c)
+			}
+		}
+		if len(clashes) > 0 {
+			return nil, errHostsTaken
+		}
+		for _, host := range hosts {
+			if !slices.Contains(sites, host) {
+				sites = append(sites, host)
+			}
+		}
+		return sites, nil
+	})
+	if errors.Is(err, errHostsTaken) {
+		return clashes, nil
+	}
+	return nil, err
+}
+
+// errHostsTaken aborts a ClaimHosts write; the clashes carry the story.
+var errHostsTaken = errors.New("hostnames already claimed")
+
 // HostConflicts reports which of these hostnames the machine has already
 // given to something other than self. A restore asks before it touches
 // anything: recreating a site whose hostname now belongs elsewhere would put

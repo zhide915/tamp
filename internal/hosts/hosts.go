@@ -82,9 +82,12 @@ func Read(path string) (string, error) {
 		return "", nil
 	}
 	if err != nil {
-		return "", exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("cannot read %s: %v", path, err),
-			"check that the file exists and is readable")
+		return "", &fileFailure{
+			reported: exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("cannot read %s: %v", path, err),
+				"check that the file exists and is readable"),
+			cause: err,
+		}
 	}
 	return string(body), nil
 }
@@ -145,6 +148,21 @@ func Reconcile(existing string, entries []string) string {
 		return before + after
 	}
 	return before + block(entries, eol) + after
+}
+
+// Resolved lists every hostname the file maps to loopback, sorted, wherever
+// the line lives — an entry the user keeps outside tamp's block resolves just
+// as well, and "does it resolve" is a different question from "is it in the
+// block".
+func Resolved(existing string) []string {
+	var got []string
+	for _, line := range strings.Split(existing, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && (fields[0] == Loopback || fields[0] == "::1") {
+			got = append(got, fields[1:]...)
+		}
+	}
+	return normalize(got)
 }
 
 // Entries lists the hostnames tamp's block currently carries, sorted. A file

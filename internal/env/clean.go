@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// sourceUntouched closes every clean and rebuild. Deliberately not "tamp never
-// deletes apps/": a deps clean takes the node_modules and __pycache__ that sit
-// inside it. Nothing the user wrote ever goes.
+// sourceUntouched is deliberately not "tamp never deletes apps/": a deps
+// clean takes the node_modules and __pycache__ that sit inside it.
 const sourceUntouched = "your source code is untouched — tamp deletes nothing you wrote"
 
 // keptSource is the line every destructive preview ends on: the one layer no
@@ -58,9 +58,8 @@ func (r CleanRequest) layers() []string {
 // than table order: dropping a site is a bench command, and a wiped deps
 // layer has no bench to run it with.
 func (m *Manager) Clean(ctx context.Context, req CleanRequest) error {
-	// The layer table is the answer to `tamp clean` with no layer, and it is
-	// true without an environment — the storage model is tamp's, not one
-	// environment's.
+	// The layer table is true without an environment — the storage model is
+	// tamp's, not one environment's — so no name is resolved for it.
 	if req.namesNoLayer() {
 		m.printLayers()
 		m.Out.Hint("name a layer to wipe it: tamp clean --deps")
@@ -92,6 +91,15 @@ func (m *Manager) Clean(ctx context.Context, req CleanRequest) error {
 	}
 
 	bench := e.bench(m.Engine, m.Out.Stream())
+
+	// Dropping a site is a bench command, and bench runs from the virtualenv
+	// an earlier deps clean may have emptied.
+	if req.data() && len(hosts) > 0 {
+		if err := m.requireDeps(ctx, e, bench, "cleaning the data layer"); err != nil {
+			return err
+		}
+	}
+
 	steps := m.Out.Steps(req.steps(len(hosts)))
 
 	if req.data() {
@@ -125,9 +133,8 @@ func (m *Manager) Clean(ctx context.Context, req CleanRequest) error {
 		}
 	}
 	if req.deps() {
-		// The processes run from the virtualenv and honcho exits with them,
-		// taking the container down. Without a Procfile the container idles
-		// instead, so 'tamp rebuild' still has somewhere to run.
+		// honcho exits with the virtualenv's processes, taking the container
+		// down; removing the Procfile first leaves it idling for rebuild.
 		steps.Step("stopping the bench processes — they run from the virtualenv")
 		if err := bench.RemoveProcfile(ctx); err != nil {
 			return err
@@ -148,9 +155,20 @@ func (m *Manager) Clean(ctx context.Context, req CleanRequest) error {
 	return nil
 }
 
-// steps counts one per site plus one per layer; the archive sweep closes the
-// data layer, and the deps layer costs an extra one for stopping the
-// processes that live in it.
+// requireDeps refuses bench choreography after a deps clean: bench runs from
+// the virtualenv, and the raw mid-flow failure would say nothing useful.
+func (m *Manager) requireDeps(ctx context.Context, e *Environment, bench *frappe.Bench, what string) error {
+	has, err := bench.HasDeps(ctx)
+	if err != nil || has {
+		return err
+	}
+	return exitcode.New(exitcode.CodeFailed,
+		fmt.Sprintf("%s's deps layer is empty, and %s runs through bench, which lives there", e.Name(), what),
+		fmt.Sprintf("restore it first: tamp rebuild %s", e.Name()))
+}
+
+// steps counts the numbered output: each data site plus its archive sweep,
+// one for assets, two for deps — stopping its processes, then wiping.
 func (r CleanRequest) steps(sites int) int {
 	steps := 0
 	if r.data() {
@@ -263,9 +281,8 @@ func (m *Manager) Rebuild(ctx context.Context, name string) error {
 		return err
 	}
 
-	// A deps clean took the Procfile away to keep the container up, so
-	// writing it back is what makes the bench serve again; elsewhere this is
-	// a restart, which a rebuild wants anyway — the code just changed.
+	// A deps clean took the Procfile away; writing it back is what makes the
+	// bench serve again, and elsewhere the restart is wanted anyway.
 	steps.Step("starting the bench processes")
 	if err := bench.WriteProcfile(ctx); err != nil {
 		return err

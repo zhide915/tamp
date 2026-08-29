@@ -10,6 +10,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/ui"
 )
 
 // SnapshotRestoreRequest is what `tamp snapshot restore` was asked for.
@@ -41,16 +42,81 @@ func (m *Manager) SnapshotRestore(ctx context.Context, req SnapshotRestoreReques
 		return err
 	}
 	bench := e.bench(m.Engine, m.Out.Stream())
+	// The restore is bench choreography, and bench runs from the virtualenv
+	// an earlier deps clean may have emptied.
+	if err := m.requireDeps(ctx, e, bench, "a restore"); err != nil {
+		return err
+	}
 	overwritten, err := m.preflight(ctx, e, bench, manifest, present, req.Yes)
 	if err != nil {
 		return err
 	}
 
+	// Claimed under the machine lock: the preflight's lockless answer can go
+	// stale during a long restore, and a hostname claimed twice would put one
+	// address in the Caddyfile twice.
+	clashes, err := ClaimHosts(m.Home, e.Name(), manifest.hosts())
+	if err != nil {
+		return err
+	}
+	if len(clashes) > 0 {
+		return m.hostsGivenAway(manifest, clashes)
+	}
+
 	steps := m.Out.Steps(len(manifest.Sites) + 2)
+	if err := m.restoreSites(ctx, e, bench, manifest, present, steps); err != nil {
+		// The bench is the authority on what the failure left behind;
+		// re-asking reconciles the ledger's claims with the sites that exist.
+		if _, _, rerr := m.sites(ctx, e); rerr != nil {
+			m.Out.Warn(fmt.Sprintf("could not re-check %s's sites after the failure: %v", e.Name(), rerr))
+		}
+		return err
+	}
+
+	// Re-asked because the bench is the authority: recording its site list is
+	// what gives the restored sites their routes back.
+	steps.Step("routing the restored sites")
+	if _, _, err := m.sites(ctx, e); err != nil {
+		return err
+	}
+	status, err := m.refreshRoutes(ctx)
+	if err != nil {
+		return err
+	}
+
+	m.Out.OK(fmt.Sprintf("restored %s into %s: %d site(s)", manifest.Name, e.Name(), len(manifest.Sites)))
+	for _, site := range manifest.Sites {
+		m.Out.Note("site: " + status.URL(site.Host))
+	}
+	m.Out.Note("each site's Administrator password is the one the snapshot was taken with")
+	m.notePendingHostsEntries(manifest.hosts())
+	if len(overwritten) > 0 {
+		m.Out.Note("the data that was there for " + strings.Join(overwritten, ", ") + " is gone")
+	}
+	return nil
+}
+
+// restoreSites unpacks the bundle and brings every site back, recreating the
+// ones that are gone.
+func (m *Manager) restoreSites(
+	ctx context.Context,
+	e *Environment,
+	bench *frappe.Bench,
+	manifest snapshotManifest,
+	present []string,
+	steps *ui.Stepper,
+) error {
 	steps.Step("unpacking " + manifest.Name + " into " + e.Name().String())
 	if err := m.unpackSnapshot(ctx, e, bench, manifest); err != nil {
 		return err
 	}
+	// Deferred from here on: what the staging area holds now is a whole copy
+	// of every site, and every path out must drop it.
+	defer func() {
+		if err := bench.ClearStage(ctx); err != nil {
+			m.Out.Warn(fmt.Sprintf("could not clear the staging area after the restore: %v", err))
+		}
+	}()
 
 	password, err := ReadDBRootPassword(e.Dir)
 	if err != nil {
@@ -75,30 +141,6 @@ func (m *Manager) SnapshotRestore(ctx context.Context, req SnapshotRestoreReques
 		if err := bench.Migrate(ctx, site.Host); err != nil {
 			return err
 		}
-	}
-	if err := bench.ClearStage(ctx); err != nil {
-		return err
-	}
-
-	// Re-asked because the bench is the authority: recording its site list is
-	// what gives the restored sites their routes back.
-	steps.Step("routing the restored sites")
-	if _, _, err := m.sites(ctx, e); err != nil {
-		return err
-	}
-	status, err := m.refreshRoutes(ctx)
-	if err != nil {
-		return err
-	}
-
-	m.Out.OK(fmt.Sprintf("restored %s into %s: %d site(s)", manifest.Name, e.Name(), len(manifest.Sites)))
-	for _, site := range manifest.Sites {
-		m.Out.Note("site: " + status.URL(site.Host))
-	}
-	m.Out.Note("each site's Administrator password is the one the snapshot was taken with")
-	m.notePendingHostsEntries(manifest.hosts())
-	if len(overwritten) > 0 {
-		m.Out.Note("the data that was there for " + strings.Join(overwritten, ", ") + " is gone")
 	}
 	return nil
 }
@@ -201,7 +243,10 @@ func (m *Manager) requireFreeHostnames(e *Environment, manifest snapshotManifest
 	if len(clashes) == 0 {
 		return nil
 	}
+	return m.hostsGivenAway(manifest, clashes)
+}
 
+func (m *Manager) hostsGivenAway(manifest snapshotManifest, clashes []HostClaim) error {
 	m.Out.Print(fmt.Sprintf("%s cannot take back, because this machine gave the name away:", manifest.Name))
 	for _, c := range clashes {
 		m.Out.Print(fmt.Sprintf("  %s  now %s of %q", c.Host, c.What, c.Owner))

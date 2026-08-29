@@ -17,7 +17,7 @@ import (
 // seedSchema versions the manifest. A manifest tamp cannot read is a seed it
 // cannot vouch for, so it is taken again rather than reinterpreted — the
 // template store's rule, because a seed is caching too.
-const seedSchema = 1
+const seedSchema = 2
 
 // seedManifest is what tamp records beside a stored seed: enough to tell
 // that the backup really is this key's, whatever the digest says.
@@ -28,23 +28,37 @@ type seedManifest struct {
 	Created time.Time     `json:"created"`
 }
 
-// seedKey names a seed's files. One per Frappe version and app set: those
-// two decide everything a freshly created site holds, and the apps are
-// digested because a filename cannot carry a list.
-func seedKey(v FrappeVersion, apps []string) string {
-	digest := sha256.Sum256([]byte(strings.Join(appSet(apps), "\n")))
+// seedKey names a seed's files. One per Frappe version and app identity:
+// those two decide everything a freshly created site holds, and the identity
+// is digested because a filename cannot carry a list.
+func seedKey(v FrappeVersion, identity []string) string {
+	digest := sha256.Sum256([]byte(strings.Join(identity, "\n")))
 	return string(v) + "-" + hex.EncodeToString(digest[:])[:12]
 }
 
-// appSet is the app list as the key sees it: order and repetition are how
+// seedIdentity is the app set as the key sees it: each name joined with the
+// source and branch the environment records for it, so a same-named app from
+// another repository or branch never matches. Order and repetition are how
 // the user typed --apps, not what the site ends up with.
-func appSet(apps []string) []string {
-	set := slices.Clone(apps)
-	slices.Sort(set)
-	return slices.Compact(set)
+func seedIdentity(e *Environment, apps []string) []string {
+	ids := slices.Clone(apps)
+	for i, name := range ids {
+		for _, app := range e.Config.Frappe.Apps {
+			if app.Name == name {
+				ids[i] = name + "=" + app.Source + ":" + app.Branch
+				break
+			}
+		}
+	}
+	slices.Sort(ids)
+	return slices.Compact(ids)
 }
 
-func appSetText(apps []string) string { return strings.Join(appSet(apps), ", ") }
+func appSetText(apps []string) string {
+	set := slices.Clone(apps)
+	slices.Sort(set)
+	return strings.Join(slices.Compact(set), ", ")
+}
 
 // seedPlan is what one site creation does about the seed store, settled
 // before anything is created so --seed with no seed costs nothing.
@@ -72,8 +86,9 @@ func (m *Manager) planSeed(ctx context.Context, e *Environment, bench *frappe.Be
 		return seedPlan{}, nil
 	}
 
-	key := seedKey(e.Config.Frappe.Version, apps)
-	held, err := m.seedHeld(ctx, bench, key, e.Config.Frappe.Version, apps)
+	identity := seedIdentity(e, apps)
+	key := seedKey(e.Config.Frappe.Version, identity)
+	held, err := m.seedHeld(ctx, bench, key, e.Config.Frappe.Version, identity)
 	if err != nil {
 		return seedPlan{}, err
 	}
@@ -102,7 +117,7 @@ func (p seedPlan) steps(apps []string) int {
 // understood is an empty one, and the creation that follows refills it — but
 // a container tamp cannot reach is an error: answering "no seed" there would
 // refuse a --seed with a sentence about the cache that is not true.
-func (m *Manager) seedHeld(ctx context.Context, bench *frappe.Bench, key string, v FrappeVersion, apps []string) (bool, error) {
+func (m *Manager) seedHeld(ctx context.Context, bench *frappe.Bench, key string, v FrappeVersion, identity []string) (bool, error) {
 	held, err := bench.HasSeed(ctx, key)
 	if err != nil || !held {
 		return false, err
@@ -118,7 +133,7 @@ func (m *Manager) seedHeld(ctx context.Context, bench *frappe.Bench, key string,
 	// The digest is short enough to collide, and the key format may change
 	// between releases; the manifest is what actually settles the question.
 	return stored.Schema == seedSchema && stored.Frappe == v &&
-		slices.Equal(stored.Apps, appSet(apps)), nil
+		slices.Equal(stored.Apps, identity), nil
 }
 
 // restoreSeed brings a stored seed onto a site that already exists, in the
@@ -128,6 +143,13 @@ func (m *Manager) restoreSeed(ctx context.Context, bench *frappe.Bench, key, hos
 	if err := bench.RestoreSeed(ctx, key, host); err != nil {
 		return err
 	}
+	// Deferred from here on: what the staging area holds now is a whole copy
+	// of the site, and every path out of this function must drop it.
+	defer func() {
+		if err := bench.ClearStage(ctx); err != nil {
+			m.Out.Warn(fmt.Sprintf("could not clear the staging area after the seed restore: %v", err))
+		}
+	}()
 	if err := bench.RestoreSite(ctx, host, dbPassword); err != nil {
 		return err
 	}
@@ -136,10 +158,7 @@ func (m *Manager) restoreSeed(ctx context.Context, bench *frappe.Bench, key, hos
 	if err := bench.Migrate(ctx, host); err != nil {
 		return err
 	}
-	if err := bench.SetAdminPassword(ctx, host, admin); err != nil {
-		return err
-	}
-	return bench.ClearStage(ctx)
+	return bench.SetAdminPassword(ctx, host, admin)
 }
 
 // storeSeed caches the site just created. Its failures are warnings: the
@@ -174,7 +193,7 @@ func (m *Manager) storeSeed(ctx context.Context, e *Environment, bench *frappe.B
 	body, err := json.MarshalIndent(seedManifest{
 		Schema:  seedSchema,
 		Frappe:  e.Config.Frappe.Version,
-		Apps:    appSet(apps),
+		Apps:    seedIdentity(e, apps),
 		Created: time.Now(),
 	}, "", "  ")
 	if err != nil {
@@ -184,10 +203,6 @@ func (m *Manager) storeSeed(ctx context.Context, e *Environment, bench *frappe.B
 	// After the tarball: a manifest must never describe a seed that is not
 	// there.
 	if err := bench.WriteSeedManifest(ctx, key, append(body, '\n')); err != nil {
-		warn(err)
-	}
-	// A staging area left behind holds a whole copy of the site.
-	if err := bench.ClearStage(ctx); err != nil {
 		warn(err)
 	}
 }

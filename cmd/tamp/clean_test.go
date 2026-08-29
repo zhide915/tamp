@@ -160,10 +160,26 @@ func TestCleanAllDropsSitesBeforeItWipesTheVirtualenv(t *testing.T) {
 
 	c.run(t, "clean", "demo", "--all", "--yes").assertCode(t, exitcode.CodeOK)
 
-	drop, wipe := c.ranAtSince(t, mark, "bench drop-site"), c.ranAtSince(t, mark, frappe.EnvDir)
+	// "-mindepth 1" names the wipe itself — the deps probe mentions the
+	// virtualenv path too, without touching it.
+	drop, wipe := c.ranAtSince(t, mark, "bench drop-site"), c.ranAtSince(t, mark, "-mindepth 1")
 	if drop > wipe {
 		t.Errorf("clean --all wiped the virtualenv (command %d) before dropping the site (command %d)", wipe, drop)
 	}
+}
+
+// A deps clean empties the virtualenv bench itself runs from; the data layer
+// must refuse with the way out rather than die mid-drop.
+func TestCleanDataAfterADepsCleanRefusesUntilARebuild(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.siteNew(t, "demo", "demo.localhost", "--admin-password", "secret")
+	c.run(t, "clean", "demo", "--deps").assertCode(t, exitcode.CodeOK)
+
+	r := c.run(t, "clean", "demo", "--data", "--yes")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertStderrContains(t, "tamp rebuild demo")
 }
 
 // The bench's processes run from the virtualenv, and honcho exits with them,

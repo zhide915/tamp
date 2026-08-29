@@ -218,8 +218,7 @@ func (b *Bench) Configure(ctx context.Context) error {
 }
 
 // WriteProcfile puts the process list in place. The container reads it at
-// boot to decide whether it has a bench to run, so writing it and restarting
-// is how the bench's processes are started.
+// boot, so writing it and restarting is how the bench's processes start.
 func (b *Bench) WriteProcfile(ctx context.Context) error {
 	return b.Engine.WriteFile(ctx, b.Container, engine.FileSpec{
 		Path: ProcfilePath,
@@ -230,10 +229,8 @@ func (b *Bench) WriteProcfile(ctx context.Context) error {
 	})
 }
 
-// RemoveProcfile takes the process list away, so the next boot idles instead
-// of starting honcho. It is the only way to keep the container up while the
-// virtualenv its processes run from is being replaced: honcho exits when its
-// processes die, and the container exits with it.
+// RemoveProcfile takes the process list away: the next boot idles instead of
+// starting honcho, keeping the container up while the virtualenv is replaced.
 func (b *Bench) RemoveProcfile(ctx context.Context) error {
 	return b.run(ctx, removeProcfileScript, ProcfilePath)
 }

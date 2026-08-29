@@ -38,7 +38,9 @@ func (m *Manager) newBridge() *bridge {
 // preflightApps proves every source that will be fetched answers from inside
 // the container, before the expensive bench build; a source that looks
 // private goes over the bridge and is retried with the credential injected.
-func (m *Manager) preflightApps(ctx context.Context, bench *frappe.Bench, apps []App, log *createLog) (*bridge, error) {
+// An app already on the bench, or in the host tree a re-adoption's sync
+// session will mirror in, is never fetched — so it is not probed either.
+func (m *Manager) preflightApps(ctx context.Context, e *Environment, bench *frappe.Bench, apps []App, log *createLog) (*bridge, error) {
 	br := m.newBridge()
 	if len(apps) == 0 {
 		return br, nil
@@ -48,7 +50,7 @@ func (m *Manager) preflightApps(ctx context.Context, bench *frappe.Bench, apps [
 		return nil, err
 	}
 	for _, app := range apps {
-		if slices.Contains(onBench, app.Name) {
+		if slices.Contains(onBench, app.Name) || hasHostApp(e.Dir, app.Name) {
 			continue
 		}
 		if err := m.preflightSource(ctx, bench, app.Source, br, log); err != nil {

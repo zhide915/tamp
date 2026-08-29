@@ -129,8 +129,10 @@ func isRepoURL(repo string) bool {
 // scp form git@host:path — and translates it to the https URL the refusal
 // suggests. The ssh port is dropped: it would be wrong for https.
 func httpsFormOfSSH(repo string) (https string, ssh bool) {
+	lower := strings.ToLower(repo)
 	for _, scheme := range []string{"ssh://", "git+ssh://", "ssh+git://"} {
-		if rest, ok := strings.CutPrefix(repo, scheme); ok {
+		if strings.HasPrefix(lower, scheme) {
+			rest := repo[len(scheme):]
 			if at := strings.Index(rest, "@"); at >= 0 {
 				rest = rest[at+1:]
 			}
@@ -149,21 +151,18 @@ func httpsFormOfSSH(repo string) (https string, ssh bool) {
 	return "", false
 }
 
-// redactedURL strips everything before the authority's last "@" textually —
-// parsing may have failed, so only host and path may be echoed.
+// redactedURL strips everything before the last "@" textually — parsing may
+// have failed, so the authority's true end is unknown and a secret may hold
+// any character; over-cutting is the safe direction.
 func redactedURL(repo string) string {
 	scheme, rest := "", repo
 	if i := strings.Index(repo, "://"); i >= 0 {
 		scheme, rest = repo[:i+3], repo[i+3:]
 	}
-	authority, tail := rest, ""
-	if slash := strings.Index(rest, "/"); slash >= 0 {
-		authority, tail = rest[:slash], rest[slash:]
+	if at := strings.LastIndex(rest, "@"); at >= 0 {
+		rest = rest[at+1:]
 	}
-	if at := strings.LastIndex(authority, "@"); at >= 0 {
-		authority = authority[at+1:]
-	}
-	return scheme + authority + tail
+	return scheme + rest
 }
 
 // appNameFromURL takes the last URL segment — the directory bench itself

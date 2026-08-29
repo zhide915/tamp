@@ -326,6 +326,20 @@ func TestRestoreOverLiveSiteDataWithYesProceeds(t *testing.T) {
 
 // --- the command surface ----------------------------------------------------
 
+// A deps clean empties the virtualenv bench itself runs from; the backup must
+// refuse with the way out rather than die mid-flow.
+func TestSnapshotCreateAfterADepsCleanRefusesUntilARebuild(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.siteNew(t, "demo", "demo.localhost", "--admin-password", "secret")
+	c.run(t, "clean", "demo", "--deps").assertCode(t, exitcode.CodeOK)
+
+	r := c.run(t, "snapshot", "create", "demo")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertStderrContains(t, "tamp rebuild demo")
+}
+
 func TestSnapshotNeedsARunningEnvironment(t *testing.T) {
 	c := sandbox(t)
 	c.withSite(t, "demo", "shop.localhost")

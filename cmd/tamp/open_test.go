@@ -140,6 +140,22 @@ func TestOpenOpensACustomDomainOnceItsHostsEntryIsWritten(t *testing.T) {
 	c.assertOpened(t, "abc.xyz.com")
 }
 
+// A line the user keeps outside tamp's block resolves the name just as well;
+// refusing to open it would tell them to fix what is not broken.
+func TestOpenHonoursAHostsEntryOutsideTampsBlock(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.siteNew(t, "demo", "abc.xyz.com")
+	if err := os.WriteFile(filepath.Join(c.home, "hosts"), []byte("127.0.0.1  abc.xyz.com\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := c.run(t, "open", "demo", "abc.xyz.com")
+
+	r.assertCode(t, exitcode.CodeOK)
+	c.assertOpened(t, "abc.xyz.com")
+}
+
 func TestOpenRefusesAHostnameTheEnvironmentDoesNotHave(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

@@ -149,6 +149,13 @@ func hasSource(dir string) bool {
 	return err == nil && len(entries) > 0
 }
 
+// hasHostApp reports whether the host's apps tree already holds an app by
+// this name — the sync session will carry it in, so no fetch is coming.
+func hasHostApp(dir, name string) bool {
+	entries, err := os.ReadDir(filepath.Join(syncer.AppsDir(dir), name))
+	return err == nil && len(entries) > 0
+}
+
 const readoptSteps = 2 + buildSteps
 
 // readopt rebuilds a removed environment around the source it left behind.

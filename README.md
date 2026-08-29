@@ -73,7 +73,7 @@ empty folder and the environment takes the folder's name.
 
 Give a private repository's https URL like any other app. When the fetch
 needs credentials, tamp asks the credential system your own git uses. Its
-usual sign-in prompt may appear, once per machine per git host. The
+usual sign-in prompt may appear, at most once per git host in a run. The
 credential serves that one fetch and is never stored. The clone in `apps/`
 keeps a clean URL, so host git pushes and pulls normally afterwards.
 
@@ -123,9 +123,9 @@ matching seed exits 3, naming the combination, having created nothing.
 `--seed` goes with `--apps`. A seed stands in for the app installs and
 nothing else, so a site with no apps neither fills the store nor reads it.
 
-A seed is keyed by app *names*, not by the branch each app is on. If you keep
-two environments of one Frappe version with the same app on different
-branches, empty the store between them or leave `--seed` off.
+A seed is keyed by each app's source and branch, not just its name: two
+environments carrying a same-named app from different repositories or
+branches never share a seed.
 
 Emptying the store is safe. It costs the next site its install and nothing
 else:

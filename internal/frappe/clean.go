@@ -3,6 +3,7 @@ package frappe
 import (
 	"context"
 
+	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
@@ -10,16 +11,14 @@ import (
 // part of the data layer, since that is whose remains it holds.
 const ArchivedDir = BenchDir + "/archived"
 
-// CleanDeps empties the deps layer: the virtualenv, the apps' node_modules
-// and every __pycache__. env/ is a volume mount point, so its contents go and
-// the directory itself stays — removing it would leave the mount dangling.
+// CleanDeps empties the deps layer. env/ is a volume mount point: its
+// contents go and the directory stays, or the mount would be left dangling.
 func (b *Bench) CleanDeps(ctx context.Context) error {
 	return b.run(ctx, cleanDepsScript, EnvDir, AppsDir)
 }
 
 // -prune keeps find out of a directory it is about to delete. node_modules
-// and __pycache__ sit inside apps/, which is the source layer, but they are
-// build output rather than source — nothing tracked goes with them.
+// and __pycache__ sit inside apps/ but are build output, not source.
 const cleanDepsScript = `
 set -eo pipefail
 if [ -d "$1" ]; then
@@ -31,27 +30,32 @@ if [ -d "$2" ]; then
 fi
 `
 
+// HasDeps reports whether the deps layer is populated. bench itself runs
+// from the virtualenv, so nothing bench can be asked until a rebuild puts it
+// back.
+func (b *Bench) HasDeps(ctx context.Context) (bool, error) {
+	return engine.Probe(ctx, b.Engine, engine.ExecRequest{
+		Container: b.Container,
+		Cmd:       engine.Script(`test -x "$1"`, EnvDir+"/bin/python"),
+	})
+}
+
 // AssetsDir is the assets layer: everything bench build writes, under the
 // sites tree so it travels with the site files.
 const AssetsDir = SitesDir + "/assets"
 
 // CleanAssets empties the assets layer.
 func (b *Bench) CleanAssets(ctx context.Context) error {
-	return b.run(ctx, cleanAssetsScript, AssetsDir)
+	return b.run(ctx, removeTreeScript, AssetsDir)
 }
-
-const cleanAssetsScript = `
-set -eo pipefail
-rm -rf "$1"
-`
 
 // ClearArchivedSites removes what drop-site archived. Part of the data layer:
 // leaving it would keep the files of every site just destroyed.
 func (b *Bench) ClearArchivedSites(ctx context.Context) error {
-	return b.run(ctx, clearArchivedScript, ArchivedDir)
+	return b.run(ctx, removeTreeScript, ArchivedDir)
 }
 
-const clearArchivedScript = `
+const removeTreeScript = `
 set -eo pipefail
 rm -rf "$1"
 `

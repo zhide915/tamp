@@ -72,6 +72,9 @@ func TestAnSSHAppSpecIsRefusedWithItsHTTPSForm(t *testing.T) {
 		"ssh://git@github.com/frappe/hrms.git":   "https://github.com/frappe/hrms.git",
 		// The ssh port must not survive into the https suggestion.
 		"ssh://git@git.example.com:2222/team/app.git": "https://git.example.com/team/app.git",
+		// git recognises these spellings and scheme case; so must the refusal.
+		"git+ssh://git@github.com/frappe/hrms.git": "https://github.com/frappe/hrms.git",
+		"SSH://git@github.com/frappe/hrms.git":     "https://github.com/frappe/hrms.git",
 	}
 	for spec, https := range cases {
 		t.Run(spec, func(t *testing.T) {
@@ -102,6 +105,9 @@ func TestATokenInAnAppURLIsRefusedWithoutEchoingTheToken(t *testing.T) {
 		// An ssh source with userinfo takes the ssh refusal; that echo must
 		// be redacted too.
 		"ssh://user:" + token + "@github.com/myorg/private.git",
+		// A slash inside the secret breaks URL parsing early; the redaction
+		// must not trust the authority's apparent end.
+		"https://user:se/" + token + "@github.com/myorg/private.git",
 	} {
 		t.Run(spec, func(t *testing.T) {
 			_, err := env.ParseApp(spec)

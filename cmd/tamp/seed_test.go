@@ -241,6 +241,19 @@ func TestASeedNeverCrossesAppSets(t *testing.T) {
 	r.assertCode(t, exitcode.CodeNotFound)
 }
 
+// A same-named app from another repository or branch is another app; the
+// seed of one must never restore a site of the other.
+func TestASeedNeverCrossesAppSources(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--apps", "https://github.com/one/custom")
+	c.siteNew(t, "demo", "shop.localhost", "--apps", "custom")
+	c.create(t, "other", "--apps", "https://github.com/two/custom")
+
+	r := c.run(t, "site", "new", "other", "second.localhost", "--apps", "custom", "--seed")
+
+	r.assertCode(t, exitcode.CodeNotFound)
+}
+
 func TestASeedNeverCrossesFrappeVersions(t *testing.T) {
 	c := sandbox(t)
 	c.seededSite(t, "demo", "shop.localhost", "erpnext")

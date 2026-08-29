@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strings"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -205,7 +206,7 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 	// Before anything slow: an unreachable app source must cost seconds, not
 	// the minutes a bench build takes.
 	log.step("checking that every app source answers")
-	bridge, err := m.preflightApps(ctx, bench, e.Config.Frappe.Apps, log)
+	bridge, err := m.preflightApps(ctx, e, bench, e.Config.Frappe.Apps, log)
 	if err != nil {
 		return router.Status{}, err
 	}
@@ -346,10 +347,12 @@ func (m *Manager) fetchApp(ctx context.Context, bench *frappe.Bench, bridge *bri
 		bridge.approve(ctx, app.Source)
 		return nil
 	}
-	if authShaped(said.String()) {
-		bridge.reject(ctx, app.Source)
-		_, host, _, hostErr := sourceParts(app.Source)
-		if hostErr == nil {
+	// Only a refusal naming the credential's own host indicts it — the
+	// transcript also carries pip and yarn, whose failures must not cost the
+	// user a credential the preflight just proved.
+	if said := said.String(); authShaped(said) {
+		if _, host, _, hostErr := sourceParts(app.Source); hostErr == nil && strings.Contains(said, host) {
+			bridge.reject(ctx, app.Source)
 			return refusedCredential(app.Source, host)
 		}
 	}

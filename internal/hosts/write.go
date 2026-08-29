@@ -60,7 +60,7 @@ func restore(path, previous string, cause error) error {
 func Denied(err error) bool { return errors.Is(err, fs.ErrPermission) }
 
 func writeError(path string, err error) error {
-	return &writeFailure{
+	return &fileFailure{
 		reported: exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot write %s: %v", path, err),
 			"the hosts file belongs to the system — tamp needs elevated rights to change it"),
@@ -68,12 +68,12 @@ func writeError(path string, err error) error {
 	}
 }
 
-// writeFailure keeps the operating system's error beside tamp's, so Denied
+// fileFailure keeps the operating system's error beside tamp's, so Denied
 // can ask what actually went wrong without reading the message.
-type writeFailure struct {
+type fileFailure struct {
 	reported *exitcode.Error
 	cause    error
 }
 
-func (w *writeFailure) Error() string { return w.reported.Error() }
-func (w *writeFailure) Unwrap() error { return w.cause }
+func (w *fileFailure) Error() string { return w.reported.Error() }
+func (w *fileFailure) Unwrap() error { return w.cause }

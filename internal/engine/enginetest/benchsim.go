@@ -47,6 +47,9 @@ type benchState struct {
 	sites    map[string]bool
 	apps     map[string]bool
 	siteApps map[string][]string
+	// depsWiped is a deps clean not yet rebuilt: bench itself runs from the
+	// virtualenv, so the deps probe must answer no until requirements return.
+	depsWiped bool
 }
 
 // at is the bench inside a container, created on first mention.
@@ -132,6 +135,14 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 		return nil
 	}
 
+	// The deps probe: the virtualenv is there unless a deps clean took it.
+	if strings.Contains(exec.Line(), `test -x "$1"`) {
+		if b.depsWiped {
+			return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 1}
+		}
+		return nil
+	}
+
 	// The source-tree probe must answer no for a never-initialized bench, or
 	// every create would take the rebuild path.
 	if strings.Contains(exec.Line(), `test -d "`+frappe.AppsDir) {
@@ -192,6 +203,10 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 	// bench to run, so its coming and going is state, not just a command.
 	case strings.Contains(exec.Line(), "rm -f") && scriptArg(exec.Cmd, 0) == frappe.ProcfilePath:
 		s.drop(frappe.ProcfilePath)
+	case strings.Contains(exec.Line(), "-name node_modules"):
+		b.depsWiped = true
+	case strings.Contains(exec.Line(), "setup requirements"):
+		b.depsWiped = false
 	case strings.Contains(exec.Line(), "cd "+frappe.AppsDir):
 		for _, app := range b.appsSorted() {
 			fmt.Fprintln(stdout, app)
@@ -274,11 +289,11 @@ func (s *benchSim) addSite(b *benchState, host string) {
 func (b *benchState) appsSorted() []string  { return slices.Sorted(maps.Keys(b.apps)) }
 func (b *benchState) sitesSorted() []string { return slices.Sorted(maps.Keys(b.sites)) }
 
-// allApps and allSites collapse every bench into one answer, for the tests
-// that run a single environment and just want to know what is on it.
 // stagedSites names what a snapshot bundle would carry, sorted.
 func (s *benchSim) stagedSites() []string { return slices.Sorted(maps.Keys(s.staged)) }
 
+// allApps and allSites collapse every bench into one answer, for the tests
+// that run a single environment and just want to know what is on it.
 func (s *benchSim) allApps() []string {
 	seen := map[string]bool{}
 	for _, b := range s.benches {

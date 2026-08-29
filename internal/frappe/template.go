@@ -8,9 +8,7 @@ import (
 )
 
 // The template store: one tarball per Frappe version, in a volume shared by
-// every environment, so the first bench init on a machine is the only one.
-// Nothing here is irreplaceable — wiping it costs the next create its full
-// price and nothing else.
+// every environment. Wiping it only costs the next create its full price.
 const (
 	TemplateVolume = "tamp-templates"
 	TemplateDir    = "/home/frappe/.tamp-templates"

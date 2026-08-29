@@ -141,16 +141,21 @@ func (c *CLI) run(ctx context.Context, dockerHost string, out io.Writer, args ..
 			reason = err.Error()
 		}
 		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("mutagen %s failed: %s", strings.Join(args, " "), firstLine(reason)),
+			fmt.Sprintf("mutagen %s failed: %s", strings.Join(args, " "), lastLine(reason)),
 			"tamp manages Mutagen itself — 'tamp doctor' reports what it found")
 	}
 	return nil
 }
 
-// firstLine trims a multi-line Mutagen error to tamp's one-line contract.
-func firstLine(s string) string {
-	if newline := strings.Index(s, "\n"); newline >= 0 {
-		return strings.TrimSpace(s[:newline])
+// lastLine trims a multi-line transcript to tamp's one-line contract, from
+// the end: a streamed run opens with progress lines, and the failure is what
+// Mutagen says last.
+func lastLine(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
 	}
 	return s
 }

@@ -30,9 +30,10 @@ Traced through frappe source on the `version-15` and `version-16` branches
    `desk.js` loads the bundle only in developer mode.
 4. `file_watcher_port` appears only in `frappe/boot.py` and bench's default
    config, with no client-side consumer on either branch.
-5. Auto-reload requires `live_reload` in site config: `bench init` writes
-   `live_reload: true`, and tamp's config merge preserves keys it does not
-   own.
+5. Auto-reload requires `live_reload` in site config: `frappe/build.py`
+   passes `--live-reload` to the watcher only when it is set. `bench init`
+   writes `live_reload: true`, and tamp's config merge preserves keys it
+   does not own.
 
 ## Consequences
 
