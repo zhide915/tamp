@@ -157,6 +157,9 @@ func Reconcile(existing string, entries []string) string {
 func Resolved(existing string) []string {
 	var got []string
 	for _, line := range strings.Split(existing, "\n") {
+		if comment := strings.IndexByte(line, '#'); comment >= 0 {
+			line = line[:comment]
+		}
 		fields := strings.Fields(line)
 		if len(fields) >= 2 && (fields[0] == Loopback || fields[0] == "::1") {
 			got = append(got, fields[1:]...)

@@ -1,6 +1,7 @@
 package hosts
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -112,6 +113,22 @@ func TestEntriesReadsBackWhatTheBlockHolds(t *testing.T) {
 func TestEntriesIgnoresLoopbackLinesOutsideTheBlock(t *testing.T) {
 	if got := Entries(userFile); got != nil {
 		t.Errorf("Entries = %v, want none — the file has no tamp block", got)
+	}
+}
+
+// Resolved reads the whole file, the user's own lines included, but never a
+// comment: a commented-out line maps nothing, and words after # are no hosts.
+func TestResolvedReadsEveryLoopbackLineButNoComment(t *testing.T) {
+	file := "127.0.0.1  mine.example.test # my dev box\n" +
+		"# 127.0.0.1  disabled.example.test\n" +
+		"::1  six.example.test\n"
+	file = Reconcile(file, []string{"blocked.example.test"})
+
+	got := Resolved(file)
+
+	want := []string{"blocked.example.test", "mine.example.test", "six.example.test"}
+	if !slices.Equal(got, want) {
+		t.Errorf("Resolved = %v, want %v", got, want)
 	}
 }
 
