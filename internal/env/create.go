@@ -395,7 +395,11 @@ func (m *Manager) announceDBPassword(e *Environment) {
 func (m *Manager) createDir(req CreateRequest, name Name) (string, error) {
 	parent := req.Parent
 	if parent == "" {
-		parent = m.Cwd
+		cwd, err := m.workingDir()
+		if err != nil {
+			return "", err
+		}
+		parent = cwd
 	}
 	dir, err := filepath.Abs(filepath.Join(parent, string(name)))
 	if err != nil {

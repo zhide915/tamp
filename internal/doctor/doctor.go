@@ -13,6 +13,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/hosts"
 	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/syncer"
 )
@@ -54,17 +55,44 @@ type Report struct {
 	Checks []Check
 }
 
-// Run performs every check tamp knows. envDirs are the registered
-// environments' directories, for the path check.
-func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutagen, envDirs []string) Report {
+// Input is what the caller already read off the machine: the registry, and
+// the hosts file tamp keeps a block in. Both arrive as data — including the
+// errors — because a check reports, and only a report can say that reading
+// the registry is the thing that failed.
+type Input struct {
+	// RegistryErr is the registry refusing to be read.
+	RegistryErr error
+	// EnvDirs are the registered environments' directories, for the path
+	// check.
+	EnvDirs []string
+	// Hosts is what tamp's block in the hosts file holds against what it
+	// should.
+	Hosts HostsState
+}
+
+// HostsState is the hosts file as the caller found it.
+type HostsState struct {
+	// Path is the hosts file tamp reconciles.
+	Path string
+	// Wanted are the hostnames tamp's block should carry, Present the ones
+	// it does.
+	Wanted, Present []string
+	// Err is the hosts file refusing to be read.
+	Err error
+}
+
+// Run performs every check tamp knows.
+func Run(ctx context.Context, e engine.Engine, r *router.Router, s syncer.Mutagen, in Input) Report {
 	return Report{Checks: []Check{
 		dockerCheck(ctx, e),
 		composeCheck(ctx, e),
 		routerCheck(ctx, r),
 		syncCheck(ctx, s, runtime.GOOS),
 		hostGitCheck(ctx),
+		registryCheck(in),
+		hostsCheck(in),
 		localhostCheck(),
-		pathsCheck(envDirs),
+		pathsCheck(in.EnvDirs),
 	}}
 }
 
@@ -198,6 +226,65 @@ func hostGitCheck(ctx context.Context) Check {
 		Status: Pass,
 		Detail: strings.TrimSpace(string(out)) + " — used only for private app repositories",
 	}
+}
+
+// registryCheck exists because everything below it reads the registry: an
+// unreadable one used to abort the report, which is the one thing a
+// diagnosis must never do.
+func registryCheck(in Input) Check {
+	const name = "Registry"
+	if in.RegistryErr != nil {
+		return failed(name, in.RegistryErr)
+	}
+	return Check{
+		Name:   name,
+		Status: Pass,
+		Detail: fmt.Sprintf("%d environment(s) registered", len(in.EnvDirs)),
+	}
+}
+
+// hostsCheck compares tamp's block with the custom domains the machine
+// answers to. It never fails: a pending entry costs a name, not the tool.
+func hostsCheck(in Input) Check {
+	const name = "Hosts file"
+	const fix = "run 'tamp hosts sync'"
+
+	if in.RegistryErr != nil {
+		return Check{
+			Name:   name,
+			Status: Warn,
+			Detail: "tamp cannot tell which hostnames belong in its block — the registry check above failed",
+			Fix:    "fix the registry, then run 'tamp doctor' again",
+		}
+	}
+	if in.Hosts.Err != nil {
+		return Check{
+			Name:   name,
+			Status: Warn,
+			Detail: in.Hosts.Err.Error(),
+			Fix:    "check the permissions on " + in.Hosts.Path,
+		}
+	}
+
+	missing := hosts.Missing(in.Hosts.Present, in.Hosts.Wanted)
+	stale := hosts.Missing(in.Hosts.Wanted, in.Hosts.Present)
+	switch {
+	case len(missing) > 0 && len(stale) > 0:
+		return Check{Name: name, Status: Warn, Fix: fix, Detail: fmt.Sprintf(
+			"tamp's block in %s is out of date: %s missing, %s no longer routed",
+			in.Hosts.Path, strings.Join(missing, ", "), strings.Join(stale, ", "))}
+	case len(missing) > 0:
+		return Check{Name: name, Status: Warn, Fix: fix, Detail: fmt.Sprintf(
+			"%s does not resolve yet: no entry in %s", strings.Join(missing, ", "), in.Hosts.Path)}
+	case len(stale) > 0:
+		return Check{Name: name, Status: Warn, Fix: fix, Detail: fmt.Sprintf(
+			"%s is in tamp's block but is no site of any environment", strings.Join(stale, ", "))}
+	case len(in.Hosts.Wanted) == 0:
+		return Check{Name: name, Status: Pass,
+			Detail: "no site outside .localhost, so tamp's block in " + in.Hosts.Path + " is empty"}
+	}
+	return Check{Name: name, Status: Pass, Detail: fmt.Sprintf(
+		"tamp's block in %s is in sync: %s", in.Hosts.Path, strings.Join(in.Hosts.Wanted, ", "))}
 }
 
 // localhostCheck is information rather than a diagnosis: *.localhost needs no

@@ -40,8 +40,8 @@ func newSiteNewCommand(d deps) *cobra.Command {
 		Long: "Create a site and route it.\n\n" +
 			"The hostname is the site's name and its route at once, so it has to be\n" +
 			"free across every environment on this machine. A *.localhost name is\n" +
-			"browsable immediately; anything else needs a hosts-file entry, and\n" +
-			"tamp prints the line to add.\n\n" +
+			"browsable immediately; any other name is created and routed with its\n" +
+			"hosts entry pending, and 'tamp hosts sync' writes it.\n\n" +
 			"The environment has to be running: tamp never starts one for you.\n\n" +
 			"Apps named with --apps have to be on the bench already: tamp fetches\n" +
 			"none of them, because it has no way to know which branch you want.\n\n" + envArgHelp,
@@ -72,8 +72,8 @@ func newSiteListCommand(d deps) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list [env]",
 		Short: "List an environment's sites",
-		Long: "List an environment's sites, with the URL each is browsed at and the\n" +
-			"apps it has installed.\n\n" +
+		Long: "List an environment's sites, with the URL each is browsed at, the\n" +
+			"state of its hosts-file entry, and the apps it has installed.\n\n" +
 			"A stopped environment is listed from what tamp last saw, which is why\n" +
 			"its apps column reads ? until the environment is running again.\n\n" + envArgHelp,
 		Args: optionalEnvArg,

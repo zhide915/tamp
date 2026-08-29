@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zhide915/tamp/internal/doctor"
-	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/router"
 )
@@ -27,20 +26,11 @@ func newDoctorCommand(d deps) *cobra.Command {
 			ctx, cancel := context.WithTimeout(cmd.Context(), diagnosisTimeout)
 			defer cancel()
 
-			home, err := env.Home()
+			m, err := d.manager()
 			if err != nil {
 				return err
 			}
-			reg, err := env.LoadRegistry(home)
-			if err != nil {
-				return err
-			}
-			envDirs := make([]string, 0, len(reg))
-			for _, name := range reg.Names() {
-				envDirs = append(envDirs, reg[name].Path)
-			}
-
-			report := doctor.Run(ctx, d.eng, router.New(home, d.eng), d.sync, envDirs)
+			report := doctor.Run(ctx, d.eng, router.New(m.Home, d.eng), d.sync, m.Diagnostics())
 			report.Print(d.p)
 
 			if report.OK() {

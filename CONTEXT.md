@@ -26,6 +26,10 @@ _Avoid_: proxy, gateway
 **Registry**:
 The global machine-level index (`~/.tamp/registry.json`) mapping environment names to paths; names are unique here.
 
+**Managed block**:
+The region of the operating system's hosts file tamp owns, between `# --- tamp managed block ---` and `# --- end tamp block ---`, holding every non-`.localhost` site hostname on the machine. tamp never writes outside it. Writing it is the only tamp operation that elevates.
+_Avoid_: hosts file (for the block)
+
 **Snapshot**:
 A user-triggered backup of an environment's data layer (all sites, with files), stored inside the environment directory. Protection, not caching.
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/engine/enginetest"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/hosts"
 	"github.com/zhide915/tamp/internal/syncer/synctest"
 )
 
@@ -43,6 +44,11 @@ func sandbox(t *testing.T) *cli {
 	// Git Bash exports SSH_ASKPASS; left alone, a fill with no helper opens
 	// a GUI prompt on the developer's screen and hangs the test on it.
 	t.Setenv("GIT_ASKPASS", "true")
+	// Never the machine's own hosts file: 'tamp hosts sync' writes for real,
+	// and a test that reached /etc/hosts would be editing the developer's
+	// system. The redirect also forbids elevation, so no test can raise a
+	// UAC or sudo prompt.
+	t.Setenv(hosts.PathVar, filepath.Join(home, "hosts"))
 	t.Chdir(dir)
 	return &cli{
 		home:   home,

@@ -2,10 +2,12 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/zhide915/tamp/internal/engine/enginetest"
+	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
@@ -21,6 +23,8 @@ func TestDoctorReportsEveryCheckWhenTheEngineIsHealthy(t *testing.T) {
 		"unix:///var/run/docker.sock",
 		"✓ Docker Compose",
 		"2.39.1",
+		"✓ Registry",
+		"✓ Hosts file",
 		"✓ Hostnames",
 		"*.localhost",
 		"✓ Paths",
@@ -135,4 +139,40 @@ func TestCommandsThatDoNotNeedTheEngineIgnoreItBeingDown(t *testing.T) {
 			t.Errorf("tamp %v touched the engine: %v", args, c.engine.Calls)
 		}
 	}
+}
+
+// The hosts block is one of the checks doctor completes with: a site whose
+// name nothing resolves is exactly the footgun a diagnosis should name.
+func TestDoctorReportsAPendingHostsEntryAndItsFix(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.siteNew(t, "demo", "abc.xyz.com")
+
+	r := c.run(t, "doctor")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStdoutContains(t, "! Hosts file", "abc.xyz.com", "fix: run 'tamp hosts sync'")
+
+	c.run(t, "hosts", "sync").assertCode(t, exitcode.CodeOK)
+
+	synced := c.run(t, "doctor")
+	synced.assertCode(t, exitcode.CodeOK)
+	synced.assertStdoutContains(t, "✓ Hosts file", "in sync")
+}
+
+// A registry tamp cannot read is a finding, not the end of the report.
+func TestDoctorReportsAnUnreadableRegistryAndKeepsGoing(t *testing.T) {
+	c := sandbox(t)
+	tampHome := filepath.Join(c.home, env.HomeDirName)
+	if err := os.MkdirAll(tampHome, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tampHome, env.RegistryFile), []byte("not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := c.run(t, "doctor")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertStdoutContains(t, "✗ Registry", "not valid JSON", "✓ Hostnames", "✓ Paths")
 }

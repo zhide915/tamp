@@ -33,10 +33,14 @@ type InitRequest struct {
 // init turns them back into a working environment — same name, same path, so
 // the volumes reattach with the data in them.
 func (m *Manager) Init(ctx context.Context, req InitRequest) error {
-	dir, err := filepath.Abs(m.Cwd)
+	cwd, err := m.workingDir()
+	if err != nil {
+		return err
+	}
+	dir, err := filepath.Abs(cwd)
 	if err != nil {
 		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("cannot resolve %q to an absolute path: %v", m.Cwd, err),
+			fmt.Sprintf("cannot resolve %q to an absolute path: %v", cwd, err),
 			"run tamp init from a directory that still exists")
 	}
 

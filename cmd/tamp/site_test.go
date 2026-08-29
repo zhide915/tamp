@@ -260,9 +260,9 @@ func TestSiteNewNeedsARunningEnvironment(t *testing.T) {
 	}
 }
 
-// Only *.localhost resolves without configuration; other names need the
-// exact hosts-file line.
-func TestSiteNewSaysWhatANonLocalhostNameStillNeeds(t *testing.T) {
+// Only *.localhost resolves without configuration; another name is created
+// and routed, with its hosts entry pending until the next sync.
+func TestSiteNewMarksANonLocalhostEntryPendingAndNamesTheSync(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")
 
@@ -270,7 +270,7 @@ func TestSiteNewSaysWhatANonLocalhostNameStillNeeds(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStderrContains(t, "shop.example.com", "resolve")
-	r.assertStdoutContains(t, "127.0.0.1  shop.example.com")
+	r.assertStdoutContains(t, "pending", "tamp hosts sync")
 }
 
 func TestSiteNewSaysNothingAboutHostsFilesForALocalhostName(t *testing.T) {
@@ -279,7 +279,7 @@ func TestSiteNewSaysNothingAboutHostsFilesForALocalhostName(t *testing.T) {
 
 	r := c.run(t, "site", "new", "demo", "shop.localhost")
 
-	if strings.Contains(r.stdout+r.stderr, "127.0.0.1") {
+	if strings.Contains(r.stdout+r.stderr, "hosts") {
 		t.Errorf("tamp asked for a hosts entry a browser does not need:\n%s%s", r.stdout, r.stderr)
 	}
 }

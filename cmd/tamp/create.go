@@ -1,12 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/zhide915/tamp/internal/env"
-	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
@@ -26,7 +24,9 @@ func newCreateCommand(d deps) *cobra.Command {
 			"one is fetched at its repository's default branch, usually develop.\n\n" +
 			"The first create of a Frappe version caches its initialized bench;\n" +
 			"later ones unpack it in seconds. --no-cache skips the store.",
-		Args: exactlyOneName,
+		// The name is required: create alone cannot fall back to the current
+		// directory, since nothing exists there yet.
+		Args: exactlyOneArg("tamp create needs a name for the environment"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			m, err := d.manager()
 			if err != nil {
@@ -54,16 +54,4 @@ func newCreateCommand(d deps) *cobra.Command {
 	cmd.Flags().BoolVar(&noCache, "no-cache", false,
 		"initialize a fresh bench instead of unpacking the cached template")
 	return cmd
-}
-
-// exactlyOneName requires the name: create alone cannot fall back to the
-// current directory, since nothing exists there yet.
-func exactlyOneName(cmd *cobra.Command, args []string) error {
-	switch {
-	case len(args) == 0:
-		return exitcode.Usage("tamp create needs a name for the environment", usageHint(cmd))
-	case len(args) > 1:
-		return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[1]), usageHint(cmd))
-	}
-	return nil
 }

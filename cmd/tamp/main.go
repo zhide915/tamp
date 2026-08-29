@@ -36,7 +36,7 @@ func main() {
 // the environment and the engine arrive as parameters.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine, sync syncer.Mutagen) exitcode.Code {
 	p := ui.NewPrinter(stdout, stderr, lookupEnv)
-	root := newRootCommand(p, eng, sync, stdin)
+	root := newRootCommand(p, eng, sync, stdin, lookupEnv)
 	root.SetArgs(args)
 
 	// Ctrl-C cancels the context rather than killing the process, so followed

@@ -18,16 +18,19 @@ type deps struct {
 	p    *ui.Printer
 	eng  engine.Engine
 	sync syncer.Mutagen
+	// lookupEnv is the process environment as a seam: the hosts file tamp
+	// reconciles is read through it, so tests never aim at the real one.
+	lookupEnv func(string) (string, bool)
 }
 
 func (d deps) manager() (*env.Manager, error) {
-	return env.NewManager(d.eng, d.sync, d.p)
+	return env.NewManager(d.eng, d.sync, d.p, d.lookupEnv)
 }
 
 // newRootCommand builds the command tree; one shared Printer applies
 // --quiet and --no-color in a single place.
-func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin io.Reader) *cobra.Command {
-	d := deps{p: p, eng: eng, sync: sync}
+func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin io.Reader, lookupEnv func(string) (string, bool)) *cobra.Command {
+	d := deps{p: p, eng: eng, sync: sync, lookupEnv: lookupEnv}
 	var noColor, quiet bool
 
 	root := &cobra.Command{
@@ -75,6 +78,7 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 	root.AddCommand(newRestartCommand(d))
 	root.AddCommand(newRemoveCommand(d))
 	root.AddCommand(newSiteCommand(d))
+	root.AddCommand(newHostsCommand(d))
 	root.AddCommand(newCleanCommand(d))
 	root.AddCommand(newRebuildCommand(d))
 	root.AddCommand(newExecCommand(d, stdin))
@@ -107,6 +111,19 @@ func unknownCommand(name string) error {
 		fmt.Sprintf("unknown command %q", name),
 		"run 'tamp --help' to see the available commands",
 	)
+}
+
+// exactlyOneArg requires the single argument named in missing.
+func exactlyOneArg(missing string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		switch {
+		case len(args) == 0:
+			return exitcode.Usage(missing, usageHint(cmd))
+		case len(args) > 1:
+			return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[1]), usageHint(cmd))
+		}
+		return nil
+	}
 }
 
 // noArgs replaces cobra.NoArgs so the failure carries tamp's exit code and hint.

@@ -13,6 +13,7 @@ import (
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
+	"github.com/zhide915/tamp/internal/hosts"
 	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/toolchain"
@@ -22,31 +23,54 @@ import (
 // Manager runs the lifecycle operations, holding what all of them need so
 // cmd/ stays a translation from flags to one call.
 type Manager struct {
-	Home   string
-	Cwd    string
+	Home string
+	Cwd  string
+	// cwdErr is why Cwd is empty, reported only when a command needs it.
+	cwdErr error
 	Engine engine.Engine
 	// Sync mirrors an environment's source to the host — tamp's second
 	// external-process seam after the engine.
 	Sync syncer.Mutagen
 	Out  *ui.Printer
+
+	// HostsFile is the hosts file 'tamp hosts sync' reconciles, and
+	// HostsRedirected says it is not the system's own — which is what
+	// forbids elevating for it.
+	HostsFile       string
+	HostsRedirected bool
 }
 
-func NewManager(eng engine.Engine, sync syncer.Mutagen, out *ui.Printer) (*Manager, error) {
+func NewManager(eng engine.Engine, sync syncer.Mutagen, out *ui.Printer, lookupEnv func(string) (string, bool)) (*Manager, error) {
 	home, err := Home()
 	if err != nil {
 		return nil, err
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return nil, exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("cannot determine the current directory: %v", err),
+	// Reported by the commands that need a working directory, not here:
+	// doctor is the command a machine in this state is asked for.
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		cwdErr = exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("cannot determine the current directory: %v", cwdErr),
 			"run tamp from a directory that still exists")
 	}
-	return &Manager{Home: home, Cwd: cwd, Engine: eng, Sync: sync, Out: out}, nil
+	return &Manager{
+		Home: home, Cwd: cwd, cwdErr: cwdErr, Engine: eng, Sync: sync, Out: out,
+		HostsFile:       hosts.Path(lookupEnv),
+		HostsRedirected: hosts.Redirected(lookupEnv),
+	}, nil
+}
+
+// workingDir is the directory tamp was run from, or why it is not knowable.
+func (m *Manager) workingDir() (string, error) {
+	return m.Cwd, m.cwdErr
 }
 
 func (m *Manager) resolve(name string) (*Environment, error) {
-	e, err := Resolve(m.Home, m.Cwd, name)
+	cwd, err := m.workingDir()
+	if err != nil {
+		return nil, err
+	}
+	e, err := Resolve(m.Home, cwd, name)
 	if err != nil {
 		return nil, err
 	}

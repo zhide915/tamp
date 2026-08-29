@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"runtime"
 	"slices"
 	"strings"
 
@@ -107,7 +106,7 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	m.Out.OK(host.String() + " is ready on " + e.Name().String())
 	m.Out.Note("site: " + status.URL(host.String()))
 	m.revealAdmin(generated, admin)
-	m.warnUnresolvable(host)
+	m.notePendingHostsEntries([]string{host.String()})
 	return nil
 }
 
@@ -163,25 +162,6 @@ func (m *Manager) requireApps(ctx context.Context, e *Environment, bench *frappe
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("%s cannot install %s", e.Name(), strings.Join(missing, ", ")),
 		"fetch the apps above onto the bench first — tamp will not guess a branch")
-}
-
-// warnUnresolvable covers hostnames outside .localhost, which resolve to
-// whatever the internet says. Until tamp manages the hosts file, the warning
-// gives the exact line to add.
-func (m *Manager) warnUnresolvable(host Host) {
-	if host.IsLocal() {
-		return
-	}
-	m.Out.Warn(host.String() + " is not a .localhost name, so nothing on this machine resolves it yet")
-	m.Out.Note("tamp will manage your hosts file in a later release; for now add this line to " + hostsFile() + ":")
-	m.Out.Note("  127.0.0.1  " + host.String())
-}
-
-func hostsFile() string {
-	if runtime.GOOS == "windows" {
-		return `C:\Windows\System32\drivers\etc\hosts`
-	}
-	return "/etc/hosts"
 }
 
 func (m *Manager) claimHost(e *Environment, host Host) error {
@@ -255,6 +235,9 @@ func (m *Manager) SiteRemove(ctx context.Context, req SiteRemoveRequest) error {
 	m.Out.OK(host.String() + " removed from " + e.Name().String())
 	m.Out.Note("its database is gone; every other site on this bench is untouched")
 	m.Out.Note("bench backed the site up and moved its files into " + frappe.ArchivedSitesDir)
+	if !host.IsLocal() {
+		m.Out.Hint("its hosts-file line goes on the next 'tamp hosts sync'")
+	}
 	return nil
 }
 
@@ -276,6 +259,8 @@ type siteRow struct {
 	URL  string
 	// Apps is nil when tamp could not ask.
 	Apps []string
+	// Hosts is the state of the hostname's entry in tamp's hosts-file block.
+	Hosts string
 }
 
 // SiteList reports an environment's sites.
@@ -302,9 +287,10 @@ func (m *Manager) SiteList(ctx context.Context, name string) error {
 		return nil
 	}
 
+	entries := m.hostsEntries()
 	rows := make([]siteRow, 0, len(hosts))
 	for _, host := range hosts {
-		row := siteRow{Host: host, URL: status.URL(host)}
+		row := siteRow{Host: host, URL: status.URL(host), Hosts: hostEntryState(host, entries)}
 		if live {
 			apps, err := e.bench(m.Engine, m.Out.Stream()).InstalledApps(ctx, host)
 			if err != nil {
@@ -389,7 +375,7 @@ func (m *Manager) printSites(rows []siteRow) {
 		if row.Apps != nil {
 			apps = strings.Join(row.Apps, " ")
 		}
-		table = append(table, []string{row.Host, row.URL, apps})
+		table = append(table, []string{row.Host, row.URL, row.Hosts, apps})
 	}
-	m.Out.Table([]string{"HOST", "URL", "APPS"}, table)
+	m.Out.Table([]string{"HOST", "URL", "HOSTS ENTRY", "APPS"}, table)
 }

@@ -42,6 +42,15 @@ expect() {
   fail "wanted 200 for Host: $host at $path, last answer was $code"
 }
 
+# resolved is the same check without the Host header: the name has to reach
+# 127.0.0.1 by itself, which is the whole point of the hosts entry.
+resolved() {
+  local host=$1 path=$2 port code
+  port=$(router_port)
+  code=$(curl -s -o /dev/null -w '%{http_code}' "http://$host:$port$path") || code=000
+  [ "$code" = 200 ] || fail "$host does not resolve to the router: got $code"
+}
+
 say "create fifteen — version-15, with erpnext pinned to its branch"
 "$TAMP" create fifteen --frappe version-15 --apps erpnext:version-15 --dir "$WORK"
 
@@ -157,6 +166,33 @@ if [ "${TAMP_E2E_DEVELOP:-0}" = 1 ]; then
 
   "$TAMP" rm dev --volumes --yes
 fi
+
+say "a custom domain becomes browsable after hosts sync"
+# The one operation that elevates. The runner's sudo needs no password, so
+# this exercises the real Linux elevation path.
+cp /etc/hosts "$WORK/hosts.before"
+"$TAMP" site new fifteen abc.xyz.com --admin-password admin
+"$TAMP" site list fifteen | grep abc.xyz.com | grep -q pending   || fail "site list does not mark the custom domain's hosts entry pending"
+"$TAMP" hosts sync
+grep -q "127.0.0.1  abc.xyz.com" /etc/hosts || fail "hosts sync did not write the entry"
+grep -q "^# --- tamp managed block ---$" /etc/hosts || fail "hosts sync wrote outside a marked block"
+
+# Everything the machine had must survive verbatim; only tamp's block is new.
+sed '/^# --- tamp managed block ---$/,/^# --- end tamp block ---$/d' /etc/hosts > "$WORK/hosts.outside"
+diff -u "$WORK/hosts.before" "$WORK/hosts.outside" || fail "hosts sync changed content outside its block"
+
+"$TAMP" site list fifteen | grep abc.xyz.com | grep -q ok   || fail "site list still marks the entry pending after a sync"
+expect abc.xyz.com /api/method/ping
+resolved abc.xyz.com /api/method/ping
+"$TAMP" doctor | grep -q "Hosts file" || fail "doctor does not report the hosts block"
+
+say "removing the site takes its line out on the next sync"
+"$TAMP" site rm fifteen abc.xyz.com --yes
+"$TAMP" hosts sync
+if grep -q "abc.xyz.com" /etc/hosts; then
+  fail "the removed site kept its hosts line"
+fi
+diff -u "$WORK/hosts.before" /etc/hosts || fail "the hosts file did not come back byte for byte"
 
 say "rm fifteen leaves the source tree intact"
 # Positive check first, so the survived-rm grep cannot silently match nothing.

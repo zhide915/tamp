@@ -16,6 +16,9 @@ Frappe-side workspace inside one).
   the engine to do, never by mocking anything else.
 - `internal/gitcred` — the host git credential protocol (the credential
   bridge's host half, ADR 0002). A real boundary, never faked.
+- `internal/hosts` — the OS hosts file: the block tamp owns, the in-place
+  write, and the elevation that write alone may ask for. A real boundary,
+  never faked, and the only place in tamp that elevates.
 - `internal/frappe`, `internal/toolchain`, `internal/router`,
   `internal/syncer`, `internal/doctor`, `internal/ui`, `internal/exitcode`.
 
@@ -45,6 +48,12 @@ Frappe-side workspace inside one).
   at a canned credential helper (`cannedCredentials` in
   `cmd/tamp/bridge_test.go`); that isolation also keeps tests from opening
   the developer's sign-in GUI.
+- The hosts file runs real too, redirected by the sandbox's `TAMP_HOSTS_FILE`
+  (`hosts.PathVar`) at a temp file, so no test touches the machine's own. A
+  redirected path forbids elevating, so no test raises a UAC or sudo prompt;
+  the elevated half is covered by `ApplyHostsFile` in
+  `internal/env/hosts_test.go`, and end to end only by CI's ubuntu e2e and
+  `scripts/acceptance-windows.ps1`.
 - Verify with `go build ./...`, `go vet ./...`, `go test ./...`, and
   `gofmt -l`. CI also runs golangci-lint on ubuntu, windows, and macos.
 

@@ -30,6 +30,13 @@ function Confirm-Step([string]$Question) {
     }
 }
 
+# Remove-TampBlock is everything the hosts file holds that is not tamp's -
+# what must survive a sync byte for byte.
+function Remove-TampBlock([string]$Text) {
+    $pattern = '(?ms)^# --- tamp managed block ---\r?\n.*?^# --- end tamp block ---\r?\n'
+    return [regex]::Replace($Text, $pattern, "")
+}
+
 function Get-StatusCode([string]$HostName, [string]$Path, [int]$Port) {
     # Retries: the bench's first request may still be importing apps.
     $code = "000"
@@ -144,6 +151,42 @@ for ($i = 0; $i -lt 30; $i++) {
 }
 Record "a file created in the container reaches the host" $synced
 & $Tamp exec $envName -- rm -f apps/frappe/tamp-acceptance-marker
+
+# --- Custom domain and the one elevated operation ---------------------------
+Write-Host "`n=== hosts sync" -ForegroundColor Cyan
+$customHost = "acceptance.tamp.test"
+$hostsFile = Join-Path $env:SystemRoot "System32\drivers\etc\hosts"
+$hostsBefore = [IO.File]::ReadAllText($hostsFile)
+
+& $Tamp site new $envName $customHost --admin-password $password
+Record "site new on a custom domain succeeds" ($LASTEXITCODE -eq 0)
+$listing = & $Tamp site list $envName | Out-String
+Record "site list marks the hosts entry pending" `
+    ($listing -match ([regex]::Escape($customHost) + ".*pending"))
+
+Write-Host "tamp is about to ask Windows for elevation. Approve the UAC prompt."
+Read-Host "Press Enter, then approve the prompt" | Out-Null
+& $Tamp hosts sync
+Record "hosts sync succeeds" ($LASTEXITCODE -eq 0)
+Record "the sync asked for elevation, for the write alone" `
+    (Confirm-Step "Did exactly one UAC prompt appear, and only now?")
+Record "no earlier tamp command asked for elevation" `
+    (Confirm-Step "Was that the first UAC prompt of the whole run?")
+
+$hostsAfter = [IO.File]::ReadAllText($hostsFile)
+Record "the entry landed inside tamp's marked block" `
+    ($hostsAfter -match "(?m)^# --- tamp managed block ---$")
+Record "nothing outside the block changed" `
+    ((Remove-TampBlock $hostsAfter) -eq $hostsBefore)
+Record "the custom domain resolves to the router" `
+    ((Get-StatusCode $customHost "/api/method/ping" $port) -eq "200")
+
+& $Tamp site rm $envName $customHost --yes
+Write-Host "tamp is about to ask for elevation again, to take the line out."
+Read-Host "Press Enter, then approve the prompt" | Out-Null
+& $Tamp hosts sync
+Record "removing the site takes its line out on the next sync" `
+    ([IO.File]::ReadAllText($hostsFile) -eq $hostsBefore)
 
 # --- rm keeps the source ----------------------------------------------------
 Write-Host "`n=== rm" -ForegroundColor Cyan
