@@ -132,6 +132,12 @@ say "clean --assets then rebuild restores the built assets"
 "$TAMP" exec warm -- test -d sites/assets || fail "rebuild did not restore sites/assets"
 expect warm.localhost /api/method/ping
 
+say "a snapshot of warm records the site and its apps"
+"$TAMP" snapshot create warm --name e2e
+"$TAMP" snapshot list warm | grep -q e2e || fail "snapshot list does not show the snapshot just taken"
+[ -f "$WORK/warm/.tamp/snapshots/e2e.tar.gz" ] || fail "the snapshot bundle is not in the environment directory"
+[ -f "$WORK/warm/.tamp/snapshots/e2e.json" ] || fail "the snapshot manifest is not beside the bundle"
+
 say "clean --data needs --yes, and takes every site when it gets one"
 if "$TAMP" clean warm --data; then
   fail "clean --data destroyed the data layer without --yes"
@@ -142,6 +148,22 @@ if grep -q "http://warm.localhost" "$HOME/.tamp/router/Caddyfile"; then
   fail "the router still routes a site clean --data destroyed"
 fi
 [ -d "$WORK/warm/apps/frappe" ] || fail "clean --data deleted the source tree"
+
+say "snapshot restore brings the wiped site fully back"
+# No --yes: clean --data left nothing for the restore to write over.
+"$TAMP" snapshot restore warm
+expect warm.localhost /api/method/ping
+# list-apps reads the restored database, so it proves the data came back and
+# not merely the route.
+"$TAMP" exec warm -- bench --site warm.localhost list-apps | grep -q frappe   || fail "the restored site has no apps — its database did not come back"
+"$TAMP" site list warm | grep -q warm.localhost || fail "the restored site is not listed"
+
+say "a second restore over live data needs --yes"
+if "$TAMP" snapshot restore warm --name e2e; then
+  fail "restoring over live site data did not ask for --yes"
+fi
+"$TAMP" snapshot restore warm --name e2e --yes
+expect warm.localhost /api/method/ping
 
 "$TAMP" rm warm --volumes --yes
 

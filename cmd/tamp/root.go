@@ -78,6 +78,7 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, stdin
 	root.AddCommand(newRestartCommand(d))
 	root.AddCommand(newRemoveCommand(d))
 	root.AddCommand(newSiteCommand(d))
+	root.AddCommand(newSnapshotCommand(d))
 	root.AddCommand(newHostsCommand(d))
 	root.AddCommand(newCleanCommand(d))
 	root.AddCommand(newRebuildCommand(d))

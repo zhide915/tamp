@@ -152,6 +152,21 @@ for ($i = 0; $i -lt 30; $i++) {
 Record "a file created in the container reaches the host" $synced
 & $Tamp exec $envName -- rm -f apps/frappe/tamp-acceptance-marker
 
+# --- Snapshots --------------------------------------------------------------
+Write-Host "`n=== snapshot create / restore" -ForegroundColor Cyan
+& $Tamp snapshot create $envName --name acceptance
+Record "snapshot create succeeds" ($LASTEXITCODE -eq 0)
+$bundle = Join-Path $WorkDir "$envName\.tamp\snapshots\acceptance.tar.gz"
+Record "the snapshot bundle reached the host" (Test-Path $bundle)
+Record "the bundle is not empty" ((Test-Path $bundle) -and ((Get-Item $bundle).Length -gt 0))
+
+& $Tamp clean $envName --data --yes
+Record "clean --data succeeds" ($LASTEXITCODE -eq 0)
+& $Tamp snapshot restore $envName --name acceptance
+Record "snapshot restore succeeds" ($LASTEXITCODE -eq 0)
+Record "the restored site answers 200 through the router" `
+    ((Get-StatusCode $siteHost "/api/method/ping" $port) -eq "200")
+
 # --- Custom domain and the one elevated operation ---------------------------
 Write-Host "`n=== hosts sync" -ForegroundColor Cyan
 $customHost = "acceptance.tamp.test"

@@ -13,6 +13,12 @@ import (
 // inside it. Nothing the user wrote ever goes.
 const sourceUntouched = "your source code is untouched — tamp deletes nothing you wrote"
 
+// keptSource is the line every destructive preview ends on: the one layer no
+// confirmation is ever about, named with the directory it lives in.
+func keptSource(e *Environment) string {
+	return "  source  " + e.Dir + "  (tamp never deletes it)"
+}
+
 // CleanRequest is what `tamp clean` was asked for. No layer named is not an
 // error: it is the request to be told what the layers are.
 type CleanRequest struct {
@@ -168,7 +174,7 @@ func (m *Manager) announceNextSteps(e *Environment, req CleanRequest) {
 		m.Out.Hint(fmt.Sprintf("next: tamp rebuild %s", e.Name()))
 	}
 	if req.data() {
-		m.Out.Hint(fmt.Sprintf("next: tamp site new %s <host>", e.Name()))
+		m.Out.Hint(fmt.Sprintf("next: tamp site new %s <host>, or tamp snapshot restore %s", e.Name(), e.Name()))
 	}
 }
 
@@ -190,7 +196,11 @@ func (m *Manager) previewClean(e *Environment, req CleanRequest, hosts []string)
 
 	m.Out.Print("")
 	m.Out.Print("it would keep:")
-	m.Out.Print("  source  " + e.Dir + "  (tamp never deletes it)")
+	m.Out.Print(keptSource(e))
+	if req.data() {
+		m.Out.Print("")
+		m.Out.Hint("a snapshot would bring the data back afterwards: tamp snapshot create " + e.Name().String())
+	}
 	m.Out.Print("")
 	m.Out.Print("to clean the data layer:")
 	m.Out.Print("  tamp clean " + e.Name().String() + cleanFlags(req) + " --yes")
@@ -223,7 +233,7 @@ func (m *Manager) printLayers() {
 			{"source", "apps/ — your code", "nothing tamp does", "it is yours, and tamp never deletes it"},
 			{"deps", "the virtualenv, node_modules, __pycache__", "tamp clean --deps", "tamp rebuild"},
 			{"assets", "the built JS and CSS", "tamp clean --assets", "tamp rebuild"},
-			{"data", "every site's database, files and config", "tamp clean --data --yes", "tamp site new <host>"},
+			{"data", "every site's database, files and config", "tamp clean --data --yes", "tamp site new <host>, or tamp snapshot restore"},
 		})
 	m.Out.Print("")
 	m.Out.Print("--all names every wipeable layer; source is never one of them.")

@@ -167,6 +167,7 @@ tamp db erp15                # host, port, and credentials for a database GUI
 tamp exec erp15 -- bench --version   # run anything inside the bench
 tamp clean erp15             # explain the storage layers; destroy nothing
 tamp rebuild erp15           # reinstall dependencies and rebuild assets
+tamp snapshot erp15          # back every site up, database and files
 tamp hosts sync              # write tamp's block in the OS hosts file
 ```
 
@@ -183,7 +184,7 @@ An environment stores four things, and tamp wipes them one at a time. Run
 | `source` | `apps/` — your code                         | nothing tamp does         | it is yours             |
 | `deps`   | the virtualenv, `node_modules`, `__pycache__` | `tamp clean --deps`     | `tamp rebuild`          |
 | `assets` | the built JS and CSS                        | `tamp clean --assets`     | `tamp rebuild`          |
-| `data`   | every site's database, files and config     | `tamp clean --data --yes` | `tamp site new <host>`  |
+| `data`   | every site's database, files and config     | `tamp clean --data --yes` | `tamp site new <host>`, or `tamp snapshot restore` |
 
 ```sh
 tamp clean erp15 --deps      # wipe broken dependencies
@@ -196,6 +197,31 @@ tamp clean erp15 --all --yes # wipe every layer but source
 database and files, so it exits 5 without `--yes`, printing what it would
 take. Both commands need the environment running, and neither deletes code
 you wrote.
+
+## Snapshots
+
+A snapshot backs up the data layer — every site's database and files — into
+the environment's own `.tamp/snapshots/` folder. Take one before anything
+risky:
+
+```sh
+tamp snapshot erp15                          # named after the moment
+tamp snapshot create erp15 --name pre-v16    # or named by you
+tamp snapshot list erp15                     # name, created, size, site count
+tamp snapshot restore erp15                  # the newest, or --name
+```
+
+A restore recreates sites the environment no longer has, then restores and
+migrates each one, so a snapshot from an older checkout still works. Nothing
+changes until the pre-flight passes:
+
+- Every app the snapshot's sites had installed is on the bench. A missing app
+  exits 1, names the app, and prints the `bench get-app` line that fetches it.
+- No hostname in the snapshot belongs to another environment.
+- Writing over site data that exists today needs `--yes`.
+
+tamp takes a snapshot only when you ask, and never schedules, prunes, or
+expires one. Copy, move, or delete the files as you like.
 
 ## Machine settings
 
@@ -218,6 +244,9 @@ This removes the containers, network, routes, and registry entry. It keeps
 the data volumes and never touches the directory. To bring the environment
 back later, run `tamp init` inside it — the volumes reattach and every site
 returns with its data.
+
+Snapshots live in the environment directory, so they survive `tamp rm` and
+return with `tamp init`.
 
 For a complete deletion, remove the volumes too, then delete the folder:
 
@@ -244,7 +273,7 @@ curl --resolve shop.localhost:80:127.0.0.1 http://shop.localhost
 | 0 | success |
 | 1 | operation failed |
 | 2 | usage error |
-| 3 | environment or site not found |
+| 3 | environment, site or snapshot not found |
 | 4 | Docker unavailable |
 | 5 | confirmation required (add `--yes`) |
 

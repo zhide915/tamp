@@ -12,7 +12,7 @@ const (
 	CodeOK                   Code = 0 // success
 	CodeFailed               Code = 1 // understood, but the operation failed
 	CodeUsage                Code = 2 // bad command line
-	CodeNotFound             Code = 3 // named environment or site does not exist
+	CodeNotFound             Code = 3 // a named environment, site or snapshot does not exist
 	CodeEngineUnavailable    Code = 4 // no Docker socket, or compose v2 missing
 	CodeConfirmationRequired Code = 5 // destructive action without --yes
 )

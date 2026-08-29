@@ -21,6 +21,11 @@ import (
 type benchSim struct {
 	benches map[string]*benchState
 
+	// staged is what a snapshot holds, per site: the app list a restore
+	// brings back. It sits here rather than on a bench because a snapshot is
+	// a file beside the environment, outliving the bench it came from.
+	staged map[string][]string
+
 	// Hooks back into the Fake: the alias, private and missing tables are
 	// the test's to script, and site configs land in the shared container
 	// filesystem.
@@ -81,6 +86,18 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 		return nil
 	}
 
+	// The snapshot bundle moves between the host and the container as a
+	// stream, so the fake answers on stdout rather than by storing a file.
+	// Checked before the template store, whose scripts share the tar and
+	// gzip words.
+	if strings.Contains(exec.Line(), "tar -cf - .") {
+		fmt.Fprintln(stdout, "tamp snapshot of "+strings.Join(s.stagedSites(), " "))
+		return nil
+	}
+	if strings.Contains(exec.Line(), "-xzf -") {
+		return nil
+	}
+
 	// The template store, modelled as the files it is: a save puts the
 	// tarball there, a restore unpacks the bench a save was taken from, and
 	// the probe answers from what is actually in the store.
@@ -114,7 +131,23 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 	case strings.Contains(exec.Line(), "bench drop-site"):
 		host := siteArg(exec.Cmd, "drop-site")
 		delete(b.sites, host)
+		delete(b.siteApps, host)
 		s.drop(frappe.SiteConfigPath(host))
+	// A backup is what a snapshot carries: the site's apps, kept where the
+	// bench's own state cannot take them with it.
+	case strings.Contains(exec.Line(), "backup --with-files"):
+		host := siteArg(exec.Cmd, "backup")
+		if s.staged == nil {
+			s.staged = map[string][]string{}
+		}
+		s.staged[host] = slices.Clone(b.siteApps[host])
+	case strings.Contains(exec.Line(), `"$1" restore`):
+		host := scriptArg(exec.Cmd, 0)
+		s.addSite(b, host)
+		if b.siteApps == nil {
+			b.siteApps = map[string][]string{}
+		}
+		b.siteApps[host] = slices.Clone(s.staged[host])
 	// The listing script identifies sites by the config file every site has.
 	case strings.Contains(exec.Line(), "site_config.json"):
 		for _, host := range b.sitesSorted() {
@@ -205,6 +238,9 @@ func (b *benchState) sitesSorted() []string { return slices.Sorted(maps.Keys(b.s
 
 // allApps and allSites collapse every bench into one answer, for the tests
 // that run a single environment and just want to know what is on it.
+// stagedSites names what a snapshot bundle would carry, sorted.
+func (s *benchSim) stagedSites() []string { return slices.Sorted(maps.Keys(s.staged)) }
+
 func (s *benchSim) allApps() []string {
 	seen := map[string]bool{}
 	for _, b := range s.benches {

@@ -229,6 +229,24 @@ func RecordSites(home string, name Name, hosts []string) ([]HostClaim, error) {
 	return skipped, err
 }
 
+// HostConflicts reports which of these hostnames the machine has already
+// given to something other than self. A restore asks before it touches
+// anything: recreating a site whose hostname now belongs elsewhere would put
+// one address in the Caddyfile twice and take every route down.
+func HostConflicts(home string, self Name, wanted []string) ([]HostClaim, error) {
+	reg, err := LoadRegistry(home)
+	if err != nil {
+		return nil, err
+	}
+	var clashes []HostClaim
+	for _, host := range wanted {
+		if c, claimed := claimant(reg, string(self), host); claimed {
+			clashes = append(clashes, c)
+		}
+	}
+	return clashes, nil
+}
+
 // updateSites is the single path for changing a site list: a read-modify-
 // write under the machine lock, since the list is what routes are assembled
 // from.
