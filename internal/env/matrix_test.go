@@ -9,7 +9,7 @@ import (
 
 func TestParseFrappeVersionResolvesTheDocumentedToolchains(t *testing.T) {
 	cases := map[string]Toolchain{
-		"version-15": {Python: "3.11", Node: "18", MariaDB: "10.11"},
+		"version-15": {Python: "3.11", Node: "18", MariaDB: "10.8"},
 		"version-16": {Python: "3.14", Node: "24", MariaDB: "11.8"},
 		"develop":    {Python: "3.14", Node: "24", MariaDB: "11.8"},
 	}
@@ -47,7 +47,7 @@ func TestEveryImageIsPinnedToATag(t *testing.T) {
 		"bench":   BenchImage,
 		"redis":   RedisImage,
 		"mailpit": MailpitImage,
-		"mariadb": MariaDBImage("10.11"),
+		"mariadb": MariaDBImage("10.8"),
 	}
 	for what, image := range images {
 		_, tag, ok := strings.Cut(image, ":")

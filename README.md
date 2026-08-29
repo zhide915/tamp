@@ -44,7 +44,7 @@ Supported Frappe versions:
 
 | `--frappe`   | Python | Node | MariaDB |
 | ------------ | ------ | ---- | ------- |
-| `version-15` | 3.11   | 18   | 10.11   |
+| `version-15` | 3.11   | 18   | 10.8   |
 | `version-16` | 3.14   | 24   | 11.8    |
 | `develop`    | latest supported set |||
 

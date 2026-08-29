@@ -381,7 +381,7 @@ func TestTwoEnvironmentsShareNoResources(t *testing.T) {
 	}
 
 	r := c.run(t, "list")
-	r.assertStdoutContains(t, "demo", "other", "version-15", "version-16", "10.11", "11.8")
+	r.assertStdoutContains(t, "demo", "other", "version-15", "version-16", "10.8", "11.8")
 }
 
 // Toolchain and cache volumes are shared machine-wide on purpose, and must be
@@ -502,7 +502,7 @@ func TestListReportsWhatEachEnvironmentIs(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStdoutContains(t, "NAME", "STATE", "FRAPPE", "PYTHON", "NODE", "MARIADB", "SITES", "MAIL", "SYNC", "PATH")
-	r.assertStdoutContains(t, "demo", "running", "version-15", "3.11", "18", "10.11", "none yet", c.path("demo"))
+	r.assertStdoutContains(t, "demo", "running", "version-15", "3.11", "18", "10.8", "none yet", c.path("demo"))
 }
 
 func TestListShowsEachSiteURLAndTheSyncMode(t *testing.T) {

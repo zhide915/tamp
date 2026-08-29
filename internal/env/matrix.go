@@ -42,7 +42,7 @@ const (
 // only this. version-14 is absent rather than commented out: rejections name
 // these keys, so an unsupported version gets one honest answer.
 var matrix = map[FrappeVersion]Toolchain{
-	Version15: {Python: "3.11", Node: "18", MariaDB: "10.11"},
+	Version15: {Python: "3.11", Node: "18", MariaDB: "10.8"},
 	Version16: {Python: "3.14", Node: "24", MariaDB: "11.8"},
 	// develop tracks v16's floors until it moves past them.
 	Develop: {Python: "3.14", Node: "24", MariaDB: "11.8"},

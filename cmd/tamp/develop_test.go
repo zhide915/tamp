@@ -39,7 +39,7 @@ func TestADevelopEnvironmentAndAStableOneRunSideBySide(t *testing.T) {
 	r := c.run(t, "list")
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStdoutContains(t,
-		"fifteen", "version-15", "3.11", "10.11",
+		"fifteen", "version-15", "3.11", "10.8",
 		"dev", "develop", "3.14", "11.8")
 
 	// Both are up, on their own networks, with their own mail UIs.
