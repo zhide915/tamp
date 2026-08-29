@@ -54,6 +54,14 @@ resolved() {
 say "create fifteen — version-15, with erpnext pinned to its branch"
 "$TAMP" create fifteen --frappe version-15 --apps erpnext:version-15 --dir "$WORK"
 
+say "a bare site, to measure what every site creation pays before any app work"
+# bench new-site dominates a small site creation and both paths below pay it,
+# so the seed's promise is only about what is left once it is subtracted.
+base_start=$(date +%s)
+"$TAMP" site new fifteen bare.localhost --admin-password admin
+base_seconds=$(( $(date +%s) - base_start ))
+echo "a bare site took ${base_seconds}s"
+
 say "site on fifteen, with erpnext installed on it"
 install_start=$(date +%s)
 "$TAMP" site new fifteen fifteen.localhost --apps erpnext --admin-password admin
@@ -71,11 +79,21 @@ seed_start=$(date +%s)
   fail "the seeded site creation failed"
 }
 seed_seconds=$(( $(date +%s) - seed_start ))
-echo "restoring the seed took ${seed_seconds}s against ${install_seconds}s"
 grep -q "seed, restored and migrated" "$WORK/seeded.log"   || fail "site new --seed did not say it restored a seed: $(cat "$WORK/seeded.log")"
-# The promise is a small fraction of the install; half is the generous form
-# of it, and a regression to the install path fails it outright.
-[ $(( seed_seconds * 2 )) -lt "$install_seconds" ]   || fail "the seeded site took ${seed_seconds}s against an install of ${install_seconds}s"
+
+# Both numbers carry the bare site's cost, which no seed can remove; what the
+# seed replaces is what is left. Compared at a third, the promise's generous
+# form, and a regression to the install path fails it outright.
+install_work=$(( install_seconds - base_seconds ))
+seed_work=$(( seed_seconds - base_seconds ))
+# A seed can measure faster than a bare site through nothing but noise; one
+# second keeps the comparison meaningful without inventing a saving.
+if [ "$seed_work" -lt 1 ]; then
+  seed_work=1
+fi
+echo "the app work took ${seed_work}s from the seed against ${install_work}s installing"
+[ "$install_work" -gt 0 ]   || fail "installing erpnext measured ${install_work}s over a bare site, so there is nothing to compare"
+[ $(( seed_work * 3 )) -lt "$install_work" ]   || fail "the seed saved too little: ${seed_work}s against ${install_work}s installing"
 # A working ERPNext site, not merely a routed one: list-apps reads its
 # database, which is the part the seed carried.
 expect seeded.localhost /api/method/ping
