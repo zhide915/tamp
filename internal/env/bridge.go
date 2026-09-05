@@ -25,8 +25,7 @@ type bridge struct {
 	needs    map[string]bool
 	approved map[string]bool
 	// accepted marks the hosts where some source answered to the credential,
-	// indicted those where some source refused it outright. Reject is
-	// host-scoped: it fires only for a credential that worked nowhere.
+	// indicted those where some source refused it outright.
 	accepted map[string]bool
 	indicted map[string]bool
 }
@@ -67,9 +66,8 @@ func (m *Manager) preflightApps(ctx context.Context, e *Environment, bench *frap
 	if err != nil {
 		return nil, err
 	}
-	// The first failure is the one reported. A refused credential alone keeps
-	// the preflight going: whether it is stale depends on what the rest of
-	// its host says, and nothing is rejected before every source has answered.
+	// The first failure is reported. Only a refused credential keeps the
+	// preflight going: its verdict depends on what the rest of its host says.
 	var first error
 	for _, app := range apps {
 		if slices.Contains(onBench, app.Name) || hasHostApp(e.Dir, app.Name) {
@@ -298,8 +296,6 @@ func refusedCredential(source, host string) error {
 		signInFix(source))
 }
 
-// deniedRepository is the verdict when the host took the credential but hid
-// or denied the repository: the sign-in is fine, the access is not.
 func deniedRepository(source, host string) error {
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("%s took the host's credential but hid or denied %s", host, source),

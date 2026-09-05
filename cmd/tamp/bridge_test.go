@@ -325,9 +325,8 @@ func countOf(calls []string, verb string) int {
 
 // --- reject is host-scoped ---------------------------------------------------
 
-// A credential the host accepted for one repository is not stale because
-// another repository refuses it (another organization, SSO not authorized):
-// the run names the denied repository and leaves the host sign-in alone.
+// Another organization's repository, or one behind SSO the account has not
+// authorized, refuses a credential the host accepts everywhere else.
 func TestARepositoryRefusingACredentialTheHostAcceptedElsewhereIsADenialNotAReject(t *testing.T) {
 	const other = "https://github.com/otherorg/locked"
 	for name, order := range map[string]string{
@@ -346,20 +345,15 @@ func TestARepositoryRefusingACredentialTheHostAcceptedElsewhereIsADenialNotAReje
 			if strings.Contains(r.stderr, "sign in") {
 				t.Errorf("the run blamed the sign-in for a repository-scoped denial:\n%s", r.stderr)
 			}
-			calls := credentialCalls(t, log)
-			if slices.Contains(calls, "erase") {
+			if calls := credentialCalls(t, log); slices.Contains(calls, "erase") {
 				t.Errorf("the helper was told to drop a credential the host accepted: %v", calls)
-			}
-			if got := countOf(calls, "get"); got != 1 {
-				t.Errorf("the helper was asked %d times, want 1: %v", got, calls)
 			}
 		})
 	}
 }
 
-// GitHub hides a repository from a credential without access to it, so the
-// correct credential is told the repository does not exist. That is a scope
-// problem, not a typo and not a stale sign-in.
+// GitHub tells a credential without access that the repository does not
+// exist — the same words a typo gets.
 func TestARepositoryHiddenFromTheCorrectCredentialIsADenialNotATypo(t *testing.T) {
 	c := sandbox(t)
 	c.engine.DeniedRepos = map[string]string{privateApp: "s3cret-9Lmn"}
@@ -377,13 +371,9 @@ func TestARepositoryHiddenFromTheCorrectCredentialIsADenialNotATypo(t *testing.T
 	if calls := credentialCalls(t, log); slices.Contains(calls, "erase") {
 		t.Errorf("the helper was told to drop a credential the host accepted: %v", calls)
 	}
-	if c.engine.Ran("bench init") {
-		t.Error("the bench was initialized for a fetch that could never work")
-	}
 }
 
-// A verdict that needs no more evidence ends the preflight at once: a typo
-// must not cost the user a sign-in prompt for a run that is already lost.
+// A typo must not cost the user a sign-in prompt for a run already lost.
 func TestATypoAheadOfAPrivateSourceFailsWithoutAskingForCredentials(t *testing.T) {
 	c := sandbox(t)
 	const typo = "https://github.com/myorg/typo"

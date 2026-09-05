@@ -243,8 +243,7 @@ func (s *benchSim) remoteRefusal(exec Exec, source string, stderr io.Writer) err
 	return refused
 }
 
-// presentedPassword is the credential the bridge injected into this exec, if
-// any — the fake gates on the same contract the container's helper reads.
+// presentedPassword is the password the bridge injected into this exec, if any.
 func presentedPassword(env []string) (string, bool) {
 	for _, kv := range env {
 		if password, ok := strings.CutPrefix(kv, frappe.CredentialPasswordVar+"="); ok && password != "" {
