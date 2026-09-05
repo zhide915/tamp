@@ -127,6 +127,10 @@ type Fake struct {
 	// git commands touching the source fail the way auth does unless the
 	// exec's environment carries that password.
 	PrivateRepos map[string]string
+	// DeniedRepos maps an app source URL to the password its host accepts but
+	// that has no access to it: to that password the repository does not
+	// exist, to any other the host answers as for a wrong credential.
+	DeniedRepos map[string]string
 	// MissingRepos are source URLs no host serves: git commands touching
 	// them fail the way a typo or a deleted repository does.
 	MissingRepos map[string]bool
@@ -383,6 +387,7 @@ func (f *Fake) bench() *benchSim {
 		f.sim = &benchSim{
 			aliases: func() map[string]string { return f.AppAliases },
 			private: func() map[string]string { return f.PrivateRepos },
+			denied:  func() map[string]string { return f.DeniedRepos },
 			missing: func() map[string]bool { return f.MissingRepos },
 			put:     f.put,
 			drop:    func(path string) { delete(f.Files, path) },

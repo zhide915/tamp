@@ -31,11 +31,12 @@ type benchSim struct {
 	// every environment on the machine.
 	seeds map[string][]string
 
-	// Hooks back into the Fake: the alias, private and missing tables are
-	// the test's to script, and site configs land in the shared container
+	// Hooks back into the Fake: the alias, private, denied and missing tables
+	// are the test's to script, and site configs land in the shared container
 	// filesystem.
 	aliases func() map[string]string
 	private func() map[string]string
+	denied  func() map[string]string
 	missing func() map[string]bool
 	put     func(path, body string)
 	drop    func(path string)
@@ -216,18 +217,41 @@ func (s *benchSim) answer(exec Exec, stdout, stderr io.Writer) error {
 }
 
 // remoteRefusal is git meeting the scripted repository tables. The words on
-// stderr are the real git's, because that is what tamp classifies.
+// stderr are github.com's, verified, because that is what tamp classifies.
 func (s *benchSim) remoteRefusal(exec Exec, source string, stderr io.Writer) error {
+	refused := &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
 	if s.missing()[source] {
 		fmt.Fprintf(stderr, "fatal: repository '%s' not found\n", source)
-		return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
+		return refused
 	}
-	password, private := s.private()[source]
-	if !private || (password != "" && slices.Contains(exec.Env, frappe.CredentialPasswordVar+"="+password)) {
+	opens, private := s.private()[source]
+	accepted, denied := s.denied()[source]
+	if !private && !denied {
 		return nil
 	}
-	fmt.Fprintf(stderr, "fatal: could not read Username for '%s': terminal prompts disabled\n", source)
-	return &engine.ExitError{Container: exec.Container, Cmd: exec.Cmd, Status: 128}
+	presented, ok := presentedPassword(exec.Env)
+	switch {
+	case !ok:
+		fmt.Fprintf(stderr, "fatal: could not read Username for '%s': terminal prompts disabled\n", source)
+	case private && presented == opens:
+		return nil
+	case denied && presented == accepted:
+		fmt.Fprintf(stderr, "remote: Repository not found.\nfatal: repository '%s/' not found\n", source)
+	default:
+		fmt.Fprintf(stderr, "remote: Invalid username or password.\nfatal: Authentication failed for '%s/'\n", source)
+	}
+	return refused
+}
+
+// presentedPassword is the credential the bridge injected into this exec, if
+// any — the fake gates on the same contract the container's helper reads.
+func presentedPassword(env []string) (string, bool) {
+	for _, kv := range env {
+		if password, ok := strings.CutPrefix(kv, frappe.CredentialPasswordVar+"="); ok && password != "" {
+			return password, true
+		}
+	}
+	return "", false
 }
 
 // isSeed tells the two stores apart by where the tarball lives.
