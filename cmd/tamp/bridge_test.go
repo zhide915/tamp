@@ -322,3 +322,80 @@ func countOf(calls []string, verb string) int {
 	}
 	return n
 }
+
+// --- reject is host-scoped ---------------------------------------------------
+
+// A credential the host accepted for one repository is not stale because
+// another repository refuses it (another organization, SSO not authorized):
+// the run names the denied repository and leaves the host sign-in alone.
+func TestARepositoryRefusingACredentialTheHostAcceptedElsewhereIsADenialNotAReject(t *testing.T) {
+	const other = "https://github.com/otherorg/locked"
+	for name, order := range map[string]string{
+		"accepted first": privateApp + ":version-15," + other + ":version-15",
+		"refused first":  other + ":version-15," + privateApp + ":version-15",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := sandbox(t)
+			c.engine.PrivateRepos = map[string]string{privateApp: "s3cret-9Lmn", other: "someone-elses"}
+			log := c.cannedCredentials(t, "dev", "s3cret-9Lmn")
+
+			r := c.run(t, "create", "demo", "--frappe", "version-15", "--apps", order)
+
+			r.assertCode(t, exitcode.CodeFailed)
+			r.assertStderrContains(t, other, "can access the repository")
+			if strings.Contains(r.stderr, "sign in") {
+				t.Errorf("the run blamed the sign-in for a repository-scoped denial:\n%s", r.stderr)
+			}
+			calls := credentialCalls(t, log)
+			if slices.Contains(calls, "erase") {
+				t.Errorf("the helper was told to drop a credential the host accepted: %v", calls)
+			}
+			if got := countOf(calls, "get"); got != 1 {
+				t.Errorf("the helper was asked %d times, want 1: %v", got, calls)
+			}
+		})
+	}
+}
+
+// GitHub hides a repository from a credential without access to it, so the
+// correct credential is told the repository does not exist. That is a scope
+// problem, not a typo and not a stale sign-in.
+func TestARepositoryHiddenFromTheCorrectCredentialIsADenialNotATypo(t *testing.T) {
+	c := sandbox(t)
+	c.engine.DeniedRepos = map[string]string{privateApp: "s3cret-9Lmn"}
+	log := c.cannedCredentials(t, "dev", "s3cret-9Lmn")
+
+	r := c.run(t, "create", "demo", "--frappe", "version-15", "--apps", privateApp+":version-15")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertStderrContains(t, privateApp, "can access the repository")
+	for _, wrong := range []string{"check the URL for a typo", "sign in"} {
+		if strings.Contains(r.stderr, wrong) {
+			t.Errorf("the verdict reads %q for an access-scope denial:\n%s", wrong, r.stderr)
+		}
+	}
+	if calls := credentialCalls(t, log); slices.Contains(calls, "erase") {
+		t.Errorf("the helper was told to drop a credential the host accepted: %v", calls)
+	}
+	if c.engine.Ran("bench init") {
+		t.Error("the bench was initialized for a fetch that could never work")
+	}
+}
+
+// A verdict that needs no more evidence ends the preflight at once: a typo
+// must not cost the user a sign-in prompt for a run that is already lost.
+func TestATypoAheadOfAPrivateSourceFailsWithoutAskingForCredentials(t *testing.T) {
+	c := sandbox(t)
+	const typo = "https://github.com/myorg/typo"
+	c.engine.MissingRepos = map[string]bool{typo: true}
+	c.engine.PrivateRepos = map[string]string{privateApp: "s3cret-9Lmn"}
+	log := c.cannedCredentials(t, "dev", "s3cret-9Lmn")
+
+	r := c.run(t, "create", "demo", "--frappe", "version-15", "--apps", typo+":version-15,"+privateApp+":version-15")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertStderrContains(t, typo, "check the URL")
+	if calls := credentialCalls(t, log); len(calls) != 0 {
+		t.Errorf("the helper was consulted for a run a typo had already failed: %v", calls)
+	}
+}

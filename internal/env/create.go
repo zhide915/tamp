@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strings"
 
 	"github.com/zhide915/tamp/internal/engine"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -347,14 +346,11 @@ func (m *Manager) fetchApp(ctx context.Context, bench *frappe.Bench, bridge *bri
 		bridge.approve(ctx, app.Source)
 		return nil
 	}
-	// Only a refusal naming the credential's own host indicts it — the
-	// transcript also carries pip and yarn, whose failures must not cost the
-	// user a credential the preflight just proved.
-	if said := said.String(); authShaped(said) {
-		if _, host, _, hostErr := sourceParts(app.Source); hostErr == nil && strings.Contains(said, host) {
-			bridge.reject(ctx, app.Source)
-			return refusedCredential(app.Source, host)
-		}
+	// The preflight retry proved this credential on this host, so a refusal
+	// now means it was revoked mid-run. Reject is host-scoped and the host
+	// accepted it, so none fires; the next run's preflight rejects instead.
+	if _, host, _, hostErr := sourceParts(app.Source); hostErr == nil && indicts(said.String(), host) {
+		return refusedCredential(app.Source, host)
 	}
 	return err
 }

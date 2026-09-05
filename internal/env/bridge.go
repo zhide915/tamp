@@ -24,6 +24,11 @@ type bridge struct {
 	// public app on the same host still fetches bare.
 	needs    map[string]bool
 	approved map[string]bool
+	// accepted marks the hosts where some source answered to the credential,
+	// indicted those where some source refused it outright. Reject is
+	// host-scoped: it fires only for a credential that worked nowhere.
+	accepted map[string]bool
+	indicted map[string]bool
 }
 
 func (m *Manager) newBridge() *bridge {
@@ -32,7 +37,20 @@ func (m *Manager) newBridge() *bridge {
 		creds:    map[string]gitcred.Credential{},
 		needs:    map[string]bool{},
 		approved: map[string]bool{},
+		accepted: map[string]bool{},
+		indicted: map[string]bool{},
 	}
+}
+
+// credentialRefusal is a source refusing the injected credential. Its verdict
+// waits until every source has answered: on a host that accepted the
+// credential elsewhere it is a repository-scoped denial, not a stale sign-in.
+type credentialRefusal struct {
+	source, host string
+}
+
+func (r *credentialRefusal) Error() string {
+	return refusedCredential(r.source, r.host).Error()
 }
 
 // preflightApps proves every source that will be fetched answers from inside
@@ -49,54 +67,101 @@ func (m *Manager) preflightApps(ctx context.Context, e *Environment, bench *frap
 	if err != nil {
 		return nil, err
 	}
+	// The first failure is the one reported. A refused credential alone keeps
+	// the preflight going: whether it is stale depends on what the rest of
+	// its host says, and nothing is rejected before every source has answered.
+	var first error
 	for _, app := range apps {
 		if slices.Contains(onBench, app.Name) || hasHostApp(e.Dir, app.Name) {
 			continue
 		}
-		if err := m.preflightSource(ctx, bench, app.Source, br, log); err != nil {
+		failed, err := m.preflightSource(ctx, bench, app.Source, br, log)
+		if err != nil {
 			return nil, err
 		}
+		if failed != nil && first == nil {
+			first = failed
+			var pending *credentialRefusal
+			if !errors.As(first, &pending) {
+				break
+			}
+		}
 	}
-	return br, nil
+	if first == nil {
+		return br, nil
+	}
+	br.settle(ctx)
+	return nil, br.verdict(first)
 }
 
-func (m *Manager) preflightSource(ctx context.Context, bench *frappe.Bench, source string, br *bridge, log *createLog) error {
+// preflightSource probes one source. failed is that source's own verdict and
+// lets the preflight go on; err — the engine, or host git producing no
+// credential — ends it undecided, so nothing is rejected.
+func (m *Manager) preflightSource(ctx context.Context, bench *frappe.Bench, source string, br *bridge, log *createLog) (failed, err error) {
 	// A tamp.toml from before the bridge can carry an ssh source the flag
 	// parser now refuses; the fix is rewriting it, not a reachability answer.
 	if https, ssh := httpsFormOfSSH(source); ssh {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("this environment's %s records the ssh app source %s, which tamp cannot fetch", ConfigFile, redactedURL(source)),
-			fmt.Sprintf("edit %s: replace the source with %s", ConfigFile, https))
+			fmt.Sprintf("edit %s: replace the source with %s", ConfigFile, https)), nil
 	}
 
 	refusal, err := remoteRefusal(bench.CheckRemote(ctx, source, nil))
 	if err != nil || refusal == nil {
-		return err
+		return nil, err
 	}
 	if !authShaped(refusal.Output) {
-		return unreachableSource(refusal, log)
+		return unreachableSource(refusal, log), nil
 	}
 
 	// Auth-shaped: the repository looks private (a host that hides private
 	// repositories answers exactly like this for a missing one, too).
+	_, host, _, err := sourceParts(source)
+	if err != nil {
+		return nil, err
+	}
 	cred, err := br.credential(ctx, source, log)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	refusal, err = remoteRefusal(bench.CheckRemote(ctx, source, credentialEnv(cred)))
-	if err == nil && refusal == nil {
-		br.needs[source] = true
-		return nil
-	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if !authShaped(refusal.Output) {
-		return unreachableSource(refusal, log)
+	if refusal == nil {
+		br.needs[source] = true
+		br.accepted[host] = true
+		return nil, nil
 	}
-	br.reject(ctx, source)
-	return refusedCredential(source, cred.Host)
+	fmt.Fprintln(log.stream(), strings.TrimSpace(refusal.Output))
+	if !indicts(refusal.Output, host) {
+		return deniedRepository(source, host), nil
+	}
+	br.indicted[host] = true
+	return &credentialRefusal{source: source, host: host}, nil
+}
+
+// settle completes the credential protocol once every source has answered:
+// only a credential that worked nowhere on its host is rejected.
+func (b *bridge) settle(ctx context.Context) {
+	for host := range b.indicted {
+		if !b.accepted[host] {
+			b.reject(ctx, host)
+		}
+	}
+}
+
+// verdict is the reportable error for a failed source, judged against the run.
+func (b *bridge) verdict(failed error) error {
+	var cr *credentialRefusal
+	if !errors.As(failed, &cr) {
+		return failed
+	}
+	if b.accepted[cr.host] {
+		return deniedRepository(cr.source, cr.host)
+	}
+	return refusedCredential(cr.source, cr.host)
 }
 
 // credential fills at most once per host per run, delegating to whatever
@@ -166,11 +231,7 @@ func (b *bridge) approve(ctx context.Context, source string) {
 
 // reject tells the host's helper its credential was refused, so the next run
 // prompts instead of replaying the same stale secret.
-func (b *bridge) reject(ctx context.Context, source string) {
-	_, host, _, err := sourceParts(source)
-	if err != nil {
-		return
-	}
+func (b *bridge) reject(ctx context.Context, host string) {
 	cred, ok := b.creds[host]
 	if !ok {
 		return
@@ -198,8 +259,15 @@ func remoteRefusal(err error) (*frappe.RemoteError, error) {
 	return nil, err
 }
 
-// authShaped reports whether git's output is a credential demand rather than
-// any other failure — the trigger for the bridge.
+// indicts reports whether a presented credential was refused outright — the
+// one answer that blames the sign-in rather than access to the repository.
+// The host check keeps a fetch transcript's other-host failures out.
+func indicts(output, host string) bool {
+	return strings.Contains(output, "Authentication failed") && strings.Contains(output, host)
+}
+
+// authShaped reports whether git's output to a bare probe is a credential
+// demand rather than any other failure — the trigger for the bridge.
 func authShaped(output string) bool {
 	for _, marker := range []string{
 		"could not read Username",
@@ -228,6 +296,14 @@ func refusedCredential(source, host string) error {
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("%s refused the host's credential for %s", source, host),
 		signInFix(source))
+}
+
+// deniedRepository is the verdict when the host took the credential but hid
+// or denied the repository: the sign-in is fine, the access is not.
+func deniedRepository(source, host string) error {
+	return exitcode.New(exitcode.CodeFailed,
+		fmt.Sprintf("%s took the host's credential but hid or denied %s", host, source),
+		"check the URL, and that your account can access the repository (organization membership, SSO authorization)")
 }
 
 // signInFix is the one action that repairs any credential problem: the
