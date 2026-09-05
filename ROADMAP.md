@@ -43,8 +43,8 @@ Nicer to drive: machine-readable output, editor wiring, HTTPS.
 Acknowledged ideas with no spec. Promotion into Planned requires a spec
 issue.
 
-- **R-50** `ports` router mode (deferred from #1)
-- **R-51** `~/.tamp/config.toml` machine defaults (deferred from #1)
+- **R-50** `ports` router mode (deferred from [#1](https://github.com/zhide915/tamp/issues/1))
+- **R-51** `~/.tamp/config.toml` machine defaults (deferred from [#1](https://github.com/zhide915/tamp/issues/1))
 - **R-52** MCP server
 - **R-53** Production profile (`tamp build` / `tamp deploy`)
 - **R-54** `tamp update` convenience command

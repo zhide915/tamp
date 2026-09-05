@@ -61,7 +61,7 @@ func execIndex(execs []enginetest.Exec, fragment string) int {
 	return -1
 }
 
-// --- preflight (#31) --------------------------------------------------------
+// --- preflight ---------------------------------------------------------------
 
 func TestCreateFailsInThePreflightWhenAnAppSourceDoesNotExist(t *testing.T) {
 	c := sandbox(t)
@@ -148,7 +148,7 @@ func TestAnSSHSourceInAnOldTampTomlGetsTheHTTPSRewriteAtPreflight(t *testing.T) 
 	}
 }
 
-// --- the credential bridge (#32) --------------------------------------------
+// --- the credential bridge ---------------------------------------------------
 
 func TestCreateBridgesTheHostCredentialIntoAPrivateFetch(t *testing.T) {
 	c := sandbox(t)

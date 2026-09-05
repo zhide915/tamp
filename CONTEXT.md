@@ -5,7 +5,7 @@ Glossary for tamp, an environment manager for Frappe Framework. Canonical terms 
 ## Language
 
 **Environment**:
-tamp's unit of management — one directory (marked by `tamp.toml`) containing exactly one bench and its containers. One environment = one bench, forever (locked 2026-08-27).
+tamp's unit of management — one directory (marked by `tamp.toml`) containing exactly one bench and its containers. One environment = one bench, forever.
 _Avoid_: bench (as a synonym), project, instance
 
 **Bench**:

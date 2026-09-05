@@ -51,6 +51,13 @@ Host git becomes a lazy dependency: only a private fetch needs it, and
 - Tests keep the engine as the only fake point: host git runs real
   against a sandboxed config with a canned credential helper.
 - Auth failures carry CodeFailed; no new exit code.
+- `reject` is host-scoped, so it fires only when the credential worked
+  nowhere on that host during the run: preflight finishes every source
+  before deciding, a successful preflight retry counts as acceptance,
+  and only a presented-and-refused answer (`Authentication failed`)
+  indicts the credential. A refusal on a host that accepted the
+  credential elsewhere is a repository-scoped denial — reported as
+  such, never as a stale sign-in.
 - The credential is visible in the exec's environment for its duration,
   on the user's own machine — accepted.
 - If Docker grows first-class host-credential interop, revisit.

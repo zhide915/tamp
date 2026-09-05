@@ -11,7 +11,7 @@ guessed. Two commands made an environment (`create`, `init`); sites were
 `rebuild` described tamp's layers rather than what the user wanted; the
 `[env]` positional sat in front of a required host, so `tamp site rm
 foo` had to be parsed by a person; and `sync`, `hosts` and `db` exposed
-plumbing as product. The agent surface (#22) was about to pin these
+plumbing as product. The agent and editor surface was about to pin these
 names into public JSON contracts.
 
 tamp is pre-release with one user, so a clean break costs nothing now
@@ -59,11 +59,12 @@ and grows dearer with every release.
 ## Consequences
 
 - `create`, `init`, `rm`, `site new`, `site rm`, `snapshot create`,
-  `clean`, `rebuild`, `exec`, `db`, `sync *` and `hosts sync` are gone;
+  `clean`, `rebuild`, `exec`, `db`, `sync *` and `hosts sync` go away;
   `hosts apply` stays as a hidden command for the elevated write.
 - README, CI e2e and the Windows acceptance script are rewritten in the
-  same change; #22, #24, #26 and #27 were amended to the new names.
-- `status --json` carries the `sync` object #26 pinned; the context
-  block's `commands` become `logs`, `status`, `reset`.
+  same change; the open agent-surface, devcontainer, JSON-contract and
+  acceptance specs are amended to the new names.
+- `status --json` carries the `sync` object the JSON contract pinned; the
+  context block's `commands` become `logs`, `status`, `reset`.
 - `tamp app add|list|remove` is deferred to its own issue.
 - Exit codes are unchanged: nothing here needs a new meaning.
