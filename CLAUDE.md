@@ -41,6 +41,10 @@ Frappe-side workspace inside one).
   (`compose.yaml`, the Caddyfile) are rewritten from it on every start.
 - Comments state only what the code cannot: intent, a constraint, a
   workaround. One or two lines.
+- The command grammar is ADR 0003: nouns take `add`/`list`/`remove` (plus
+  `snapshot save`/`restore`), the environment comes from the global
+  `-e/--env` flag, and nothing is implicit — no prompts, no aliases, no
+  guessed site or target; a missing required value exits 2 with a fix.
 
 ## Tests
 
