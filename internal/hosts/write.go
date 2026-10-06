@@ -50,12 +50,12 @@ func restore(path, previous string, cause error) error {
 	if werr := os.WriteFile(path, []byte(previous), 0o644); werr != nil {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("writing %s failed (%v) and tamp could not put back what was there (%v)", path, cause, werr),
-			"restore the file from a backup — tamp only ever writes between its own two markers")
+			"restore the file from a backup: tamp only ever writes between its own two markers")
 	}
 	return writeError(path, cause)
 }
 
-// Denied reports whether err is the system refusing for want of privileges —
+// Denied reports whether err is the system refusing for want of privileges,
 // the one failure a sync answers by elevating rather than giving up.
 func Denied(err error) bool { return errors.Is(err, fs.ErrPermission) }
 
@@ -63,7 +63,7 @@ func writeError(path string, err error) error {
 	return &fileFailure{
 		reported: exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot write %s: %v", path, err),
-			"the hosts file belongs to the system — tamp needs elevated rights to change it"),
+			"the hosts file belongs to the system: tamp needs elevated rights to change it"),
 		cause: err,
 	}
 }

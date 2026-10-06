@@ -73,7 +73,7 @@ func (d *Docker) Exec(ctx context.Context, req ExecRequest) error {
 }
 
 // copyOutput drains the output stream; its end is also how Exec waits for
-// the process — only then is the exit status meaningful.
+// the process. Only then is the exit status meaningful.
 func copyOutput(req ExecRequest, r io.Reader) error {
 	stdout, stderr := req.Stdout, req.Stderr
 	if stdout == nil {
@@ -114,7 +114,7 @@ func (e *ExitError) reason() *exitcode.Error {
 }
 
 // Probe runs a yes/no command: exit 0 is yes, non-zero exit is no. Any
-// other failure — daemon gone, container gone — is returned as an error,
+// other failure (daemon gone, container gone) is returned as an error,
 // never read as "no".
 func Probe(ctx context.Context, eng Engine, req ExecRequest) (bool, error) {
 	err := eng.Exec(ctx, req)
@@ -213,7 +213,7 @@ func tarOneFile(f FileSpec) (io.Reader, error) {
 func tarError(filePath string, err error) error {
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("cannot package %s for the container: %v", filePath, err),
-		"report this — it is a bug in tamp")
+		"report this: it is a bug in tamp")
 }
 
 func (d *Docker) EnsureVolume(ctx context.Context, name string) error {
@@ -271,7 +271,7 @@ func execError(req ExecRequest, err error) error {
 }
 
 // commandLine renders argv for an error message, truncating a long script
-// to its shell — the script is already in the output above.
+// to its shell: the script is already in the output above.
 func commandLine(cmd []string) string {
 	line := strings.Join(cmd, " ")
 	if len(line) > 60 {

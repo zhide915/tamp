@@ -33,7 +33,7 @@ const createSteps = 3 + buildSteps
 // CreateRequest carries `tamp create`'s flags, unvalidated.
 type CreateRequest struct {
 	Name string
-	// Parent is where <name>/ goes; empty means the cwd — there is no
+	// Parent is where <name>/ goes; empty means the cwd: there is no
 	// mandatory root.
 	Parent string
 	Frappe string
@@ -46,7 +46,7 @@ type CreateRequest struct {
 
 // Create provisions a new environment and brings it up. On failure everything
 // outside the directory is undone; the directory keeps tamp.toml and
-// create.log — tamp never destroys a directory the user may have touched.
+// create.log: tamp never destroys a directory the user may have touched.
 func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	// A misspelled machine setting must fail here too: the user would
 	// otherwise believe it took effect.
@@ -70,7 +70,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) error {
 	return nil
 }
 
-// plan is a new environment with every flag validated — what create and init
+// plan is a new environment with every flag validated: what create and init
 // share.
 type plan struct {
 	Name      Name
@@ -110,7 +110,7 @@ func (m *Manager) newPlan(name, version, apps, sync string, template templatePol
 	}, nil
 }
 
-// raise writes a new environment into dir and brings it up — the whole of
+// raise writes a new environment into dir and brings it up: the whole of
 // create, and of init in an empty directory. A failed step undoes everything
 // outside dir, volumes included, which is safe only because this environment
 // never held data.
@@ -158,7 +158,7 @@ func (m *Manager) raise(ctx context.Context, dir string, p plan) error {
 		return err
 	}
 
-	m.Out.OK(fmt.Sprintf("%s ready — no sites yet", p.Name))
+	m.Out.OK(fmt.Sprintf("%s ready, no sites yet", p.Name))
 	m.announceRoutes(e, status)
 	m.announceDBPassword(e)
 	m.Out.Hint("next: tamp site new <host>")
@@ -179,7 +179,7 @@ func (m *Manager) requireFreshVolumes(ctx context.Context, e *Environment) error
 	}
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("volumes from an earlier environment named %q still exist for this directory", e.Name()),
-		fmt.Sprintf("adopt them by restoring its %s and apps tree and running 'tamp init' — or delete them first: docker volume rm $(docker volume ls -q --filter label=com.docker.compose.project=%s)",
+		fmt.Sprintf("adopt them by restoring its %s and apps tree and running 'tamp init', or delete them first: docker volume rm $(docker volume ls -q --filter label=com.docker.compose.project=%s)",
 			ConfigFile, e.Resources.Project()))
 }
 
@@ -231,8 +231,8 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 	}
 
 	// Fresh volumes, Mutagen, adopted source: bench initialized empty, the
-	// session mirrored the host's apps in, and bench knows nothing of them —
-	// without this they stay off apps.txt with requirements uninstalled.
+	// session mirrored the host's apps in, and bench knows nothing of them.
+	// Without this they stay off apps.txt with requirements uninstalled.
 	if initialized && adopted && sync == syncer.UseMutagen {
 		log.note("registering the apps the sync session brought back")
 		if err := bench.Rebuild(ctx); err != nil {
@@ -247,7 +247,7 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 		return router.Status{}, err
 	}
 	if sync == syncer.UseMutagen && runtime.GOOS == "windows" {
-		log.note("git in " + syncer.AppsDir(e.Dir) + " ignores file modes and line endings — this host stores neither the way Linux wrote them")
+		log.note("git in " + syncer.AppsDir(e.Dir) + " ignores file modes and line endings: this host stores neither the way Linux wrote them")
 	}
 
 	log.step("configuring the bench")
@@ -270,7 +270,7 @@ func (m *Manager) build(ctx context.Context, e *Environment, sync syncer.Effecti
 	return m.applyRoutes(ctx, log.stream())
 }
 
-// fetchApps clones each app onto the bench and onto no site — installation is
+// fetchApps clones each app onto the bench and onto no site: installation is
 // per site, and `tamp site new --apps` is where the user decides.
 func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.Bench, bridge *bridge, log *createLog) error {
 	onBench, err := bench.Apps(ctx)
@@ -295,11 +295,11 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 			// release branch.
 			pin := app.Name
 			if app.Source != defaultAppOwner+app.Name {
-				// A URL-sourced app must be pinned by URL — the bare name
+				// A URL-sourced app must be pinned by URL: the bare name
 				// would resolve to the frappe organisation.
 				pin = app.Source
 			}
-			m.Out.Warn(fmt.Sprintf("fetching default branch of %s — pin with %s:%s if you meant a release branch",
+			m.Out.Warn(fmt.Sprintf("fetching default branch of %s: pin with %s:%s if you meant a release branch",
 				app.Name, pin, e.Config.Frappe.Version))
 		}
 		if err := m.fetchApp(ctx, bench, bridge, app); err != nil {
@@ -309,7 +309,7 @@ func (m *Manager) fetchApps(ctx context.Context, e *Environment, bench *frappe.B
 		// The app a repository declares can differ from the repository's name
 		// (frappe/health clones as healthcare), and the bench is the
 		// authority. Rename the record only when exactly one new app
-		// appeared — with more, tamp cannot tell which is which.
+		// appeared: with more, tamp cannot tell which is which.
 		now, err := bench.Apps(ctx)
 		if err != nil {
 			return err
@@ -386,7 +386,7 @@ func (m *Manager) announceDBPassword(e *Environment) {
 		return
 	}
 	m.Out.Note("database root password: " + password)
-	m.Out.Note("kept in " + DBRootPasswordPath(e.Dir) + " — tamp prints it this once")
+	m.Out.Note("kept in " + DBRootPasswordPath(e.Dir) + ": tamp prints it this once")
 }
 
 // createDir settles where the environment goes, refusing to build on anything
@@ -456,9 +456,9 @@ func (m *Manager) writeEnvironment(e *Environment, sync syncer.Effective) error 
 // rollback undoes a failed provisioning outside the environment directory.
 // removal is the caller's call: a new environment's volumes go with it, while
 // a re-adopted one stands on volumes from a previous life. Its own failures
-// are warnings — the original error is the one the user needs.
+// are warnings: the original error is the one the user needs.
 func (m *Manager) rollback(ctx context.Context, e *Environment, removal engine.Removal, log *createLog) {
-	m.Out.Warn(fmt.Sprintf("create failed — rolling back %s", e.Name()))
+	m.Out.Warn(fmt.Sprintf("create failed, rolling back %s", e.Name()))
 
 	// The session's far end is one of the containers.
 	m.terminateSync(ctx, e)
@@ -488,7 +488,7 @@ func (m *Manager) unregister(name Name) {
 }
 
 // createLog narrates to the terminal and into a buffer that becomes
-// create.log — a buffer because the directory may not exist yet when the
+// create.log. It buffers because the directory may not exist yet when the
 // first step prints.
 type createLog struct {
 	buf   bytes.Buffer
@@ -512,7 +512,7 @@ func (l *createLog) stream() io.Writer {
 }
 
 // save never creates the directory: a create rejected before making anything
-// must leave nothing behind. Its failures are silent — a bigger error is
+// must leave nothing behind. Its failures are silent: a bigger error is
 // already being reported.
 func (l *createLog) save(dir string) {
 	if _, err := os.Stat(dir); err != nil {

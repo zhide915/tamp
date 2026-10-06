@@ -28,7 +28,7 @@ const ProfileDev = "dev"
 // this one.
 const configHeader = `# tamp environment. This file is the source of truth.
 # compose.yaml and the other generated files are rewritten from it on every
-# 'tamp start' — edit this, not them.
+# 'tamp start'. Edit this, not them.
 
 `
 
@@ -76,11 +76,11 @@ type RouterSection struct {
 	Mode string `toml:"mode"`
 }
 
-// RouterModeAuto — hostname routing through the shared router — is the only
+// RouterModeAuto (hostname routing through the shared router) is the only
 // mode tamp v1 accepts.
 const RouterModeAuto = "auto"
 
-// PortsSection holds the MariaDB host port — the one port an environment
+// PortsSection holds the MariaDB host port, the one port an environment
 // publishes, because database GUI clients need real TCP.
 type PortsSection struct {
 	DB int `toml:"db"`
@@ -108,7 +108,7 @@ func NewConfig(name Name, version FrappeVersion, apps []App, tc Toolchain, dbPor
 func ConfigPath(dir string) string { return filepath.Join(dir, ConfigFile) }
 
 // LoadConfig reads and validates an environment's tamp.toml. warnings are
-// unrecognised keys, returned rather than printed — this package has no
+// unrecognised keys, returned rather than printed: this package has no
 // terminal, and the caller decides where they go.
 func LoadConfig(path string) (cfg *Config, warnings []string, err error) {
 	cfg = &Config{}
@@ -136,7 +136,7 @@ func LoadConfig(path string) (cfg *Config, warnings []string, err error) {
 	}
 
 	for _, key := range md.Undecoded() {
-		warnings = append(warnings, fmt.Sprintf("%s: unknown key %q — tamp ignores it", filepath.Base(path), key.String()))
+		warnings = append(warnings, fmt.Sprintf("%s: unknown key %q: tamp ignores it", filepath.Base(path), key.String()))
 	}
 	return cfg, warnings, nil
 }
@@ -160,7 +160,7 @@ func (c *Config) validate(path string) error {
 	}
 	if c.Engine.Kind != EngineDocker {
 		return invalid(fmt.Sprintf("engine %q is not supported", c.Engine.Kind),
-			`Docker is tamp's only engine — set kind = "docker"`)
+			`Docker is tamp's only engine: set kind = "docker"`)
 	}
 	if _, err := syncer.ParseMode(string(c.Sync.Mode)); err != nil {
 		return invalid(fmt.Sprintf("[sync] mode = %q is not a way of syncing source", c.Sync.Mode),
@@ -169,7 +169,7 @@ func (c *Config) validate(path string) error {
 	// Empty means the default; only a mode tamp does not have is refused.
 	if c.Router.Mode != "" && c.Router.Mode != RouterModeAuto {
 		return invalid(fmt.Sprintf("[router] mode = %q is not supported", c.Router.Mode),
-			`tamp v1 routes by hostname only — set mode = "auto"`)
+			`tamp v1 routes by hostname only: set mode = "auto"`)
 	}
 	if c.Ports.DB <= 0 {
 		return invalid(fmt.Sprintf("[ports] db = %d is not a port", c.Ports.DB),
@@ -178,8 +178,8 @@ func (c *Config) validate(path string) error {
 	return nil
 }
 
-// Save writes tamp.toml. It encodes only the fields tamp owns — unknown keys
-// are lost — so call it only where nothing needs preserving: create, and
+// Save writes tamp.toml. It encodes only the fields tamp owns (unknown keys
+// are lost), so call it only where nothing needs preserving: create, and
 // re-adoption of a config tamp is regenerating anyway.
 func (c *Config) Save(path string) error {
 	var buf strings.Builder

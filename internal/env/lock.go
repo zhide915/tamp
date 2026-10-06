@@ -17,7 +17,7 @@ const LockFile = "lock"
 // would look like a hang.
 const lockWait = 3 * time.Second
 
-// lockPoll is the retry gap — there is no portable way to wait on an advisory
+// lockPoll is the retry gap: there is no portable way to wait on an advisory
 // lock.
 const lockPoll = 50 * time.Millisecond
 
@@ -61,7 +61,7 @@ func AcquireLock(home string) (*Lock, error) {
 	}
 }
 
-// Release gives the lock back early — a command with more work to do must not
+// Release gives the lock back early: a command with more work to do must not
 // keep the machine waiting until exit. Callers defer it.
 func (l *Lock) Release() error {
 	if l == nil || l.file == nil {

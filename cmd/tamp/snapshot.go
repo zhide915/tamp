@@ -6,7 +6,7 @@ import (
 )
 
 // snapshotLong heads every subcommand's help, because the distinction it
-// draws — protection, not caching — is the whole of what a snapshot is.
+// draws (protection, not caching) is the whole of what a snapshot is.
 const snapshotLong = "A snapshot is a backup of an environment's data layer: every site's\n" +
 	"database and files, bundled into the environment's own .tamp\n" +
 	"directory. tamp takes one when you ask, and never expires or\n" +

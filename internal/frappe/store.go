@@ -14,7 +14,7 @@ func storePath(dir, key string) string         { return dir + "/" + key + ".tar.
 func storeManifestPath(dir, key string) string { return dir + "/" + key + ".json" }
 
 // hasStored reports whether the store holds a tarball at path. An unreachable
-// container is an error, not "not stored" — engine.Probe draws that line.
+// container is an error, not "not stored": engine.Probe draws that line.
 func (b *Bench) hasStored(ctx context.Context, path string) (bool, error) {
 	return engine.Probe(ctx, b.Engine, engine.ExecRequest{
 		Container: b.Container,
@@ -35,7 +35,7 @@ func (b *Bench) writeStoredManifest(ctx context.Context, path string, body []byt
 }
 
 // saveScript wraps one tar line in the write discipline: beside the target,
-// then renamed — an interrupted save must not leave a half-written tarball.
+// then renamed. An interrupted save must not leave a half-written tarball.
 func saveScript(tar string) string {
 	return `
 set -eo pipefail

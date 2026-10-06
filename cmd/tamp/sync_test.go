@@ -41,7 +41,7 @@ func TestCreateStartsASyncSessionBetweenTheHostAndTheBench(t *testing.T) {
 	if made.Name != c.session(t, "demo") {
 		t.Errorf("session name = %q, want %q", made.Name, c.session(t, "demo"))
 	}
-	// Alpha is the host side — the side being edited, and the conflict winner.
+	// Alpha is the host side: the side being edited, and the conflict winner.
 	if made.Alpha != c.path("demo", syncer.AppsDirName) {
 		t.Errorf("session alpha = %q, want the host's apps directory", made.Alpha)
 	}
@@ -189,7 +189,7 @@ func TestEverySyncSubcommandReportsTheBindModeAndExitsZero(t *testing.T) {
 		r := c.run(t, "sync", sub, "demo")
 
 		r.assertCode(t, exitcode.CodeOK)
-		r.assertStdoutContains(t, "mode: bind — sync not applicable")
+		r.assertStdoutContains(t, "mode: bind (sync not applicable)")
 	}
 	if len(c.sync.Calls) != 0 {
 		t.Errorf("tamp went to Mutagen for a bind-mounted environment: %v", c.sync.Calls)
@@ -233,7 +233,7 @@ func TestSyncResetTerminatesTheSessionAndCreatesItAgain(t *testing.T) {
 }
 
 // Stopping an environment pauses its session rather than forgetting it, so
-// Mutagen still holds one — and a flush to a container that is down is not a
+// Mutagen still holds one, and a flush to a container that is down is not a
 // flush.
 func TestSyncFlushRefusesAStoppedEnvironment(t *testing.T) {
 	c := sandbox(t)

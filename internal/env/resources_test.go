@@ -63,7 +63,7 @@ func TestHashIsStableAcrossSpellingsOfTheSamePath(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		if got := mustResources(t, "erp15", strings.ToUpper(dir)).Hash; got != want {
-			t.Errorf("hash of the upper-cased path = %q, want %q — Windows paths are case-insensitive", got, want)
+			t.Errorf("hash of the upper-cased path = %q, want %q, Windows paths are case-insensitive", got, want)
 		}
 	}
 }

@@ -24,13 +24,13 @@ type InitRequest struct {
 	Apps   string
 	Sync   string
 	// Explicit names the flags actually typed, so a re-adoption can warn per
-	// flag — a user pinning --frappe must not believe they upgraded.
+	// flag: a user pinning --frappe must not believe they upgraded.
 	Explicit []string
 }
 
 // Init turns the current directory into an environment. Its one power create
 // lacks is re-adoption: `tamp rm` keeps the volumes and the directory, and
-// init turns them back into a working environment — same name, same path, so
+// init turns them back into a working environment: same name, same path, so
 // the volumes reattach with the data in them.
 func (m *Manager) Init(ctx context.Context, req InitRequest) error {
 	cwd, err := m.workingDir()
@@ -116,7 +116,7 @@ func (m *Manager) leftover(dir string) (*Config, error) {
 		}
 	}
 	if len(others) == 0 {
-		// Empty, or only a tamp.toml about to be rewritten — nothing to lose.
+		// Empty, or only a tamp.toml about to be rewritten: nothing to lose.
 		return nil, nil
 	}
 
@@ -150,7 +150,7 @@ func hasSource(dir string) bool {
 }
 
 // hasHostApp reports whether the host's apps tree already holds an app by
-// this name — the sync session will carry it in, so no fetch is coming.
+// this name: the sync session will carry it in, so no fetch is coming.
 func hasHostApp(dir, name string) bool {
 	entries, err := os.ReadDir(filepath.Join(syncer.AppsDir(dir), name))
 	return err == nil && len(entries) > 0
@@ -159,11 +159,11 @@ func hasHostApp(dir, name string) bool {
 const readoptSteps = 2 + buildSteps
 
 // readopt rebuilds a removed environment around the source it left behind.
-// The surviving tamp.toml decides everything — the volumes about to reattach
+// The surviving tamp.toml decides everything: the volumes about to reattach
 // were built to match it, so create's flags cannot apply and are only
 // reported.
 func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req InitRequest) error {
-	m.Out.Note(ConfigFile + " already says what this environment is — tamp is regenerating everything else from it")
+	m.Out.Note(ConfigFile + " already says what this environment is: tamp is regenerating everything else from it")
 	if req.Name != "" {
 		m.Out.Warn(fmt.Sprintf("--name is ignored here: this environment's volumes are named for %q, and renaming it would leave them behind",
 			cfg.Name))
@@ -179,7 +179,7 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 	e := &Environment{Dir: dir, Config: cfg, Resources: res}
 
 	// A still-registered directory is live, not leftover: a failed build here
-	// would roll back — stop and deregister — a healthy environment.
+	// would roll back (stop and deregister) a healthy environment.
 	if err := m.requireUnregistered(e); err != nil {
 		return err
 	}
@@ -217,14 +217,14 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 		return err
 	}
 	if _, err := m.build(ctx, e, sync, template, log); err != nil {
-		// Volumes kept — they are the data this command exists to bring back.
+		// Volumes kept: they are the data this command exists to bring back.
 		m.rollback(ctx, e, engine.KeepVolumes, log)
-		m.Out.Note("your source and your data are untouched — run 'tamp init' again once this is fixed")
+		m.Out.Note("your source and your data are untouched: run 'tamp init' again once this is fixed")
 		return err
 	}
 
 	// The new registry entry has no cached site list; the bench is up, so ask
-	// it and reassemble the routes — or the environment comes back
+	// it and reassemble the routes, or the environment comes back
 	// unreachable.
 	if _, _, err := m.sites(ctx, e); err != nil {
 		return err
@@ -234,7 +234,7 @@ func (m *Manager) readopt(ctx context.Context, dir string, cfg *Config, req Init
 		return err
 	}
 
-	m.Out.OK(fmt.Sprintf("%s adopted — the environment is back", cfg.Name))
+	m.Out.OK(fmt.Sprintf("%s adopted: the environment is back", cfg.Name))
 	m.Out.Note("its volumes reattached by name and path, so every site's data came with them")
 	m.announceRoutes(e, status)
 	m.Out.Hint(fmt.Sprintf("see what it has: tamp site list %s", cfg.Name))
@@ -254,7 +254,7 @@ func (m *Manager) requireUnregistered(e *Environment) error {
 		return nil
 	}
 	return exitcode.New(exitcode.CodeFailed,
-		fmt.Sprintf("%q is already an environment on this machine — there is nothing to adopt", e.Name()),
+		fmt.Sprintf("%q is already an environment on this machine: there is nothing to adopt", e.Name()),
 		fmt.Sprintf("start it with 'tamp start %s'; to rebuild it from source, run 'tamp rm %s' first (volumes are kept) and then tamp init again",
 			e.Name(), e.Name()))
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/zhide915/tamp/internal/toolchain"
 )
 
-// ComposeFile is regenerated from tamp.toml on every start — hand-edits do
+// ComposeFile is regenerated from tamp.toml on every start: hand-edits do
 // not survive.
 const ComposeFile = "compose.yaml"
 
@@ -66,7 +66,7 @@ type composeData struct {
 }
 
 // Generate rewrites every generated file from tamp.toml. It runs at create
-// and on every start, so containers always match the config — including after
+// and on every start, so containers always match the config, including after
 // a tamp upgrade changes the templates.
 //
 // sync is passed rather than read off the config: "auto" resolves differently

@@ -37,5 +37,5 @@ func Write(name, path string, data any) error {
 func broken(name string, err error) error {
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("tamp's %s template is broken: %v", name, err),
-		"report this — it is a bug in tamp, not in your environment")
+		"report this: it is a bug in tamp, not in your environment")
 }

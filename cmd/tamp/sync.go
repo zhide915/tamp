@@ -4,13 +4,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// syncLong heads every subcommand's help, because the distinction it draws —
-// a session is one way of moving source, not the only one — is what makes
+// syncLong heads every subcommand's help, because the distinction it draws
+// (a session is one way of moving source, not the only one) is what makes
 // these commands report rather than fail on Linux.
 const syncLong = "On Windows and macOS an environment's source reaches its container\n" +
 	"through a Mutagen session, because bind mounts there are slow and\n" +
 	"deliver no file events. On Linux the host's apps/ directory is bound\n" +
-	"straight in and there is no session at all — a mode, not a fault, and\n" +
+	"straight in and there is no session at all: a mode, not a fault, and\n" +
 	"every subcommand here says so and exits 0.\n\n"
 
 func newSyncCommand(d deps) *cobra.Command {
@@ -77,8 +77,8 @@ func newSyncResetCommand(d deps) *cobra.Command {
 		Use:   "reset [env]",
 		Short: "Terminate the session and create it again",
 		Long: syncLong +
-			"The recovery after a large host-side change — a branch checkout,\n" +
-			"say — leaves the session reconciling more than it can settle. The\n" +
+			"The recovery after a large host-side change (a branch checkout,\n" +
+			"say) leaves the session reconciling more than it can settle. The\n" +
 			"new session mirrors the whole tree again, so it takes as long as the\n" +
 			"first one did.\n\n" +
 			"The environment must be running: the session's far end is its\n" +

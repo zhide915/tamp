@@ -121,7 +121,7 @@ func (c *CLI) download(ctx context.Context) error {
 	if !ok {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("tamp has no Mutagen build for %s", platform),
-			"set the environment's sync mode to bind — it works, without hot reload")
+			"set the environment's sync mode to bind: it works, without hot reload")
 	}
 
 	name := fmt.Sprintf("mutagen_%s_v%s.tar.gz", platform, Version)
@@ -133,7 +133,7 @@ func (c *CLI) download(ctx context.Context) error {
 	if sum := hex.EncodeToString(digest[:]); sum != want {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s does not match the checksum tamp ships: got %s, want %s", name, sum, want),
-			"try again — if it keeps failing, do not use the download, and report it")
+			"try again. If it keeps failing, do not use the download, and report it")
 	}
 
 	if err := os.MkdirAll(c.binDir(), 0o755); err != nil {
@@ -158,7 +158,7 @@ func extract(body []byte, dir, name string) error {
 	corrupt := func(err error) error {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("the Mutagen %s download is not readable: %v", Version, err),
-			"try again — the download matched its checksum, so this is a bug in tamp")
+			"try again. The download matched its checksum, so this is a bug in tamp")
 	}
 
 	gz, err := gzip.NewReader(bytes.NewReader(body))

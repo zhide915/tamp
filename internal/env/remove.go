@@ -15,7 +15,7 @@ type RemoveRequest struct {
 	// Volumes destroys the environment's volumes too; without it they survive for
 	// `tamp init` to re-adopt.
 	Volumes bool
-	// Yes replaces a prompt — agents run these commands, so confirmation is a
+	// Yes replaces a prompt: agents run these commands, so confirmation is a
 	// flag.
 	Yes bool
 }
@@ -83,7 +83,7 @@ func (m *Manager) Remove(ctx context.Context, req RemoveRequest) error {
 }
 
 // sourceInVolume reports whether the code volume holds the only copy of the
-// source — true with sync off, where nothing mirrors it to the host.
+// source: true with sync off, where nothing mirrors it to the host.
 func (e *Environment) sourceInVolume() bool { return e.Config.Sync.Mode == syncer.ModeOff }
 
 // disposableVolumes are the volumes --volumes destroys. The code volume is
@@ -105,7 +105,7 @@ func volumeNote(name string) string {
 	return ""
 }
 
-// previewRemoval prints exactly what --yes would destroy — the point of the
+// previewRemoval prints exactly what --yes would destroy: the point of the
 // exit-5 contract.
 func (m *Manager) previewRemoval(e *Environment, volumes bool) {
 	m.Out.Print(fmt.Sprintf("tamp rm would destroy, in %s:", e.Name()))
@@ -124,14 +124,14 @@ func (m *Manager) previewRemoval(e *Environment, volumes bool) {
 	if !volumes {
 		m.Out.Print("  volume      " + e.Resources.Volume(DataVolume) + volumeNote(DataVolume))
 	} else if e.sourceInVolume() {
-		m.Out.Print("  volume      " + e.Resources.Volume(CodeVolume) + "  (your source — sync is off)")
+		m.Out.Print("  volume      " + e.Resources.Volume(CodeVolume) + "  (your source: sync is off)")
 	}
 
 	m.Out.Print("")
 	m.Out.Print("to delete this environment completely:")
 	m.Out.Print("  tamp rm " + string(e.Name()) + " --volumes --yes")
 	if e.sourceInVolume() {
-		m.Out.Print("  then docker volume rm " + e.Resources.Volume(CodeVolume) + "  (tamp spares it — it is your source)")
+		m.Out.Print("  then docker volume rm " + e.Resources.Volume(CodeVolume) + "  (tamp spares it: it is your source)")
 	}
 	m.Out.Print("  then delete " + e.Dir + " yourself")
 }
@@ -147,9 +147,9 @@ func (m *Manager) reportSurvivors(e *Environment, volumes bool) {
 		m.Out.Hint("remove it for good: docker volume rm " + volume)
 	} else if e.sourceInVolume() {
 		volume := e.Resources.Volume(CodeVolume)
-		m.Out.Note("the code volume " + volume + " survives — with sync off it holds your source")
+		m.Out.Note("the code volume " + volume + " survives: with sync off it holds your source")
 		m.Out.Hint("copy the source out, or remove it yourself: docker volume rm " + volume)
 	}
-	m.Out.Note(e.Dir + " was not touched — tamp never deletes your source code")
+	m.Out.Note(e.Dir + " was not touched: tamp never deletes your source code")
 	m.Out.Hint("delete it yourself when you are done with it")
 }

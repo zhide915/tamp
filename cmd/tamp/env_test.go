@@ -218,7 +218,7 @@ func TestStartRegeneratesTheComposeFile(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	if got := c.read(t, "demo", env.ComposeFile); strings.Contains(got, "I edited this by hand") {
-		t.Error("start did not regenerate compose.yaml — the hand-edit survived")
+		t.Error("start did not regenerate compose.yaml: the hand-edit survived")
 	}
 }
 

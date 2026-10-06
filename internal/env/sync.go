@@ -25,7 +25,7 @@ func (m *Manager) syncMode(ctx context.Context, want syncer.Mode) syncer.Effecti
 	}
 	if _, err := m.Sync.Ensure(ctx); err != nil {
 		m.Out.Warn("tamp cannot use Mutagen here: " + err.Error())
-		m.Out.Warn("falling back to a bind mount — it works, but it is slow, and nothing will hot-reload")
+		m.Out.Warn("falling back to a bind mount: it works, but it is slow, and nothing will hot-reload")
 		return syncer.UseBind
 	}
 	return mode
@@ -57,11 +57,11 @@ func (m *Manager) syncSession(ctx context.Context, e *Environment) (syncer.Sessi
 }
 
 // startSync resumes the environment's session or creates one. Bind and off
-// are finished states, not omissions — neither needs anything running.
+// are finished states, not omissions: neither needs anything running.
 func (m *Manager) startSync(ctx context.Context, e *Environment, mode syncer.Effective, out io.Writer) error {
 	switch mode {
 	case syncer.UseBind:
-		m.Out.Note("source: " + syncer.AppsDir(e.Dir) + " — bound straight into the container")
+		m.Out.Note("source: " + syncer.AppsDir(e.Dir) + ", bound straight into the container")
 		return nil
 	case syncer.UseOff:
 		m.Out.Note("source stays in the container: this environment syncs nothing to the host")
@@ -85,7 +85,7 @@ func (m *Manager) startSync(ctx context.Context, e *Environment, mode syncer.Eff
 			return err
 		}
 	}
-	m.Out.Note("source: " + syncer.AppsDir(e.Dir) + " — edits reach the container in about a second")
+	m.Out.Note("source: " + syncer.AppsDir(e.Dir) + ", edits reach the container in about a second")
 	return nil
 }
 

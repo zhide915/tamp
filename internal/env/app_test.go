@@ -52,7 +52,7 @@ func TestAnAppSpecSaysWhichBranch(t *testing.T) {
 }
 
 func TestAnAppSpecTampRefuses(t *testing.T) {
-	// bench accepts owner/repo; tamp refuses it — glued onto the frappe org
+	// bench accepts owner/repo; tamp refuses it: glued onto the frappe org
 	// URL it would name a repository that does not exist.
 	for _, spec := range []string{"", ":version-15", "frappe/erpnext", "frappe/erpnext:version-15"} {
 		if _, err := env.ParseApp(spec); err == nil {

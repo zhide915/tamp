@@ -10,7 +10,7 @@ import (
 	"github.com/zhide915/tamp/internal/gitcred"
 )
 
-// A cancelled fill — Ctrl+C at the sign-in prompt — must surface as the
+// A cancelled fill (Ctrl+C at the sign-in prompt) must surface as the
 // cancellation, not as "no credential exists, sign in and retry".
 func TestFillReportsACancelledSignInAsCancellationNotAsNoCredential(t *testing.T) {
 	// The CLI sandbox's isolation: host git must not reach the developer's

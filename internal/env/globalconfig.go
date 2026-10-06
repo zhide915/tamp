@@ -47,7 +47,7 @@ func LoadGlobalConfig(home string) (*GlobalConfig, error) {
 	if err != nil {
 		return nil, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot read %s: %v", GlobalConfigPath(home), err),
-			"fix the file's syntax, or delete it — tamp falls back to its defaults")
+			"fix the file's syntax, or delete it: tamp falls back to its defaults")
 	}
 	if len(md.Undecoded()) > 0 {
 		// Unknown keys are the user's typo, and a silently ignored setting is
@@ -60,7 +60,7 @@ func LoadGlobalConfig(home string) (*GlobalConfig, error) {
 }
 
 // TemplateTTL is how long a stored template stays usable. A negative setting
-// reads as zero — expire everything — rather than as time running backwards.
+// reads as zero (expire everything) rather than as time running backwards.
 func (c *GlobalConfig) TemplateTTL() time.Duration {
 	days := DefaultTemplateTTLDays
 	if c.Cache.TemplateTTLDays != nil {

@@ -34,7 +34,7 @@ func (m *Manager) List(ctx context.Context) error {
 		return err
 	}
 
-	// Docker being down costs the state column and nothing else — the rest of
+	// Docker being down costs the state column and nothing else: the rest of
 	// the row is still true.
 	engineUp := true
 	if _, err := m.Engine.Ping(ctx); err != nil {
@@ -65,7 +65,7 @@ func (m *Manager) List(ctx context.Context) error {
 		}
 		cfg, warnings, err := LoadConfig(ConfigPath(entry.Path))
 		if err != nil {
-			// An unreadable config is still an environment that exists — it
+			// An unreadable config is still an environment that exists: it
 			// keeps its row.
 			m.Out.Warn(err.Error())
 		} else {
@@ -105,17 +105,17 @@ func (m *Manager) List(ctx context.Context) error {
 func (m *Manager) printRouter(status router.Status, engineUp bool) {
 	switch {
 	case !engineUp:
-		m.Out.Print("router  unknown — Docker is unreachable")
+		m.Out.Print("router  unknown: Docker is unreachable")
 	case status.Running:
 		m.Out.Print("router  running on " + status.URL("localhost"))
 	default:
-		m.Out.Print("router  not running — no hostname resolves until it is")
+		m.Out.Print("router  not running: no hostname resolves until it is")
 		m.Out.Hint("start it by starting an environment: tamp start <name>")
 	}
 	m.Out.Print("")
 }
 
-// prune drops registry entries whose directory no longer holds a tamp.toml —
+// prune drops registry entries whose directory no longer holds a tamp.toml:
 // they only ever produce confusing errors elsewhere.
 func (m *Manager) prune(gone []string) {
 	if len(gone) == 0 {
@@ -144,7 +144,7 @@ func (m *Manager) prune(gone []string) {
 		return
 	}
 	for _, p := range dropped {
-		m.Out.Warn(fmt.Sprintf("pruned %q from the registry — %s is gone", p.name, p.path))
+		m.Out.Warn(fmt.Sprintf("pruned %q from the registry: %s is gone", p.name, p.path))
 	}
 }
 

@@ -13,7 +13,7 @@ import (
 // loopback otherwise answers immediately.
 const dialWait = 300 * time.Millisecond
 
-// choosePort prefers 80 — a port-free URL — and falls back rather than leave
+// choosePort prefers 80 (a port-free URL) and falls back rather than leave
 // the machine with no router.
 func choosePort(free func(int) bool) (int, error) {
 	for _, port := range []int{DefaultPort, FallbackPort} {
@@ -29,7 +29,7 @@ func choosePort(free func(int) bool) (int, error) {
 
 // portIsFree probes by connecting, not binding: the eventual bind is done by
 // the Docker daemon as root, and on Unix an unprivileged bind below 1024 fails
-// whether or not the port is busy — a bind test could never call 80 taken.
+// whether or not the port is busy: a bind test could never call 80 taken.
 // A refused connection means nothing is serving there. Racy, like any port
 // probe; Docker fails the same way a moment later if the answer changes.
 func portIsFree(port int) bool {

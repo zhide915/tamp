@@ -26,7 +26,7 @@ func (b *Bench) SaveTemplate(ctx context.Context, key string) error {
 	return b.run(ctx, saveTemplateScript, TemplatePath(key), WorkspaceDir, benchDirName)
 }
 
-// benchDirName is the bench's directory relative to the workspace — what the
+// benchDirName is the bench's directory relative to the workspace, what the
 // tarball holds, so it unpacks to the same place on any machine.
 const benchDirName = "frappe-bench"
 

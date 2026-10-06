@@ -13,7 +13,7 @@ func newStartCommand(d deps) *cobra.Command {
 	return newLifecycleCommand(d, "start", "Start an environment",
 		"Start an environment.\n\n"+
 			"tamp regenerates the environment's generated files from tamp.toml\n"+
-			"first, so the containers always match the config — hand-edits to\n"+
+			"first, so the containers always match the config: hand-edits to\n"+
 			"compose.yaml do not survive.",
 		(*env.Manager).Start)
 }
@@ -54,7 +54,7 @@ func newLifecycleCommand(
 
 // envArgHelp is shared by every command taking an optional environment.
 const envArgHelp = "The environment may be named, or left out when you are inside its\n" +
-	"directory — tamp finds the nearest tamp.toml the way git finds .git."
+	"directory: tamp finds the nearest tamp.toml the way git finds .git."
 
 func optionalEnvArg(cmd *cobra.Command, args []string) error {
 	if len(args) > 1 {

@@ -109,7 +109,7 @@ rm -rf "$1"
 `
 
 // RestoreSite replaces one existing site's database and files with the staged
-// ones. The site has to be there already — bench restore drops and refills a
+// ones. The site has to be there already: bench restore drops and refills a
 // database that a site config names.
 func (b *Bench) RestoreSite(ctx context.Context, host, dbRootPassword string) error {
 	return b.run(ctx, restoreSiteScript, host, stageDir, dbRootPassword)

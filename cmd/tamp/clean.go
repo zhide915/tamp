@@ -12,8 +12,8 @@ func newCleanCommand(d deps) *cobra.Command {
 		Use:   "clean [env]",
 		Short: "Wipe an environment's deps, assets or data layer",
 		Long: "Wipe an environment's deps, assets or data layer.\n\n" +
-			"Without a layer flag, tamp prints the layer table — what each layer\n" +
-			"holds, what wipes it, what brings it back — and destroys nothing.\n\n" +
+			"Without a layer flag, tamp prints the layer table (what each layer\n" +
+			"holds, what wipes it, what brings it back) and destroys nothing.\n\n" +
 			"--deps and --assets are safe: 'tamp rebuild' restores both. --data\n" +
 			"destroys every site's database and files, so it needs --yes. Your\n" +
 			"source code is never touched.\n\n" + envArgHelp,

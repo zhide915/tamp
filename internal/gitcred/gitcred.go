@@ -1,4 +1,4 @@
-// Package gitcred speaks the git credential protocol with the host's git —
+// Package gitcred speaks the git credential protocol with the host's git,
 // the credential bridge's host half (ADR 0002). A conduit, never a store:
 // fill delegates to the user's own helper (which may prompt), approve and
 // reject report how the credential fared, and nothing is written anywhere.
@@ -15,7 +15,7 @@ import (
 	"strings"
 )
 
-// ErrNoGit means the host has no git to ask — only a private fetch ever
+// ErrNoGit means the host has no git to ask. Only a private fetch ever
 // needs one.
 var ErrNoGit = errors.New("no git on this machine")
 
@@ -50,7 +50,7 @@ func Fill(ctx context.Context, protocol, host, path string, stderr io.Writer) (C
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
-		// A cancelled fill — Ctrl+C at the sign-in prompt — is not "no
+		// A cancelled fill (Ctrl+C at the sign-in prompt) is not "no
 		// credential exists"; telling the user to sign in would mislead.
 		if ctx.Err() != nil {
 			return Credential{}, ctx.Err()

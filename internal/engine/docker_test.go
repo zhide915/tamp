@@ -73,7 +73,7 @@ func TestPingIsEngineUnavailableWhenNothingAnswers(t *testing.T) {
 	}
 }
 
-// closedAddress returns a host:port that just stopped listening — the
+// closedAddress returns a host:port that just stopped listening: the
 // closest thing to a guaranteed-refused connection.
 func closedAddress(t *testing.T) string {
 	t.Helper()

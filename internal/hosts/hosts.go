@@ -45,7 +45,7 @@ var blockHeader = []string{
 // already owns.
 const PathVar = "TAMP_HOSTS_FILE"
 
-// OSPath is the operating system's hosts file — the only file the elevated
+// OSPath is the operating system's hosts file, the only file the elevated
 // half of a sync ever writes, so no environment variable can aim tamp's
 // privileges at another one.
 func OSPath() string {
@@ -126,7 +126,7 @@ func lineEnding(existing string) string {
 // Reconcile returns what the file should hold once tamp's block names exactly
 // these hostnames. No line outside the block changes; an empty list takes the
 // block away entirely, so a removed site's line disappears. A file whose last
-// line has no terminator gains one — a marker cannot start a line otherwise —
+// line has no terminator gains one (a marker cannot start a line otherwise)
 // and that byte stays behind when the block goes.
 func Reconcile(existing string, entries []string) string {
 	entries = normalize(entries)
@@ -151,7 +151,7 @@ func Reconcile(existing string, entries []string) string {
 }
 
 // Resolved lists every hostname the file maps to loopback, sorted, wherever
-// the line lives — an entry the user keeps outside tamp's block resolves just
+// the line lives: an entry the user keeps outside tamp's block resolves just
 // as well, and "does it resolve" is a different question from "is it in the
 // block".
 func Resolved(existing string) []string {
@@ -189,7 +189,7 @@ func Entries(existing string) []string {
 
 // split cuts the file around tamp's block: what precedes the begin marker's
 // line and what follows the end marker's. found is false when the pair is not
-// there, which includes a half-written block — tamp appends a fresh one
+// there, which includes a half-written block: tamp appends a fresh one
 // rather than guessing where a lost marker was.
 func split(existing string) (before, after string, found bool) {
 	begin, ok := lineIndex(existing, 0, BeginMarker)

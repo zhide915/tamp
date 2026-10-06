@@ -25,7 +25,7 @@ func bench(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	}, fake
 }
 
-// initialized has been through bench init — the only state Configure runs in,
+// initialized has been through bench init, the only state Configure runs in,
 // since it merges into the config init wrote.
 func initialized(t *testing.T) (*frappe.Bench, *enginetest.Fake) {
 	t.Helper()
@@ -266,12 +266,12 @@ func TestGitIsSettledForAHostThatCannotDescribeWhatLinuxWrote(t *testing.T) {
 	}
 	for setting, what := range settings {
 		if !fake.Ran(setting) {
-			t.Errorf("tamp left %s for the host's git to misread — expected %q", what, setting)
+			t.Errorf("tamp left %s for the host's git to misread: expected %q", what, setting)
 		}
 	}
 }
 
-// tamp cannot know which repos are there — some arrive through the exec bridge.
+// tamp cannot know which repos are there: some arrive through the exec bridge.
 func TestGitIsSettledForEveryAppOnTheBench(t *testing.T) {
 	b, fake := bench(t)
 

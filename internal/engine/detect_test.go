@@ -271,6 +271,6 @@ func TestEmptyConfigDirDoesNotReadTheWorkingDirectory(t *testing.T) {
 		t.Fatalf("Detect: %v", err)
 	}
 	if addr.Source != engine.SourceProbe {
-		t.Errorf("Source = %q, want %q — tamp read a stray config.json", addr.Source, engine.SourceProbe)
+		t.Errorf("Source = %q, want %q (tamp read a stray config.json)", addr.Source, engine.SourceProbe)
 	}
 }

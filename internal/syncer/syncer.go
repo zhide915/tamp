@@ -88,7 +88,7 @@ func AppsDir(envDir string) string { return filepath.Join(envDir, AppsDirName) }
 
 // Ignores are the paths a sync session skips: build outputs and caches each
 // side regenerates, and the virtualenv, whose contents are platform-specific.
-// .git deliberately syncs — that is what lets git run on the host, and it is
+// .git deliberately syncs: that is what lets git run on the host, and it is
 // safe because only one side ever writes it.
 var Ignores = []string{
 	"env/",
@@ -166,7 +166,7 @@ var cloudFolders = []string{"onedrive", "dropbox", "google drive", "googledrive"
 // PathWarnings flags locations that will cause trouble later: a cloud-sync
 // folder means two synchronizers undoing each other, and a space in the path
 // trips quoting somewhere in the shells a bench command crosses. Warnings,
-// not refusals — where the environment lives is the user's call.
+// not refusals: where the environment lives is the user's call.
 func PathWarnings(dir string) []string {
 	var warnings []string
 	for _, segment := range strings.Split(filepath.ToSlash(dir), "/") {
@@ -174,7 +174,7 @@ func PathWarnings(dir string) []string {
 		for _, cloud := range cloudFolders {
 			if folded == cloud {
 				warnings = append(warnings,
-					fmt.Sprintf("%s is inside %s, which syncs these files too — two synchronizers on one directory undo each other", dir, segment))
+					fmt.Sprintf("%s is inside %s, which syncs these files too: two synchronizers on one directory undo each other", dir, segment))
 				break
 			}
 		}

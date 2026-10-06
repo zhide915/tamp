@@ -15,8 +15,8 @@ import (
 )
 
 // The credential bridge (ADR 0002). These tests run the real host git,
-// steered at a canned credential helper through the sandbox's global config
-// — the engine stays the only fake point.
+// steered at a canned credential helper through the sandbox's global config.
+// The engine stays the only fake point.
 
 const privateApp = "https://github.com/myorg/private"
 
@@ -88,7 +88,7 @@ func TestThePreflightRunsBeforeTheBenchIsInitialized(t *testing.T) {
 	probe := execIndex(c.engine.Execs, "git ls-remote")
 	init := execIndex(c.engine.Execs, "bench init")
 	if probe < 0 || init < 0 || probe > init {
-		t.Errorf("ls-remote at exec %d, bench init at %d — the preflight must come first", probe, init)
+		t.Errorf("ls-remote at exec %d, bench init at %d: the preflight must come first", probe, init)
 	}
 }
 
@@ -217,7 +217,7 @@ func TestAPublicAppOnABridgedHostStillFetchesWithoutTheCredential(t *testing.T) 
 		}
 	}
 	if got := countOf(credentialCalls(t, log), "store"); got != 1 {
-		t.Errorf("the credential was approved %d times, want 1 — after the authenticated fetch", got)
+		t.Errorf("the credential was approved %d times, want 1, after the authenticated fetch", got)
 	}
 }
 
@@ -353,7 +353,7 @@ func TestARepositoryRefusingACredentialTheHostAcceptedElsewhereIsADenialNotAReje
 }
 
 // GitHub tells a credential without access that the repository does not
-// exist — the same words a typo gets.
+// exist, the same words a typo gets.
 func TestARepositoryHiddenFromTheCorrectCredentialIsADenialNotATypo(t *testing.T) {
 	c := sandbox(t)
 	c.engine.DeniedRepos = map[string]string{privateApp: "s3cret-9Lmn"}

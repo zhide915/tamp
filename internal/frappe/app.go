@@ -16,7 +16,7 @@ type GetAppRequest struct {
 	Source string
 	// Branch to fetch; empty means the repository's default.
 	Branch string
-	// Env is added to the fetch exec's environment — the credential
+	// Env is added to the fetch exec's environment: the credential
 	// bridge's injection (CredentialEnv), when the app's host needs one.
 	Env []string
 }

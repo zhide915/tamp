@@ -23,7 +23,7 @@ type Entry struct {
 	// Hash is the path hash baked into the Docker resource names, stored so
 	// they can be derived even after the directory moves.
 	Hash string `json:"hash"`
-	// DBPort is the allocator's ledger — deliberately not tamp.toml, which is
+	// DBPort is the allocator's ledger, deliberately not tamp.toml, which is
 	// written only after the machine lock releases; allocation must read data
 	// already on disk under the lock.
 	DBPort int `json:"db_port"`
@@ -54,7 +54,7 @@ func LoadRegistry(home string) (Registry, error) {
 	if err := json.Unmarshal(blob, &reg); err != nil {
 		return nil, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s is not valid JSON: %v", RegistryPath(home), err),
-			"repair or delete it — tamp rebuilds it as environments are created")
+			"repair or delete it: tamp rebuilds it as environments are created")
 	}
 	return reg, nil
 }
@@ -107,7 +107,7 @@ func registryWriteError(path string, err error) error {
 }
 
 // The registry is the machine's claims ledger: names, hostnames (sites and
-// mail UIs alike — Caddy refuses a configuration holding one address twice,
+// mail UIs alike: Caddy refuses a configuration holding one address twice,
 // taking every site down) and DB ports are all claimed here under the lock.
 
 // A HostClaim names what already answers to a hostname.
@@ -146,8 +146,8 @@ func Claim(home string, name Name, dir, hash string) (int, error) {
 }
 
 // Reclaim re-registers an environment adopted in place, keeping its cached
-// site list and taking back its recorded port — so a database client's saved
-// connection still works — unless another environment claimed the port
+// site list and taking back its recorded port, so a database client's saved
+// connection still works, unless another environment claimed the port
 // meanwhile, in which case a fresh one is allocated.
 func Reclaim(home string, name Name, dir, hash string, recorded int) (int, error) {
 	var port int
@@ -157,7 +157,7 @@ func Reclaim(home string, name Name, dir, hash string, recorded int) (int, error
 				fmt.Sprintf("an environment named %q is already registered, at %s", name, existing.Path),
 				"remove that one with 'tamp rm "+string(name)+"', or rename this directory's environment in "+ConfigFile)
 		}
-		// The environment's own mail hostname is not a clash — only another
+		// The environment's own mail hostname is not a clash: only another
 		// environment holding it as a site is.
 		if c, clash := claimant(reg, string(name), router.MailHost(string(name))); clash && c.Owner != string(name) {
 			return exitcode.New(exitcode.CodeFailed,
@@ -190,13 +190,13 @@ func Release(home string, name Name) error {
 }
 
 // ClaimHost records a hostname against an environment, refusing one the
-// machine has already given out — as a site or a mail UI, to anyone.
+// machine has already given out: as a site or a mail UI, to anyone.
 func ClaimHost(home string, name Name, host string) error {
 	return updateSites(home, name, func(reg Registry, sites []string) ([]string, error) {
 		if c, claimed := claimant(reg, "", host); claimed {
 			return nil, exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("%s is already %s of the environment %q", host, c.What, c.Owner),
-				"pick another hostname — 'tamp list' shows what every environment answers to")
+				"pick another hostname: 'tamp list' shows what every environment answers to")
 		}
 		return append(sites, host), nil
 	})
@@ -210,7 +210,7 @@ func ReleaseHost(home string, name Name, host string) error {
 }
 
 // RecordSites replaces the cached site list with what the bench holds,
-// keeping out hostnames the machine already gave to something else — tamp did
+// keeping out hostnames the machine already gave to something else: tamp did
 // not create every site on a bench, and routing one would duplicate a
 // Caddyfile address. Refused claims are returned for the caller to report.
 func RecordSites(home string, name Name, hosts []string) ([]HostClaim, error) {
@@ -230,7 +230,7 @@ func RecordSites(home string, name Name, hosts []string) ([]HostClaim, error) {
 }
 
 // ClaimHosts records these hostnames against an environment in one ledger
-// write, all or nothing — a restore must not end up holding half its
+// write, all or nothing: a restore must not end up holding half its
 // addresses. Refused claims are returned with nothing written.
 func ClaimHosts(home string, name Name, hosts []string) ([]HostClaim, error) {
 	var clashes []HostClaim
@@ -295,7 +295,7 @@ func updateSites(home string, name Name, change func(Registry, []string) ([]stri
 }
 
 // claimant reports what already answers to a hostname, ignoring self's own
-// sites. Mail UIs count as claims — even against their own environment, since
+// sites. Mail UIs count as claims, even against their own environment, since
 // a site at that address would be a second router block for it. self is empty
 // when the question is "is this free at all".
 func claimant(reg Registry, self, host string) (HostClaim, bool) {

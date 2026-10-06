@@ -1,6 +1,6 @@
 // Package env models tamp environments: tamp.toml on disk, the machine-global
 // registry, the Docker resource names, and the lifecycle operations over
-// them. The engine is injected — nothing here touches Docker directly — so
+// them. The engine is injected (nothing here touches Docker directly), so
 // the whole lifecycle runs in tests against a temp HOME and a recording fake.
 package env
 
@@ -28,7 +28,7 @@ type Manager struct {
 	// cwdErr is why Cwd is empty, reported only when a command needs it.
 	cwdErr error
 	Engine engine.Engine
-	// Sync mirrors an environment's source to the host — tamp's second
+	// Sync mirrors an environment's source to the host, tamp's second
 	// external-process seam after the engine.
 	Sync syncer.Mutagen
 	// Browser opens a URL. A field because a test that ran the real one
@@ -37,7 +37,7 @@ type Manager struct {
 	Out     *ui.Printer
 
 	// HostsFile is the hosts file 'tamp hosts sync' reconciles, and
-	// HostsRedirected says it is not the system's own — which is what
+	// HostsRedirected says it is not the system's own, which is what
 	// forbids elevating for it.
 	HostsFile       string
 	HostsRedirected bool
@@ -110,7 +110,7 @@ func (e *Environment) bench(eng engine.Engine, out io.Writer) *frappe.Bench {
 // SharedVolumes are common to every environment: the toolchain, the two
 // package caches, the bench template store and the seed store. The compose
 // file declares them external so `tamp rm --volumes` on one environment
-// cannot empty them for the rest — which means tamp must create them itself.
+// cannot empty them for the rest, which means tamp must create them itself.
 func SharedVolumes() []string {
 	return []string{
 		toolchain.Volume, frappe.PipCacheVolume, frappe.YarnCacheVolume,
@@ -160,12 +160,12 @@ type State string
 
 const (
 	StateRunning State = "running"
-	// StateStopped — no containers, or none running.
+	// StateStopped: no containers, or none running.
 	StateStopped State = "stopped"
-	// StateDegraded — some running, some not: the state that needs looking at,
+	// StateDegraded: some running, some not, the state that needs looking at,
 	// so it is not rounded to either of the others.
 	StateDegraded State = "degraded"
-	// StateUnknown — the engine was unreachable.
+	// StateUnknown: the engine was unreachable.
 	StateUnknown State = "unknown"
 )
 
@@ -187,7 +187,7 @@ func stateOf(containers []engine.Container) State {
 	}
 }
 
-// Start brings an environment up, regenerating the generated files first —
+// Start brings an environment up, regenerating the generated files first:
 // tamp.toml is the source of truth on every start, including after a tamp
 // upgrade changed the templates.
 func (m *Manager) Start(ctx context.Context, name string) error {
@@ -214,7 +214,7 @@ func (m *Manager) Start(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	// Starting a running environment exits 0 with a notice — scripts run
+	// Starting a running environment exits 0 with a notice: scripts run
 	// start defensively. The routing still happens: the router is
 	// machine-global and may have been stopped since.
 	running := stateOf(containers) == StateRunning
@@ -273,7 +273,7 @@ func (m *Manager) regenerate(e *Environment, sync syncer.Effective) error {
 	return e.Generate(sync)
 }
 
-// Stop stops the containers. Volumes always survive — there is deliberately
+// Stop stops the containers. Volumes always survive: there is deliberately
 // no flag on stop that destroys data.
 func (m *Manager) Stop(ctx context.Context, name string) error {
 	return m.stop(ctx, name, true)
@@ -309,7 +309,7 @@ func (m *Manager) stop(ctx context.Context, name string, final bool) error {
 	}
 	m.Out.OK(fmt.Sprintf("%s stopped", e.Name()))
 	if final {
-		m.Out.Hint("volumes are untouched — 'tamp start' brings it back with its data")
+		m.Out.Hint("volumes are untouched: 'tamp start' brings it back with its data")
 	}
 	return nil
 }

@@ -41,7 +41,7 @@ func Open(dir string) (*Environment, error) {
 	return &Environment{Dir: abs, Config: cfg, Resources: res, Warnings: warnings}, nil
 }
 
-// Resolve returns the named environment, or — when name is empty — the one
+// Resolve returns the named environment, or, when name is empty, the one
 // the working directory is inside, found the way git finds a repo.
 func Resolve(home, cwd, name string) (*Environment, error) {
 	if name != "" {
@@ -51,7 +51,7 @@ func Resolve(home, cwd, name string) (*Environment, error) {
 	dir, found := findConfigUpward(cwd)
 	if !found {
 		return nil, exitcode.New(exitcode.CodeNotFound,
-			fmt.Sprintf("no tamp environment here — looked for %s in %s and every directory above it", ConfigFile, cwd),
+			fmt.Sprintf("no tamp environment here: looked for %s in %s and every directory above it", ConfigFile, cwd),
 			"run this inside an environment directory, or name one: see 'tamp list'")
 	}
 	return Open(dir)

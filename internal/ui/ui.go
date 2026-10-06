@@ -80,7 +80,7 @@ func (s *Stepper) Step(msg string) (n, total int) {
 	return s.n, s.total
 }
 
-// Hint prints a dim aside on stdout. Quiet drops it — unlike Note.
+// Hint prints a dim aside on stdout. Quiet drops it, unlike Note.
 func (p *Printer) Hint(msg string) {
 	if p.Quiet {
 		return
@@ -88,7 +88,7 @@ func (p *Printer) Hint(msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, msg))
 }
 
-// Note prints a dim line that is part of the answer — doctor's fix lines —
+// Note prints a dim line that is part of the answer (doctor's fix lines),
 // so Quiet keeps it.
 func (p *Printer) Note(msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiDim, msg))
@@ -159,7 +159,7 @@ func (p *Printer) Fail(msg string) {
 	p.mark(p.Err, p.ColorErr, MarkFail, msg)
 }
 
-// Result writes a marked line to stdout — for commands whose output is the
+// Result writes a marked line to stdout, for commands whose output is the
 // outcomes themselves (doctor), where a ✗ is the answer, not a diagnostic.
 func (p *Printer) Result(m Mark, msg string) {
 	p.mark(p.Out, p.ColorOut, m, msg)

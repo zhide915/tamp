@@ -195,7 +195,7 @@ func TestInitTreatsAConfigOnlyDirectoryAsFresh(t *testing.T) {
 	}
 }
 
-// With fresh volumes the sync mirrors host apps in after bench init — apps
+// With fresh volumes the sync mirrors host apps in after bench init: apps
 // bench never cloned, which must still be registered or they stay unloadable.
 func TestReadoptWithFreshVolumesRegistersTheAppsTheSyncBringsBack(t *testing.T) {
 	c := sandbox(t)
@@ -255,7 +255,7 @@ func TestAFailedAdoptionKeepsTheVolumes(t *testing.T) {
 // --- helpers ---------------------------------------------------------------
 
 // leaveSource plants the apps tree a bind mount or sync session would have
-// left on the host — what makes a directory adoptable.
+// left on the host: what makes a directory adoptable.
 func (c *cli) leaveSource(t *testing.T, name string) {
 	t.Helper()
 	app := filepath.Join(c.path(name, syncer.AppsDirName), "frappe")

@@ -75,7 +75,7 @@ func TestOpenTakesTheSiteToOpen(t *testing.T) {
 }
 
 // A hostname carries a dot and an environment name never does, which is what
-// lets one lone argument mean either — here, the site inside the environment
+// lets one lone argument mean either: here, the site inside the environment
 // the user is standing in.
 func TestOpenReadsALoneArgumentAsAHostnameWhenItHasADot(t *testing.T) {
 	c := sandbox(t)

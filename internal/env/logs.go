@@ -23,12 +23,12 @@ type LogService struct {
 	// Process is the honcho process to keep lines from; empty takes the whole
 	// container log.
 	Process string
-	// Global marks the router, the one service outside any environment —
+	// Global marks the router, the one service outside any environment:
 	// why `tamp logs router` works from anywhere.
 	Global bool
 }
 
-// DefaultLogService is the web server — what the browser is talking to.
+// DefaultLogService is the web server, what the browser is talking to.
 const DefaultLogService = "web"
 
 // logServices is ordered the way the error message lists them.
@@ -45,8 +45,8 @@ var logServices = []LogService{
 	{Name: "router", Global: true},
 }
 
-// ParseLogService resolves a service name. An unknown one is a usage error —
-// nothing was attempted — and the answer is the list.
+// ParseLogService resolves a service name. An unknown one is a usage error
+// (nothing was attempted), and the answer is the list.
 func ParseLogService(name string) (LogService, error) {
 	if name == "" {
 		name = DefaultLogService
@@ -71,7 +71,7 @@ func LogServiceNames() []string {
 
 // LogsRequest is what `tamp logs` was asked for.
 type LogsRequest struct {
-	// Target is the raw positionals — environment, service, both in that
+	// Target is the raw positionals: environment, service, both in that
 	// order, or neither; telling which needs the registry.
 	Target []string
 	Follow bool
@@ -108,7 +108,7 @@ func (m *Manager) Logs(ctx context.Context, req LogsRequest) error {
 		container = e.Resources.Container(svc.Service)
 	}
 
-	// The log is the command's output — --quiet does not drop it.
+	// The log is the command's output: --quiet does not drop it.
 	out := io.Writer(m.Out.Out)
 	if svc.Process != "" {
 		filter := &processFilter{out: out, process: svc.Process}
@@ -125,8 +125,8 @@ func (m *Manager) Logs(ctx context.Context, req LogsRequest) error {
 }
 
 // logsTarget settles one bare word via the registry: an environment answering
-// to the name wins — reserved words do not grow, so someone may name one
-// "web" — and the service stays reachable by saying both.
+// to the name wins (reserved words do not grow, so someone may name one
+// "web"), and the service stays reachable by saying both.
 func (m *Manager) logsTarget(target []string) (name, service string, err error) {
 	switch len(target) {
 	case 0:
@@ -173,7 +173,7 @@ func (f *processFilter) Write(p []byte) (int, error) {
 	for {
 		line, err := f.buf.ReadString('\n')
 		if err != nil {
-			// Partial line — put it back and wait for the rest.
+			// Partial line: put it back and wait for the rest.
 			f.buf.WriteString(line)
 			return len(p), nil
 		}
@@ -198,7 +198,7 @@ func (f *processFilter) emit(line string) error {
 	return err
 }
 
-// belongs also keeps honcho's own "system" lines about the process — "web.1
+// belongs also keeps honcho's own "system" lines about the process: "web.1
 // stopped (rc=1)" is exactly what a reader of web's log came for.
 func (f *processFilter) belongs(line string) bool {
 	process, rest, ok := honchoLine(line)

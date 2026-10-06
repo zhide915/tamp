@@ -9,7 +9,7 @@ import (
 
 // Elevating is the one place tamp asks for privileges: the hosts file belongs
 // to the system, and nothing else tamp does touches anything of the system's.
-// The elevated process runs one command — writing the file — and exits.
+// The elevated process runs one command (writing the file) and exits.
 
 // Self is the tamp binary to re-run elevated.
 func Self() (string, error) {

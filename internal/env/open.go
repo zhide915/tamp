@@ -97,8 +97,8 @@ func chooseSite(e *Environment, hosts []string, target string) (string, error) {
 	return target, nil
 }
 
-// launch opens the URL, once the last thing between it and an answer — the
-// machine's one router — is known to be up.
+// launch opens the URL, once the last thing between it and an answer (the
+// machine's one router) is known to be up.
 func (m *Manager) launch(ctx context.Context, e *Environment, status router.Status, url string) error {
 	if !status.Running {
 		return exitcode.New(exitcode.CodeFailed,

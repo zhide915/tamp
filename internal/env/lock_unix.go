@@ -10,7 +10,7 @@ import (
 )
 
 // tryLock takes a non-blocking exclusive flock. flock is held per open file
-// description, so a second in-process attempt conflicts — the lock is testable
+// description, so a second in-process attempt conflicts: the lock is testable
 // without a second tamp.
 func tryLock(f *os.File) (bool, error) {
 	err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB)

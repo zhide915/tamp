@@ -67,7 +67,7 @@ func TestEnsureRefusesADownloadThatDoesNotMatchTheChecksum(t *testing.T) {
 	}
 }
 
-// A blocked download is not fatal — the error must name the bind fallback.
+// A blocked download is not fatal: the error must name the bind fallback.
 func TestEnsureSaysWhatToDoWhenTheDownloadIsBlocked(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "blocked by proxy", http.StatusForbidden)

@@ -66,7 +66,7 @@ func execArgs(cmd *cobra.Command, args []string) error {
 type console struct{ fd int }
 
 // attachedConsole returns the terminal on both ends, or nil when either side
-// is a pipe — a pty there would emit escapes nothing interprets.
+// is a pipe: a pty there would emit escapes nothing interprets.
 // The env.Terminal assertion is the seam tests inject a fake console through.
 func attachedConsole(stdin io.Reader, stdout io.Writer) env.Terminal {
 	if t, ok := stdin.(env.Terminal); ok {

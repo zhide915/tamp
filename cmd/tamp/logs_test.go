@@ -9,7 +9,7 @@ import (
 	"github.com/zhide915/tamp/internal/router"
 )
 
-// The user names services, never containers — and the five bench processes
+// The user names services, never containers, and the five bench processes
 // sharing one container must come back apart.
 
 // benchLog mixes the two line shapes tamp must separate: a process's own

@@ -37,7 +37,7 @@ func ParseApps(spec string) ([]App, error) {
 }
 
 // ParseApp reads one spec: a bare name, a git URL, or either with ":branch".
-// No branch means the repo's default branch — tamp never infers one from the
+// No branch means the repo's default branch: tamp never infers one from the
 // Frappe version, because many apps have no matching release branch.
 func ParseApp(spec string) (App, error) {
 	repo, branch := splitBranch(spec)
@@ -48,7 +48,7 @@ func ParseApp(spec string) (App, error) {
 	}
 
 	// Sources the credential bridge can never serve fail here, before tamp
-	// claims a name or writes anything; every echo is redacted — the spec
+	// claims a name or writes anything; every echo is redacted: the spec
 	// may embed a secret.
 	if https, ssh := httpsFormOfSSH(repo); ssh {
 		return App{}, exitcode.New(exitcode.CodeFailed,
@@ -62,13 +62,13 @@ func ParseApp(spec string) (App, error) {
 			// proven free of an embedded secret.
 			return App{}, exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("tamp cannot read %s as a URL", redactedURL(repo)),
-				"check the URL — and if it embeds a token, drop it: tamp asks the host's git credential system instead")
+				"check the URL, and if it embeds a token, drop it: tamp asks the host's git credential system instead")
 		}
 		if u.User != nil {
 			u.User = nil
 			return App{}, exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("the URL for %s embeds a credential, and tamp never stores a secret", u.String()),
-				"drop the token — tamp asks the host's git credential system when the repository needs one")
+				"drop the token: tamp asks the host's git credential system when the repository needs one")
 		}
 	}
 
@@ -77,7 +77,7 @@ func ParseApp(spec string) (App, error) {
 	if isRepoURL(repo) {
 		name = appNameFromURL(repo)
 	} else {
-		// bench accepts owner/repo; tamp refuses it — glued onto the frappe
+		// bench accepts owner/repo; tamp refuses it: glued onto the frappe
 		// organisation's URL it would name a repository that does not exist,
 		// failing only after the environment is built.
 		if strings.Contains(repo, "/") {
@@ -97,7 +97,7 @@ func ParseApp(spec string) (App, error) {
 }
 
 // splitBranch separates a spec into repository and branch. A repository has
-// colons of its own — the scheme, a port, the scp-style host separator — so
+// colons of its own (the scheme, a port, the scp-style host separator), so
 // the branch search starts after them, letting a branch like feature/x parse.
 func splitBranch(spec string) (repo, branch string) {
 	from := 0
@@ -125,8 +125,8 @@ func isRepoURL(repo string) bool {
 	return strings.Contains(repo, "://") || strings.Contains(repo, "@")
 }
 
-// httpsFormOfSSH reports whether repo is an ssh source — an ssh:// URL or the
-// scp form git@host:path — and translates it to the https URL the refusal
+// httpsFormOfSSH reports whether repo is an ssh source (an ssh:// URL or the
+// scp form git@host:path) and translates it to the https URL the refusal
 // suggests. The ssh port is dropped: it would be wrong for https.
 func httpsFormOfSSH(repo string) (https string, ssh bool) {
 	lower := strings.ToLower(repo)
@@ -151,7 +151,7 @@ func httpsFormOfSSH(repo string) (https string, ssh bool) {
 	return "", false
 }
 
-// redactedURL strips everything before the last "@" textually — parsing may
+// redactedURL strips everything before the last "@" textually: parsing may
 // have failed, so the authority's true end is unknown and a secret may hold
 // any character; over-cutting is the safe direction.
 func redactedURL(repo string) string {
@@ -165,7 +165,7 @@ func redactedURL(repo string) string {
 	return scheme + rest
 }
 
-// appNameFromURL takes the last URL segment — the directory bench itself
+// appNameFromURL takes the last URL segment, the directory bench itself
 // clones into.
 func appNameFromURL(url string) string {
 	url = strings.TrimSuffix(strings.TrimSuffix(url, "/"), ".git")
@@ -185,7 +185,7 @@ func AppNames(apps []App) []string {
 }
 
 // ParseInstallApps reads `tamp site new`'s --apps: names of apps already on
-// the bench. A branch is rejected rather than ignored — installing fetches
+// the bench. A branch is rejected rather than ignored: installing fetches
 // nothing, so a branch here would be a silently dropped pin.
 func ParseInstallApps(spec string) ([]string, error) {
 	names := []string{}

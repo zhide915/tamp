@@ -134,19 +134,19 @@ func (m *Manager) SiteNew(ctx context.Context, req SiteNewRequest) error {
 	return nil
 }
 
-// revealAdmin prints only a password tamp generated — echoing back a typed
+// revealAdmin prints only a password tamp generated: echoing back a typed
 // one puts it in a second place for no one's benefit.
 func (m *Manager) revealAdmin(generated bool, admin string) {
 	if !generated {
 		return
 	}
 	m.Out.Note("Administrator password: " + admin)
-	m.Out.Note("tamp generated it and prints it this once — it is not stored anywhere")
+	m.Out.Note("tamp generated it and prints it this once: it is not stored anywhere")
 }
 
 // salvageSite handles a failure after `bench new-site` succeeded: the site
-// exists and keeps its claim, so print the generated password — only this run
-// knows it — and route what is there, so the site being repaired is
+// exists and keeps its claim, so print the generated password (only this run
+// knows it) and route what is there, so the site being repaired is
 // reachable.
 func (m *Manager) salvageSite(ctx context.Context, generated bool, admin string, err error) error {
 	m.revealAdmin(generated, admin)
@@ -157,7 +157,7 @@ func (m *Manager) salvageSite(ctx context.Context, generated bool, admin string,
 }
 
 // requireApps refuses rather than fetches: tamp cannot know which branch of
-// an app this bench wants, and the hint leaves the branch for the user —
+// an app this bench wants, and the hint leaves the branch for the user,
 // exactly the part tamp cannot supply.
 func (m *Manager) requireApps(ctx context.Context, e *Environment, bench *frappe.Bench, apps []string) error {
 	if len(apps) == 0 {
@@ -185,7 +185,7 @@ func (m *Manager) requireApps(ctx context.Context, e *Environment, bench *frappe
 	}
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("%s cannot install %s", e.Name(), strings.Join(missing, ", ")),
-		"fetch the apps above onto the bench first — tamp will not guess a branch")
+		"fetch the apps above onto the bench first: tamp will not guess a branch")
 }
 
 func (m *Manager) claimHost(e *Environment, host Host) error {
@@ -204,12 +204,12 @@ func (m *Manager) unclaimHost(e *Environment, host Host) {
 type SiteRemoveRequest struct {
 	Env  string
 	Host string
-	// Yes replaces a prompt — agents run these commands, so confirmation is a
+	// Yes replaces a prompt: agents run these commands, so confirmation is a
 	// flag.
 	Yes bool
 }
 
-// SiteRemove drops one site — its database and its files — and nothing else.
+// SiteRemove drops one site (its database and its files) and nothing else.
 func (m *Manager) SiteRemove(ctx context.Context, req SiteRemoveRequest) error {
 	e, err := m.resolve(req.Env)
 	if err != nil {
@@ -265,7 +265,7 @@ func (m *Manager) SiteRemove(ctx context.Context, req SiteRemoveRequest) error {
 	return nil
 }
 
-// previewSiteRemoval prints exactly what --yes would destroy — the point of
+// previewSiteRemoval prints exactly what --yes would destroy: the point of
 // the exit-5 contract.
 func (m *Manager) previewSiteRemoval(e *Environment, host Host) {
 	m.Out.Print(fmt.Sprintf("tamp site rm would destroy, in %s:", e.Name()))
@@ -329,8 +329,8 @@ func (m *Manager) SiteList(ctx context.Context, name string) error {
 	return nil
 }
 
-// sites prefers the running bench — its sites/ directory is what Frappe
-// resolves against — and writes its answer back to the registry, so a site
+// sites prefers the running bench (its sites/ directory is what Frappe
+// resolves against), and writes its answer back to the registry, so a site
 // created through 'tamp exec' still gets routed. A stopped environment
 // answers from the cache, which is why the cache exists.
 func (m *Manager) sites(ctx context.Context, e *Environment) (hosts []string, live bool, err error) {

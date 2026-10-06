@@ -38,13 +38,13 @@ func (m *Manager) SyncStatus(ctx context.Context, name string) error {
 	m.Out.Print("flushed   " + m.lastFlush(e))
 	// The daemon outlives every session, and nothing else in tamp mentions
 	// that it is there at all.
-	m.Out.Print("daemon    tamp's own, in " + filepath.Join(m.Home, syncer.DataDirName) + " — 'tamp sync stop' stops it")
+	m.Out.Print("daemon    tamp's own, in " + filepath.Join(m.Home, syncer.DataDirName) + " ('tamp sync stop' stops it)")
 	m.Out.Print("")
 
 	// Find, not Ensure: reporting on a machine that has never synced must not
 	// download Mutagen to say so.
 	if _, err := m.Sync.Find(ctx); err != nil {
-		m.Out.Note("this machine has no Mutagen yet — tamp downloads it the first time it syncs")
+		m.Out.Note("this machine has no Mutagen yet: tamp downloads it the first time it syncs")
 		return nil
 	}
 	held, err := m.Sync.Sessions(ctx)
@@ -73,7 +73,7 @@ func (m *Manager) SyncFlush(ctx context.Context, name string) error {
 		return err
 	}
 	// Stopping an environment pauses its session rather than forgetting it,
-	// so Mutagen still holds one here — and refuses to flush it.
+	// so Mutagen still holds one here, and refuses to flush it.
 	if err := m.requireRunning(ctx, e, "so its paused session has nothing to flush to"); err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (m *Manager) SyncReset(ctx context.Context, name string) error {
 	m.recordFlush(e)
 
 	m.Out.OK("reset the sync session for " + e.Name().String())
-	m.Out.Note("source: " + syncer.AppsDir(e.Dir) + " — edits reach the container in about a second")
+	m.Out.Note("source: " + syncer.AppsDir(e.Dir) + ", edits reach the container in about a second")
 	return nil
 }
 
@@ -163,7 +163,7 @@ func (m *Manager) syncing(name string) (e *Environment, syncs bool, err error) {
 	if mode == syncer.UseMutagen {
 		return e, true, nil
 	}
-	m.Out.Print(fmt.Sprintf("mode: %s — sync not applicable", mode))
+	m.Out.Print(fmt.Sprintf("mode: %s (sync not applicable)", mode))
 	if mode == syncer.UseBind {
 		m.Out.Note(syncer.AppsDir(e.Dir) + " is bound straight into the container, so there is nothing to synchronize")
 	} else {
@@ -179,7 +179,7 @@ func startsTheSession(e *Environment) string {
 }
 
 // requireSession names the session to act on, refusing when Mutagen is not
-// holding one — acting on a session that is not there is not a flush.
+// holding one: acting on a session that is not there is not a flush.
 func (m *Manager) requireSession(ctx context.Context, e *Environment) (string, error) {
 	session := e.Resources.Project()
 	held, err := m.Sync.Sessions(ctx)

@@ -92,8 +92,8 @@ func (d Detector) Detect() (Address, error) {
 
 	return Address{}, exitcode.New(
 		exitcode.CodeEngineUnavailable,
-		"no Docker engine found — looked at DOCKER_HOST, the active docker context, and "+
-			strings.Join(d.Candidates, ", "),
+		"no Docker engine found (looked at DOCKER_HOST, the active docker context, and "+
+			strings.Join(d.Candidates, ", ")+")",
 		"start Docker Desktop, or point DOCKER_HOST at your engine's socket",
 	)
 }

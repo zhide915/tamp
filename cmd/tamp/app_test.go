@@ -9,8 +9,8 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Apps move in two explicit steps — fetched onto the bench, installed onto a
-// site — and tamp never bridges the two or guesses a branch.
+// Apps move in two explicit steps (fetched onto the bench, installed onto a
+// site), and tamp never bridges the two or guesses a branch.
 
 func TestCreateFetchesEachAppOntoTheBenchAtTheBranchAsked(t *testing.T) {
 	c := sandbox(t)
@@ -86,7 +86,7 @@ func TestCreateRefusesAnSSHAppSourceBeforeAnythingIsMade(t *testing.T) {
 		"--apps", "git@github.com:myorg/private.git:version-15")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	// The echo is redacted — the spec reappears as host:path, plus the
+	// The echo is redacted: the spec reappears as host:path, plus the
 	// https rewrite.
 	r.assertStderrContains(t,
 		"github.com:myorg/private.git",

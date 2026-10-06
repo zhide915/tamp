@@ -48,6 +48,6 @@ jobs:
         run: bash scripts/e2e.sh "$PWD/tamp"
         env:
           # develop is a third full bench build, and its point is catching a
-          # branch that moved — which is what the scheduled run is for. A
+          # branch that moved, which is what the scheduled run is for. A
           # hand-started run gets it too.
           TAMP_E2E_DEVELOP: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}

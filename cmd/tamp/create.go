@@ -18,9 +18,9 @@ func newCreateCommand(d deps) *cobra.Command {
 		Long: "Create a new environment and start it.\n\n" +
 			"tamp creates ./<name>/ where you run it, writes tamp.toml and the\n" +
 			"files generated from it, and brings up the environment's containers.\n" +
-			"No site is created — sites are always explicit.\n\n" +
+			"No site is created: sites are always explicit.\n\n" +
 			"Apps are fetched onto the bench, not installed to any site. Pin the\n" +
-			"branch you mean — erpnext:version-15 — because an app given without\n" +
+			"branch you mean (erpnext:version-15), because an app given without\n" +
 			"one is fetched at its repository's default branch, usually develop.\n\n" +
 			"The first create of a Frappe version caches its initialized bench;\n" +
 			"later ones unpack it in seconds. --no-cache skips the store.",

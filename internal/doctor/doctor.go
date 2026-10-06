@@ -1,5 +1,5 @@
 // Package doctor runs tamp's health checks and folds them into a report and
-// an exit code. It only diagnoses, so it never stops at the first problem —
+// an exit code. It only diagnoses, so it never stops at the first problem:
 // every check reports regardless of the ones before it.
 package doctor
 
@@ -56,8 +56,8 @@ type Report struct {
 }
 
 // Input is what the caller already read off the machine: the registry, and
-// the hosts file tamp keeps a block in. Both arrive as data — including the
-// errors — because a check reports, and only a report can say that reading
+// the hosts file tamp keeps a block in. Both arrive as data (including the
+// errors) because a check reports, and only a report can say that reading
 // the registry is the thing that failed.
 type Input struct {
 	// RegistryErr is the registry refusing to be read.
@@ -142,7 +142,7 @@ func composeCheck(ctx context.Context, e engine.Engine) Check {
 
 // routerCheck warns rather than fails when the router is down: a machine with
 // no environments needs none, and tamp starts it on demand. It still speaks
-// up — with the router down nothing answers to a hostname.
+// up: with the router down nothing answers to a hostname.
 func routerCheck(ctx context.Context, r *router.Router) Check {
 	status, err := r.Status(ctx)
 	if err != nil {
@@ -162,7 +162,7 @@ func routerCheck(ctx context.Context, r *router.Router) Check {
 		return Check{
 			Name:   "Router",
 			Status: Warn,
-			Detail: "not running — nothing is reachable by hostname",
+			Detail: "not running: nothing is reachable by hostname",
 			Fix:    "run 'tamp start <env>'; tamp brings the router up with it",
 		}
 	}
@@ -174,8 +174,8 @@ func routerCheck(ctx context.Context, r *router.Router) Check {
 }
 
 // syncCheck never fails: Linux bind-mounts the source and has no Mutagen to
-// miss, and elsewhere a missing binary is downloaded on first sync — or, if
-// that is blocked, replaced by a bind mount.
+// miss, and elsewhere a missing binary is downloaded on first sync (or, if
+// that is blocked, replaced by a bind mount).
 func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
 	const name = "Sync"
 
@@ -183,7 +183,7 @@ func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
 		return Check{
 			Name:   name,
 			Status: Pass,
-			Detail: "bind mount — this platform needs no Mutagen",
+			Detail: "bind mount (this platform needs no Mutagen)",
 		}
 	}
 
@@ -192,7 +192,7 @@ func syncCheck(ctx context.Context, s syncer.Mutagen, goos string) Check {
 		return Check{
 			Name:   name,
 			Status: Warn,
-			Detail: fmt.Sprintf("no Mutagen %s yet — tamp downloads it the first time it syncs", syncer.Version),
+			Detail: fmt.Sprintf("no Mutagen %s yet: tamp downloads it the first time it syncs", syncer.Version),
 			Fix:    "nothing to do; if the download is blocked, tamp falls back to a bind mount and says so",
 		}
 	}
@@ -217,14 +217,14 @@ func hostGitCheck(ctx context.Context) Check {
 		return Check{
 			Name:   name,
 			Status: Warn,
-			Detail: "not found — tamp needs it only to fetch private app repositories",
+			Detail: "not found: tamp needs it only to fetch private app repositories",
 			Fix:    "install git and sign in to your git host once; everything else works without it",
 		}
 	}
 	return Check{
 		Name:   name,
 		Status: Pass,
-		Detail: strings.TrimSpace(string(out)) + " — used only for private app repositories",
+		Detail: strings.TrimSpace(string(out)) + ", used only for private app repositories",
 	}
 }
 
@@ -253,7 +253,7 @@ func hostsCheck(in Input) Check {
 		return Check{
 			Name:   name,
 			Status: Warn,
-			Detail: "tamp cannot tell which hostnames belong in its block — the registry check above failed",
+			Detail: "tamp cannot tell which hostnames belong in its block: the registry check above failed",
 			Fix:    "fix the registry, then run 'tamp doctor' again",
 		}
 	}

@@ -35,7 +35,7 @@ func TestErrorPrintsOneLineWithTheFix(t *testing.T) {
 	p, out, errOut := newPrinter()
 	p.Error(exitcode.New(exitcode.CodeNotFound, "environment 'x' not found", "see 'tamp list'"))
 
-	if got, want := errOut.String(), "error: environment 'x' not found — see 'tamp list'\n"; got != want {
+	if got, want := errOut.String(), "error: environment 'x' not found: see 'tamp list'\n"; got != want {
 		t.Errorf("stderr = %q, want %q", got, want)
 	}
 	if out.Len() != 0 {

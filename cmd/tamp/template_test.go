@@ -18,7 +18,7 @@ import (
 // store directly: they plant a template of a chosen age rather than wait for
 // one to grow old.
 
-// ranCount is how many container commands contained fragment — what tells a
+// ranCount is how many container commands contained fragment: what tells a
 // second bench init from none at all.
 func (c *cli) ranCount(fragment string) int {
 	n := 0
@@ -152,7 +152,7 @@ func TestATemplateIsNeverUsedForAnotherFrappeVersion(t *testing.T) {
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStdoutContains(t, "template cache missed for version-16")
 	if got := c.ranCount("bench init"); got != 2 {
-		t.Errorf("bench init ran %d times, want 2 — one per version", got)
+		t.Errorf("bench init ran %d times, want 2: one per version", got)
 	}
 	if _, ok := c.engine.Wrote(frappe.TemplatePath("version-16")); !ok {
 		t.Error("the version-16 create stored no template of its own")
@@ -224,7 +224,7 @@ func TestRepairingATemplateDoesNotRestartItsExpiryClock(t *testing.T) {
 		t.Fatalf("the re-stored manifest has no readable timestamp: %v", err)
 	}
 	if age := time.Since(created); age < 12*24*time.Hour {
-		t.Errorf("the re-stored template is dated %v old, want the 13 days it was — the repair bought it a fresh TTL", age)
+		t.Errorf("the re-stored template is dated %v old, want the 13 days it was: the repair bought it a fresh TTL", age)
 	}
 }
 
@@ -295,7 +295,7 @@ func TestNoCacheInitializesAFreshBenchAndLeavesTheStoredTemplateAlone(t *testing
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStdoutContains(t, "template cache skipped")
 	if got := c.ranCount("bench init"); got != 2 {
-		t.Errorf("bench init ran %d times, want 2 — --no-cache means a fresh one", got)
+		t.Errorf("bench init ran %d times, want 2: --no-cache means a fresh one", got)
 	}
 	// The directory itself is chowned on every create; the tarball is only
 	// ever named by a probe, a restore or a save.
@@ -321,7 +321,7 @@ func TestAnEmptiedTemplateStoreOnlyCostsTheNextCreateItsFullPrice(t *testing.T) 
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertStdoutContains(t, "template cache missed for version-15", "second ready")
 	if got := c.ranCount("bench init"); got != 2 {
-		t.Errorf("bench init ran %d times, want 2 — the store was emptied between them", got)
+		t.Errorf("bench init ran %d times, want 2: the store was emptied between them", got)
 	}
 }
 

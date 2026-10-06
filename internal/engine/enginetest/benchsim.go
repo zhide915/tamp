@@ -13,7 +13,7 @@ import (
 
 // benchSim models the benches behind the fake: apps, sites, per-site
 // installs. Separate from the recorder because tamp writes to a bench and
-// then reads it back — recording alone would let a broken round trip pass.
+// then reads it back: recording alone would let a broken round trip pass.
 //
 // One bench per container, because that is how tamp draws the line: each
 // environment's bench lives in its own volumes, so what one create leaves
@@ -278,7 +278,7 @@ func (s *benchSim) saveSeed(path, host string) {
 	s.put(path, "a tarred site backup")
 }
 
-// initialize is what leaves a bench where there was none — bench init, or a
+// initialize is what leaves a bench where there was none: bench init, or a
 // stored template unpacked in its place. Both put frappe in apps/ and leave
 // bench's own shared config behind.
 func (s *benchSim) initialize(b *benchState) {
@@ -304,7 +304,7 @@ func (s *benchSim) addSite(b *benchState, host string) {
 		b.sites = map[string]bool{}
 	}
 	b.sites[host] = true
-	// Site creation writes the site config — the only place the invented
+	// Site creation writes the site config, the only place the invented
 	// db_name can be read from.
 	s.put(frappe.SiteConfigPath(host), fmt.Sprintf(`{"db_name": %q}`, "_"+strings.ReplaceAll(host, ".", "_")))
 }

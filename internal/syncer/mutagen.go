@@ -33,7 +33,7 @@ type CLI struct {
 func New(home string) *CLI { return &CLI{Home: home} }
 
 // syncMode propagates both ways and resolves a two-sided change in favour of
-// the host — the side being edited.
+// the host, the side being edited.
 const syncMode = "two-way-resolved"
 
 func (c *CLI) Create(ctx context.Context, s Session, out io.Writer) error {
@@ -142,7 +142,7 @@ func (c *CLI) run(ctx context.Context, dockerHost string, out io.Writer, args ..
 		}
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("mutagen %s failed: %s", strings.Join(args, " "), lastLine(reason)),
-			"tamp manages Mutagen itself — 'tamp doctor' reports what it found")
+			"tamp manages Mutagen itself: 'tamp doctor' reports what it found")
 	}
 	return nil
 }

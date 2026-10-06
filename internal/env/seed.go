@@ -15,7 +15,7 @@ import (
 )
 
 // seedSchema versions the manifest. A manifest tamp cannot read is a seed it
-// cannot vouch for, so it is taken again rather than reinterpreted — the
+// cannot vouch for, so it is taken again rather than reinterpreted, the
 // template store's rule, because a seed is caching too.
 const seedSchema = 2
 
@@ -74,14 +74,14 @@ type seedPlan struct {
 // miss, whether or not --seed was asked for: the first site of an app set is
 // what fills the store for the next one.
 func (m *Manager) planSeed(ctx context.Context, e *Environment, bench *frappe.Bench, apps []string, want bool) (seedPlan, error) {
-	// A seed stands in for the app installs and nothing else — the site and
+	// A seed stands in for the app installs and nothing else: the site and
 	// its database are made either way. With no apps there is nothing for one
 	// to save, so tamp neither stores nor restores it.
 	if len(apps) == 0 {
 		if want {
 			return seedPlan{}, exitcode.New(exitcode.CodeFailed,
 				"--seed has no app set to restore: --apps named none",
-				"name the apps with --apps, or drop --seed — a site with no apps installs nothing anyway")
+				"name the apps with --apps, or drop --seed: a site with no apps installs nothing anyway")
 		}
 		return seedPlan{}, nil
 	}
@@ -95,7 +95,7 @@ func (m *Manager) planSeed(ctx context.Context, e *Environment, bench *frappe.Be
 	if want && !held {
 		return seedPlan{}, exitcode.New(exitcode.CodeNotFound,
 			fmt.Sprintf("this machine has no %s seed with %s", e.Config.Frappe.Version, appSetText(apps)),
-			"create one site of this version and app set without --seed — tamp caches that one as the seed")
+			"create one site of this version and app set without --seed: tamp caches that one as the seed")
 	}
 	return seedPlan{Key: key, Restore: want, Store: !held}, nil
 }
@@ -113,8 +113,8 @@ func (p seedPlan) steps(apps []string) int {
 }
 
 // seedHeld reports whether the store holds a seed this environment can use.
-// An unreadable manifest counts as no seed — a cache that cannot be
-// understood is an empty one, and the creation that follows refills it — but
+// An unreadable manifest counts as no seed (a cache that cannot be
+// understood is an empty one, and the creation that follows refills it), but
 // a container tamp cannot reach is an error: answering "no seed" there would
 // refuse a --seed with a sentence about the cache that is not true.
 func (m *Manager) seedHeld(ctx context.Context, bench *frappe.Bench, key string, v FrappeVersion, identity []string) (bool, error) {
@@ -138,7 +138,7 @@ func (m *Manager) seedHeld(ctx context.Context, bench *frappe.Bench, key string,
 
 // restoreSeed brings a stored seed onto a site that already exists, in the
 // same order a snapshot restore uses, and ends with the password this
-// creation was asked for — the seed carries the one its own site had.
+// creation was asked for: the seed carries the one its own site had.
 func (m *Manager) restoreSeed(ctx context.Context, bench *frappe.Bench, key, host, dbPassword, admin string) error {
 	if err := bench.RestoreSeed(ctx, key, host); err != nil {
 		return err

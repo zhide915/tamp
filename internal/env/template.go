@@ -92,7 +92,7 @@ func (m *Manager) cachePolicy(use bool) (templatePolicy, error) {
 }
 
 // materialize turns an empty bench directory into a bench, from the template
-// store when it can, and reports whether it started empty — the caller's cue
+// store when it can, and reports whether it started empty, the caller's cue
 // that a sync session's apps still need registering. A surviving source tree
 // is already the user's bench, so it is rebuilt, never replaced.
 func (m *Manager) materialize(ctx context.Context, e *Environment, bench *frappe.Bench, policy templatePolicy, log *createLog) (bool, error) {
@@ -128,12 +128,12 @@ func (m *Manager) initFromTemplate(ctx context.Context, e *Environment, bench *f
 		if !stored.drifted(want) {
 			return nil
 		}
-		log.note(fmt.Sprintf("the toolchain moved since the template was taken (python %s→%s, node %s→%s) — reinstalling requirements",
+		log.note(fmt.Sprintf("the toolchain moved since the template was taken (python %s→%s, node %s→%s), reinstalling requirements",
 			stored.Python, want.Python, stored.Node, want.Node))
 		if err := bench.SetupRequirements(ctx); err != nil {
 			return err
 		}
-		// Stored again so the repair is paid once, not once per create — but
+		// Stored again so the repair is paid once, not once per create, but
 		// keeping the original date: the frappe checkout inside is still the
 		// one that clone brought down, and the expiry is about that.
 		want.Created = stored.Created
@@ -192,13 +192,13 @@ func (m *Manager) storeTemplate(ctx context.Context, bench *frappe.Bench, key st
 func templateNote(v templateVerdict, key string) string {
 	switch v {
 	case verdictHit:
-		return "template cache hit for " + key + " — unpacking a bench instead of initializing one"
+		return "template cache hit for " + key + ": unpacking a bench instead of initializing one"
 	case verdictExpired:
-		return "the stored " + key + " template is past its expiry — initializing a fresh bench and re-caching it"
+		return "the stored " + key + " template is past its expiry: initializing a fresh bench and re-caching it"
 	case verdictStale:
-		return "the stored " + key + " template was built by another tamp — initializing a fresh bench and re-caching it"
+		return "the stored " + key + " template was built by another tamp: initializing a fresh bench and re-caching it"
 	case verdictMissed:
-		return "template cache missed for " + key + " — initializing a bench and caching it for next time"
+		return "template cache missed for " + key + ": initializing a bench and caching it for next time"
 	default:
 		return "template cache " + string(v) + " for " + key
 	}

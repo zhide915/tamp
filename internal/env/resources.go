@@ -26,7 +26,7 @@ type Resources struct {
 	Hash string
 }
 
-// NewResources works before dir exists — create names resources before it
+// NewResources works before dir exists: create names resources before it
 // makes anything.
 func NewResources(name Name, dir string) (Resources, error) {
 	abs, err := filepath.Abs(dir)
@@ -39,7 +39,7 @@ func NewResources(name Name, dir string) (Resources, error) {
 }
 
 // pathHash canonicalises so different spellings of one directory hash the
-// same — re-adoption finds volumes by name and hash. Case folds only on
+// same: re-adoption finds volumes by name and hash. Case folds only on
 // Windows, where the filesystem itself is case-insensitive.
 func pathHash(abs string) string {
 	canonical := filepath.ToSlash(filepath.Clean(abs))
@@ -78,7 +78,7 @@ func (r Resources) Volume(name string) string {
 }
 
 // The compose services. Each container answers to its service name on the
-// environment's network — how the bench is told where its database and Redis
+// environment's network, how the bench is told where its database and Redis
 // are.
 const (
 	FrappeService     = "frappe"
@@ -92,7 +92,7 @@ const (
 // no host port does.
 const MailUIPort = 8025
 
-// Container matches compose's naming: project, service, replica — always
+// Container matches compose's naming: project, service, replica, always
 // replica 1 here.
 func (r Resources) Container(service string) string {
 	return r.Project() + "-" + service + "-1"

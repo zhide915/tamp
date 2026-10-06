@@ -114,6 +114,6 @@ func (c *cli) open(_ context.Context, url string) error {
 }
 
 // mark is where the recorded commands stand now, so a later assertion can ask
-// only about what the next command ran — create touches many of the same
+// only about what the next command ran: create touches many of the same
 // paths.
 func (c *cli) mark() int { return len(c.engine.Execs) }

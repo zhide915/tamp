@@ -25,7 +25,7 @@ func (c *cli) container(t *testing.T, name, service string) string {
 	return res.Container(service)
 }
 
-// lastExec returns the newest container exec — create runs many of its own
+// lastExec returns the newest container exec. Create runs many of its own
 // first, so the interesting one is always the last.
 func (c *cli) lastExec(t *testing.T) enginetest.Exec {
 	t.Helper()

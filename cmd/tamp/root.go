@@ -19,7 +19,7 @@ type deps struct {
 	p    *ui.Printer
 	eng  engine.Engine
 	sync syncer.Mutagen
-	// browser hands a URL to the machine's browser — a seam, so a test never
+	// browser hands a URL to the machine's browser: a seam, so a test never
 	// opens a window on the developer's screen.
 	browser func(context.Context, string) error
 	// lookupEnv is the process environment as a seam: the hosts file tamp
@@ -39,8 +39,8 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, brows
 
 	root := &cobra.Command{
 		Use:   "tamp",
-		Short: "tamp — environment manager for Frappe Framework",
-		Long: "tamp — environment manager for Frappe Framework.\n\n" +
+		Short: "tamp: environment manager for Frappe Framework",
+		Long: "tamp: environment manager for Frappe Framework.\n\n" +
 			"tamp creates and manages containerized Frappe environments,\n" +
 			"each with its own pinned toolchain, reachable by hostname.",
 		// tamp formats its own errors; cobra's default adds usage noise.

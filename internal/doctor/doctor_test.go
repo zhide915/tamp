@@ -41,8 +41,8 @@ func names(r doctor.Report) []string {
 	return out
 }
 
-// Unreadable tamp state must not be filed under "router not started yet" —
-// that warning's fix cannot work here.
+// Unreadable tamp state must not be filed under "router not started yet".
+// That warning's fix cannot work here.
 func TestBrokenRouterStateIsAFailureRatherThanAWarning(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, router.DirName), 0o755); err != nil {

@@ -13,7 +13,7 @@ fail() {
 }
 
 dump() {
-  say "e2e failed — engine state"
+  say "e2e failed: engine state"
   docker ps -a || true
   echo
   docker logs tamp-router-caddy-1 --tail 50 2>&1 || true
@@ -51,7 +51,7 @@ resolved() {
   [ "$code" = 200 ] || fail "$host does not resolve to the router: got $code"
 }
 
-say "create fifteen — version-15, with erpnext pinned to its branch"
+say "create fifteen: version-15, with erpnext pinned to its branch"
 "$TAMP" create fifteen --frappe version-15 --apps erpnext:version-15 --dir "$WORK"
 
 say "a bare site, to measure what every site creation pays before any app work"
@@ -82,7 +82,7 @@ seed_seconds=$(( $(date +%s) - seed_start ))
 grep -q "seed, restored and migrated" "$WORK/seeded.log"   || fail "site new --seed did not say it restored a seed: $(cat "$WORK/seeded.log")"
 
 # Both numbers carry the bare site's cost, which no seed can remove; the seed
-# is compared only on what is left, at a third — the promise's generous form.
+# is compared only on what is left, at a third: the promise's generous form.
 install_work=$(( install_seconds - bare_seconds ))
 seed_work=$(( seed_seconds - bare_seconds ))
 # A seed can measure faster than a bare site through nothing but noise; one
@@ -98,14 +98,14 @@ echo "the app work took ${seed_work}s from the seed against ${install_work}s ins
 expect seeded.localhost /api/method/ping
 "$TAMP" exec fifteen -- bench --site seeded.localhost list-apps | grep -q erpnext   || fail "the seeded site does not have erpnext installed"
 
-say "create sixteen — version-16, alongside fifteen, under Mutagen"
+say "create sixteen: version-16, alongside fifteen, under Mutagen"
 # fifteen keeps bind, the Linux default; Mutagen here puts its pin under
 # the scheduled drift run.
 "$TAMP" create sixteen --frappe version-16 --sync mutagen --dir "$WORK"
 # A blocked Mutagen falls back to a bind mount with exit 0; only the
 # compose file records the mode.
 if grep -q '\./apps:' "$WORK/sixteen/compose.yaml"; then
-  fail "sixteen fell back to a bind mount — the Mutagen pin was never exercised"
+  fail "sixteen fell back to a bind mount: the Mutagen pin was never exercised"
 fi
 "$TAMP" site new sixteen sixteen.localhost --admin-password admin
 
@@ -192,7 +192,7 @@ say "snapshot restore brings the wiped site fully back"
 expect warm.localhost /api/method/ping
 # list-apps reads the restored database, so it proves the data came back and
 # not merely the route.
-"$TAMP" exec warm -- bench --site warm.localhost list-apps | grep -q frappe   || fail "the restored site has no apps — its database did not come back"
+"$TAMP" exec warm -- bench --site warm.localhost list-apps | grep -q frappe   || fail "the restored site has no apps: its database did not come back"
 "$TAMP" site list warm | grep -q warm.localhost || fail "the restored site is not listed"
 
 say "a second restore over live data needs --yes"
@@ -208,9 +208,9 @@ say "sync status names the bind mode and exits 0, because Linux has no session"
 "$TAMP" rm warm --volumes --yes
 
 # develop tracks a branch that moves, so it belongs to the run that exists to
-# notice that — a scheduled or hand-started one, not every pull request.
+# notice that: a scheduled or hand-started one, not every pull request.
 if [ "${TAMP_E2E_DEVELOP:-0}" = 1 ]; then
-  say "create dev — the develop preset, beside the stable environments"
+  say "create dev: the develop preset, beside the stable environments"
   "$TAMP" create dev --frappe develop --dir "$WORK"
   "$TAMP" site new dev dev.localhost --admin-password admin
 

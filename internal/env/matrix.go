@@ -7,7 +7,7 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// Image pins — tamp hosts no images, so this is the entire supply chain.
+// Image pins: tamp hosts no images, so this is the entire supply chain.
 // Change deliberately, e2e suite green, and never "latest".
 const (
 	// Verified against Docker Hub on 2026-08-27.
@@ -62,7 +62,7 @@ func ParseFrappeVersion(s string) (FrappeVersion, Toolchain, error) {
 	return v, tc, nil
 }
 
-// ToolchainFor misses only for a hand-edited tamp.toml — anything tamp wrote
+// ToolchainFor misses only for a hand-edited tamp.toml: anything tamp wrote
 // went through ParseFrappeVersion.
 func ToolchainFor(v FrappeVersion) (Toolchain, bool) {
 	tc, ok := matrix[v]

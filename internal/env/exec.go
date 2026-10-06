@@ -32,13 +32,13 @@ type ExecRequest struct {
 	// Raw skips advise: no refusals, no warnings.
 	Raw   bool
 	Stdin io.Reader
-	// Terminal is nil when tamp is not attached to a console — a pipe, CI, a
+	// Terminal is nil when tamp is not attached to a console: a pipe, CI, a
 	// test.
 	Terminal Terminal
 }
 
 // Exec runs a command in the bench container as the bench user; its output
-// and exit code become tamp's. A stopped environment is never auto-started —
+// and exit code become tamp's. A stopped environment is never auto-started:
 // that would hide minutes of startup inside a command meant to be boring.
 func (m *Manager) Exec(ctx context.Context, req ExecRequest) error {
 	e, err := m.resolve(req.Name)
@@ -61,7 +61,7 @@ func (m *Manager) Exec(ctx context.Context, req ExecRequest) error {
 		WorkDir:   frappe.BenchDir,
 		User:      toolchain.User,
 		Stdin:     req.Stdin,
-		// The command's output is the point of exec — --quiet must not drop it.
+		// The command's output is the point of exec: --quiet must not drop it.
 		Stdout: m.Out.Out,
 		Stderr: m.Out.Err,
 	}
@@ -100,7 +100,7 @@ func isRunning(containers []engine.Container, service string) bool {
 }
 
 // advise warns about or refuses commands that fight tamp's model. It reads
-// only the literal command line — a courtesy, not a sandbox — and --raw skips
+// only the literal command line (a courtesy, not a sandbox), and --raw skips
 // it entirely.
 func (m *Manager) advise(e *Environment, cmd []string) error {
 	apps := syncer.AppsDir(e.Dir)
@@ -119,12 +119,12 @@ func (m *Manager) advise(e *Environment, cmd []string) error {
 			fmt.Sprintf(`pull in %s yourself, then run: tamp exec %s -- bash -c "bench setup requirements && bench build && bench migrate"`, apps, e.Name()))
 
 	case sub == "new-site":
-		m.Out.Warn("'tamp site new' creates the site and its route together — 'bench new-site' leaves the routing to you")
+		m.Out.Warn("'tamp site new' creates the site and its route together: 'bench new-site' leaves the routing to you")
 
 	// All git commands, not only writers: telling which files git touches
 	// would mean asking the container.
 	case len(cmd) > 0 && cmd[0] == "git":
-		m.Out.Warn(fmt.Sprintf("the host owns git — run it in %s instead, so only one side of the sync ever writes to .git", apps))
+		m.Out.Warn(fmt.Sprintf("the host owns git: run it in %s instead, so only one side of the sync ever writes to .git", apps))
 	}
 	return nil
 }

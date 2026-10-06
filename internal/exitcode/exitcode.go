@@ -1,5 +1,5 @@
 // Package exitcode carries tamp's exit codes on errors. The numbers are a
-// public contract — scripts and agents branch on them — so they are
+// public contract (scripts and agents branch on them), so they are
 // additive-only: never renumbered, never reused.
 package exitcode
 
@@ -33,7 +33,7 @@ func New(code Code, msg, fix string) *Error {
 }
 
 // Reported marks a failure the command has already explained in its own
-// output. The mark is explicit — not just an empty message — so an ordinary
+// output. The mark is explicit (not just an empty message), so an ordinary
 // Error without text still gets printed.
 func Reported(code Code) *Error {
 	return &Error{Code: code, reported: true}
@@ -54,7 +54,7 @@ func (e *Error) Error() string {
 	if e.Fix == "" {
 		return e.Msg
 	}
-	return e.Msg + " — " + e.Fix
+	return e.Msg + ": " + e.Fix
 }
 
 // Of maps err to an exit code: CodeOK for nil, a wrapped *Error's own code,

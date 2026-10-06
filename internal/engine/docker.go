@@ -20,7 +20,7 @@ import (
 type Docker struct {
 	detector Detector
 
-	// Detection is resolved once — success or failure — so multiple checks
+	// Detection is resolved once (success or failure), so multiple checks
 	// in one command do not repeat the filesystem and config reads.
 	once sync.Once
 	addr Address
@@ -113,8 +113,8 @@ func parseComposeVersion(out string) (string, error) {
 }
 
 // rootCause returns the innermost error. The Docker client's wrapping
-// restates the endpoint at every layer; only the innermost reason —
-// refused, timed out, denied — is worth repeating.
+// restates the endpoint at every layer; only the innermost reason
+// (refused, timed out, denied) is worth repeating.
 func rootCause(err error) error {
 	for {
 		inner := errors.Unwrap(err)

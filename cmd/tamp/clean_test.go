@@ -160,7 +160,7 @@ func TestCleanAllDropsSitesBeforeItWipesTheVirtualenv(t *testing.T) {
 
 	c.run(t, "clean", "demo", "--all", "--yes").assertCode(t, exitcode.CodeOK)
 
-	// "-mindepth 1" names the wipe itself — the deps probe mentions the
+	// "-mindepth 1" names the wipe itself: the deps probe mentions the
 	// virtualenv path too, without touching it.
 	drop, wipe := c.ranAtSince(t, mark, "bench drop-site"), c.ranAtSince(t, mark, "-mindepth 1")
 	if drop > wipe {
@@ -196,7 +196,7 @@ func TestCleanDepsLeavesTheContainerUpForRebuildToReach(t *testing.T) {
 		t.Error("clean --deps left the Procfile, so the container restarts into a bench it cannot run")
 	}
 	if len(c.ops("ComposeRestart")) != 2 {
-		t.Errorf("clean --deps restarted the bench service %d times, want 2 — one from create, one to drop the processes",
+		t.Errorf("clean --deps restarted the bench service %d times, want 2: one from create, one to drop the processes",
 			len(c.ops("ComposeRestart")))
 	}
 	stop, wipe := c.ranAtSince(t, mark, frappe.ProcfilePath), c.ranAtSince(t, mark, frappe.EnvDir)
@@ -269,7 +269,7 @@ func TestCleanRefusesAStoppedEnvironment(t *testing.T) {
 }
 
 // ranAtSince is the position of the first container command after mark that
-// contained fragment — what pins the order two operations must happen in.
+// contained fragment: what pins the order two operations must happen in.
 func (c *cli) ranAtSince(t *testing.T, mark int, fragment string) int {
 	t.Helper()
 	at := execIndex(c.engine.Execs[mark:], fragment)

@@ -13,7 +13,7 @@ import (
 )
 
 // Open asks the operating system to open url in the default browser. It
-// returns once the launcher has started, not once a window appears — no
+// returns once the launcher has started, not once a window appears: no
 // operating system reports that back, and a launcher that falls through to a
 // terminal browser would never return at all.
 //

@@ -1,4 +1,4 @@
-// Package enginetest is the recording fake for the engine boundary — the
+// Package enginetest is the recording fake for the engine boundary, the
 // one fake in the codebase, since the boundary is tamp's single fake point.
 // It records every request, not just the answers: checking tamp's output
 // alone would miss tamp asking the engine for the wrong thing.
@@ -36,7 +36,7 @@ const BenchInitConfig = `{
 }`
 
 // Op is one recorded compose operation: which project, from which file,
-// with what removal — what catches tamp acting on the wrong environment.
+// with what removal: what catches tamp acting on the wrong environment.
 type Op struct {
 	Method  string
 	Project engine.ComposeProject
@@ -73,7 +73,7 @@ type Fake struct {
 	ComposeErr error
 
 	UpErr error
-	// UpErrOnce fails only the next compose up, then clears itself — e.g. a
+	// UpErrOnce fails only the next compose up, then clears itself, e.g. a
 	// refused port bind whose fallback attempt succeeds.
 	UpErrOnce  error
 	StopErr    error
@@ -86,7 +86,7 @@ type Fake struct {
 	// ExecErr fails every in-container command; otherwise all succeed, like
 	// a fully provisioned bench container.
 	ExecErr error
-	// ExecFails fails one command, keyed by a fragment of its command line —
+	// ExecFails fails one command, keyed by a fragment of its command line:
 	// how a test plants a failure mid-create.
 	ExecFails map[string]error
 
@@ -148,7 +148,7 @@ type Fake struct {
 	projectVolumes map[string]bool
 }
 
-// Running is an engine that is up — probed Docker plus compose v2 — the
+// Running is an engine that is up (probed Docker plus compose v2), the
 // default backdrop for tests not about a broken engine.
 func Running() *Fake {
 	return &Fake{
@@ -165,7 +165,7 @@ func Running() *Fake {
 	}
 }
 
-// Unavailable is an engine tamp cannot reach at all — the exit-4 case.
+// Unavailable is an engine tamp cannot reach at all, the exit-4 case.
 func Unavailable() *Fake {
 	unreachable := exitcode.New(exitcode.CodeEngineUnavailable,
 		"no Docker engine found", "start Docker Desktop")
@@ -249,8 +249,8 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 		delete(f.projectVolumes, p.Name)
 		// Everything this bench holds lives in the volumes just removed; a
 		// fake that remembered it would let "the data is gone" pass untrue.
-		// Only the bench tree: the shared volumes beside it — toolchain,
-		// package caches, template store — are nobody's to destroy.
+		// Only the bench tree: the shared volumes beside it (toolchain,
+		// package caches, template store) are nobody's to destroy.
 		f.bench().reset(p.Name)
 		for path := range f.Files {
 			if strings.HasPrefix(path, frappe.WorkspaceDir+"/") {
@@ -458,7 +458,7 @@ func (f *Fake) Wrote(path string) (string, bool) {
 // Written lists every written path, sorted.
 func (f *Fake) Written() []string { return slices.Sorted(maps.Keys(f.Files)) }
 
-// Ran reports whether any executed command line contained fragment — "did
+// Ran reports whether any executed command line contained fragment: "did
 // tamp run bench init" without pinning every flag.
 func (f *Fake) Ran(fragment string) bool {
 	for _, e := range f.Execs {
@@ -489,8 +489,8 @@ func (f *Fake) record(method string, p engine.ComposeProject, removal engine.Rem
 	return nil
 }
 
-// Up puts a project's containers and network in place without a compose up
-// — backdrop for tests about something found already running.
+// Up puts a project's containers and network in place without a compose up:
+// backdrop for tests about something found already running.
 func (f *Fake) Up(project string) {
 	f.setRunning(project, true)
 	f.ensureNetwork(project)

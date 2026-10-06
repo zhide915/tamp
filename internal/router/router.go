@@ -135,7 +135,7 @@ func (r *Router) Apply(ctx context.Context, envs []Env, out io.Writer) (Status, 
 	return st, nil
 }
 
-// Refresh rewrites the routes and reloads only an already-running router —
+// Refresh rewrites the routes and reloads only an already-running router:
 // removing an environment is no reason to start one.
 func (r *Router) Refresh(ctx context.Context, envs []Env) (Status, error) {
 	if err := r.writeCaddyfile(envs); err != nil {
@@ -148,7 +148,7 @@ func (r *Router) Refresh(ctx context.Context, envs []Env) (Status, error) {
 	return st, r.reload(ctx, nil)
 }
 
-// Attach connects the router to an environment's network — its only way to
+// Attach connects the router to an environment's network, its only way to
 // reach containers that publish nothing. A missing network (environment never
 // started, or down) is not an error: routes for stopped environments are kept.
 func (r *Router) Attach(ctx context.Context, network string) error {
@@ -162,7 +162,7 @@ func (r *Router) Attach(ctx context.Context, network string) error {
 	return r.Engine.ConnectNetwork(ctx, network, Container)
 }
 
-// Detach must run before an environment's network is removed — Docker refuses
+// Detach must run before an environment's network is removed: Docker refuses
 // to remove a network with anything still attached.
 func (r *Router) Detach(ctx context.Context, network string) error {
 	net, err := r.Engine.InspectNetwork(ctx, network)
@@ -240,7 +240,7 @@ func (r *Router) caddyfilePath() string { return filepath.Join(r.Dir, CaddyfileN
 func (r *Router) statePath() string     { return filepath.Join(r.Dir, StateFileName) }
 
 // writeCaddyfile writes the assembled routes in place. os.WriteFile truncates
-// rather than replaces, which the container's bind mount requires — a rename
+// rather than replaces, which the container's bind mount requires: a rename
 // would leave the container reading the old inode.
 func (r *Router) writeCaddyfile(envs []Env) error {
 	if err := r.ensureDir(); err != nil {
@@ -286,7 +286,7 @@ func (r *Router) port() (int, error) {
 	if err := json.Unmarshal(blob, &s); err != nil || s.Port <= 0 {
 		return 0, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s does not say which port the router is on", r.statePath()),
-			"delete it — tamp writes it again the next time the router starts")
+			"delete it: tamp writes it again the next time the router starts")
 	}
 	return s.Port, nil
 }

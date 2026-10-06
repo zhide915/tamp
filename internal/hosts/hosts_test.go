@@ -47,7 +47,7 @@ func TestReconcileRewritesOnlyInsideTheBlock(t *testing.T) {
 	}
 }
 
-// A removed site must leave nothing behind — including the block itself once
+// A removed site must leave nothing behind, including the block itself once
 // it would be empty.
 func TestReconcileTakesTheWholeBlockAwayWhenNothingIsLeft(t *testing.T) {
 	withBlock := Reconcile(userFile, []string{"abc.xyz.com"})
@@ -112,7 +112,7 @@ func TestEntriesReadsBackWhatTheBlockHolds(t *testing.T) {
 // for their own reasons are not tamp's to report or to remove.
 func TestEntriesIgnoresLoopbackLinesOutsideTheBlock(t *testing.T) {
 	if got := Entries(userFile); got != nil {
-		t.Errorf("Entries = %v, want none — the file has no tamp block", got)
+		t.Errorf("Entries = %v, want none: the file has no tamp block", got)
 	}
 }
 
@@ -147,7 +147,7 @@ func TestAHalfWrittenBlockIsNotTreatedAsOne(t *testing.T) {
 	}
 }
 
-// outside is the file with tamp's block cut out — what must never change.
+// outside is the file with tamp's block cut out, what must never change.
 func outside(t *testing.T, file string) string {
 	t.Helper()
 	begin := strings.Index(file, BeginMarker)

@@ -1,5 +1,5 @@
-// Package synctest fakes the Mutagen interface, so session lifecycle logic —
-// tamp's own — is testable on machines with no Mutagen at all.
+// Package synctest fakes the Mutagen interface, so session lifecycle logic,
+// tamp's own, is testable on machines with no Mutagen at all.
 package synctest
 
 import (
@@ -46,7 +46,7 @@ func Installed() *Fake {
 	}}
 }
 
-// Blocked is a machine with no Mutagen that cannot download one — the
+// Blocked is a machine with no Mutagen that cannot download one, the
 // offline or proxied case.
 func Blocked() *Fake {
 	return &Fake{DownloadErr: exitcode.New(exitcode.CodeFailed,
@@ -130,14 +130,14 @@ func (f *Fake) Flush(_ context.Context, name string) error {
 	if _, held := f.sessions[name]; !held {
 		return exitcode.New(exitcode.CodeFailed,
 			"mutagen sync flush "+name+" failed: no matching sessions exist",
-			"tamp manages Mutagen itself — 'tamp doctor' reports what it found")
+			"tamp manages Mutagen itself: 'tamp doctor' reports what it found")
 	}
 	f.Flushed = append(f.Flushed, name)
 	return nil
 }
 
 // Report stands in for Mutagen's own listing, which tamp quotes rather than
-// parses — so the fake's answer only has to be recognizably Mutagen's.
+// parses, so the fake's answer only has to be recognizably Mutagen's.
 func (f *Fake) Report(_ context.Context, name string) (string, error) {
 	f.Calls = append(f.Calls, "Report")
 	if f.SessionErr != nil {
@@ -147,7 +147,7 @@ func (f *Fake) Report(_ context.Context, name string) (string, error) {
 	if !held {
 		return "", exitcode.New(exitcode.CodeFailed,
 			"mutagen sync list "+name+" failed: no matching sessions exist",
-			"tamp manages Mutagen itself — 'tamp doctor' reports what it found")
+			"tamp manages Mutagen itself: 'tamp doctor' reports what it found")
 	}
 	status := "Watching for changes"
 	if paused {

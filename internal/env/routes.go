@@ -38,7 +38,7 @@ func routes(reg Registry) []router.Env {
 
 func (m *Manager) router() *router.Router { return router.New(m.Home, m.Engine) }
 
-// applyRoutes reassembles the Caddyfile and starts the router if needed —
+// applyRoutes reassembles the Caddyfile and starts the router if needed,
 // what create and start call.
 func (m *Manager) applyRoutes(ctx context.Context, out io.Writer) (router.Status, error) {
 	return m.underLock(func(r *router.Router, envs []router.Env) (router.Status, error) {
@@ -47,7 +47,7 @@ func (m *Manager) applyRoutes(ctx context.Context, out io.Writer) (router.Status
 }
 
 // refreshRoutes reassembles the Caddyfile and reloads an already-running
-// router — what rm calls.
+// router, what rm calls.
 func (m *Manager) refreshRoutes(ctx context.Context) (router.Status, error) {
 	return m.underLock(func(r *router.Router, envs []router.Env) (router.Status, error) {
 		return r.Refresh(ctx, envs)
@@ -73,7 +73,7 @@ func (m *Manager) underLock(op func(*router.Router, []router.Env) (router.Status
 
 func (m *Manager) announceRoutes(e *Environment, st router.Status) {
 	if st.Port != router.DefaultPort {
-		m.Out.Note(fmt.Sprintf("port %d was taken, so the router is on %d — every URL below carries it",
+		m.Out.Note(fmt.Sprintf("port %d was taken, so the router is on %d: every URL below carries it",
 			router.DefaultPort, st.Port))
 	}
 	m.Out.Note("mail: " + MailURL(e.Name(), st))

@@ -7,8 +7,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// tryLock takes a fail-fast exclusive byte-range lock. Held per handle, so —
-// as on Unix — a second in-process attempt conflicts and the lock is testable
+// tryLock takes a fail-fast exclusive byte-range lock. Held per handle, so,
+// as on Unix, a second in-process attempt conflicts and the lock is testable
 // without a second tamp.
 func tryLock(f *os.File) (bool, error) {
 	var overlapped windows.Overlapped

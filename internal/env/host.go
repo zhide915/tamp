@@ -33,7 +33,7 @@ const maxHostLength = 253
 // ParseHost applies DNS's rules plus two of tamp's: uppercase is rejected
 // rather than folded (the hostname is also the site's directory name), and a
 // bare label is rejected (it resolves nowhere in a browser). Failures are
-// exit 1, not usage errors — the command line was well-formed.
+// exit 1, not usage errors: the command line was well-formed.
 func ParseHost(s string) (Host, error) {
 	invalid := func(msg, fix string) error {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("%q %s", s, msg), fix)

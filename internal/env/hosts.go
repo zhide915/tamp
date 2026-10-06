@@ -48,7 +48,7 @@ func (m *Manager) notePendingHostsEntries(hostnames []string) {
 	for _, host := range pending {
 		m.Out.Warn(host + " is not a .localhost name, so nothing on this machine resolves it yet")
 	}
-	m.Out.Note("the hosts entry is pending — tamp writes it into its own block in " + m.HostsFile)
+	m.Out.Note("the hosts entry is pending: tamp writes it into its own block in " + m.HostsFile)
 	m.Out.Hint("next: tamp hosts sync")
 }
 
@@ -90,7 +90,7 @@ func (m *Manager) HostsSync(ctx context.Context) error {
 }
 
 // writeHosts writes directly when it may, and elevates only when the system
-// refuses — so a machine where the user already has the rights never sees a
+// refuses, so a machine where the user already has the rights never sees a
 // prompt.
 func (m *Manager) writeHosts(ctx context.Context, current, desired string) error {
 	err := hosts.Write(m.HostsFile, desired)
@@ -125,14 +125,14 @@ func (m *Manager) elevateHostsWrite(ctx context.Context, desired string) error {
 	defer func() { _ = os.Remove(pending) }()
 
 	m.Out.Note(m.HostsFile + " belongs to the system, so tamp needs elevated rights for this one write")
-	m.Out.Note("it runs 'tamp hosts apply', which writes tamp's block and exits — nothing else runs elevated")
+	m.Out.Note("it runs 'tamp hosts apply', which writes tamp's block and exits: nothing else runs elevated")
 	return hosts.Elevate(ctx, exe, []string{"hosts", "apply", pending}, m.Out.Stream())
 }
 
 // ApplyHostsFile is the elevated half of a sync: it writes a staged hosts
 // file over target. Its one caller passes hosts.OSPath(), never anything the
 // environment chose, and the content is refused unless the only difference
-// from what is on disk is inside tamp's block — so the elevated step can do
+// from what is on disk is inside tamp's block, so the elevated step can do
 // exactly one thing, whatever it is handed. target is a parameter so that
 // refusal can be tested against a temp file.
 //
@@ -144,7 +144,7 @@ func ApplyHostsFile(out *ui.Printer, source, target string) error {
 	if err != nil {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot read the staged hosts file %s: %v", source, err),
-			"run 'tamp hosts sync' rather than this command — tamp stages the file itself")
+			"run 'tamp hosts sync' rather than this command: tamp stages the file itself")
 	}
 
 	current, err := hosts.Read(target)
@@ -154,7 +154,7 @@ func ApplyHostsFile(out *ui.Printer, source, target string) error {
 	if !hosts.ChangesOnlyTheBlock(current, string(staged)) {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("refusing to write %s: %s would change lines outside tamp's block", target, source),
-			"run 'tamp hosts sync' rather than this command — tamp stages the file itself")
+			"run 'tamp hosts sync' rather than this command: tamp stages the file itself")
 	}
 	if err := hosts.Write(target, string(staged)); err != nil {
 		return err
@@ -184,14 +184,14 @@ func (m *Manager) reportEntries(wanted []string) {
 
 // The hosts-entry states 'tamp site list' reports.
 const (
-	// hostEntryNotNeeded — a .localhost name resolves with no help.
+	// hostEntryNotNeeded: a .localhost name resolves with no help.
 	hostEntryNotNeeded = "not needed"
 	hostEntryPresent   = "ok"
 	hostEntryPending   = "pending"
 )
 
-// hostsEntries reads every loopback name the hosts file carries — a line the
-// user keeps outside tamp's block resolves too — or reports none when the
+// hostsEntries reads every loopback name the hosts file carries (a line the
+// user keeps outside tamp's block resolves too) or reports none when the
 // file cannot be read: an unreadable hosts file must not stop a site listing.
 func (m *Manager) hostsEntries() []string {
 	body, err := hosts.Read(m.HostsFile)

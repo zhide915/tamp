@@ -5,7 +5,7 @@ Glossary for tamp, an environment manager for Frappe Framework. Canonical terms 
 ## Language
 
 **Environment**:
-tamp's unit of management — one directory (marked by `tamp.toml`) containing exactly one bench and its containers. One environment = one bench, forever.
+tamp's unit of management: one directory (marked by `tamp.toml`) containing exactly one bench and its containers. One environment = one bench, forever.
 _Avoid_: bench (as a synonym), project, instance
 
 **Bench**:
@@ -15,7 +15,7 @@ The Frappe-side workspace an environment contains (apps, sites, Procfile). Only 
 A Frappe site on a bench, named exactly as its hostname. One site = one database inside the environment's MariaDB.
 
 **Layer**:
-One of the four storage areas of an environment, and what `tamp clean` wipes one at a time: **source** (the bench's apps, wherever they live — the host `apps/` folder in synced and bind modes, the code volume when sync is off), **deps** (the virtualenv, `node_modules`, `__pycache__`), **assets** (the built JS and CSS), and **data** (every site's database, files and config). tamp never deletes source. `tamp rebuild` restores deps and assets; `tamp site new` or a snapshot restores data.
+One of the four storage areas of an environment, and what `tamp clean` wipes one at a time: **source** (the bench's apps, wherever they live: the host `apps/` folder in synced and bind modes, the code volume when sync is off), **deps** (the virtualenv, `node_modules`, `__pycache__`), **assets** (the built JS and CSS), and **data** (every site's database, files and config). tamp never deletes source. `tamp rebuild` restores deps and assets; `tamp site new` or a snapshot restores data.
 The environment's four Docker volumes (`db`, `code`, `deps`, `sites`) are a different split: assets live inside `sites`, and `code` carries source.
 _Avoid_: layer (for a Docker volume)
 
@@ -41,7 +41,7 @@ _Avoid_: snapshot (for this)
 A cached tarball of a freshly initialized bench per Frappe version, used to make `create` fast. Subject to a staleness TTL.
 
 **Sync session**:
-The Mutagen two-way sync between an environment's host `apps/` folder and its container. On Linux there is none — bind mount instead — and that is a mode, not an error.
+The Mutagen two-way sync between an environment's host `apps/` folder and its container. On Linux there is none (bind mount instead), and that is a mode, not an error.
 
 **Credential bridge**:
 The relay of the host's git credentials to a single fetch inside a container: read from the host's credential system at use time, never stored.

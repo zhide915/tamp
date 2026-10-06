@@ -13,7 +13,7 @@ import (
 // tamp owns one marked block in the hosts file and nothing else in it. Every
 // test here is a way of asking whether that still holds.
 
-// theirHosts is a hosts file as the machine's owner left it — what must come
+// theirHosts is a hosts file as the machine's owner left it: what must come
 // back byte for byte from every sync.
 const theirHosts = "127.0.0.1\tlocalhost\n" +
 	"::1\tlocalhost\n" +

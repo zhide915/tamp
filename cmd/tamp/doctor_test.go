@@ -30,12 +30,12 @@ func TestDoctorReportsEveryCheckWhenTheEngineIsHealthy(t *testing.T) {
 		"✓ Paths",
 	)
 	if r.stderr != "" {
-		t.Errorf("stderr = %q, want empty — a healthy report is not a diagnostic", r.stderr)
+		t.Errorf("stderr = %q, want empty: a healthy report is not a diagnostic", r.stderr)
 	}
 }
 
 // Host git matters only to the credential bridge, so its absence warns and
-// never fails — a doctor that failed here would break machines that never
+// never fails: a doctor that failed here would break machines that never
 // fetch a private repository.
 func TestDoctorReportsHostGitAsAWarnOnlyCheck(t *testing.T) {
 	c := sandbox(t)

@@ -13,7 +13,7 @@ import (
 
 // ApplyHostsFile is the only thing tamp ever runs with the system's rights,
 // so what it refuses matters more than what it writes. The CLI harness cannot
-// reach it — it would need a real elevation — so it is exercised here.
+// reach it (it would need a real elevation), so it is exercised here.
 
 const theirs = "127.0.0.1\tlocalhost\n10.1.2.3\tintranet.corp\n"
 
@@ -33,7 +33,7 @@ func TestApplyHostsFileWritesAStagedBlock(t *testing.T) {
 }
 
 // The elevated half must be unable to do anything but move tamp's block,
-// whatever it is handed — that is what makes elevating it safe.
+// whatever it is handed: that is what makes elevating it safe.
 func TestApplyHostsFileRefusesContentThatChangesAnythingElse(t *testing.T) {
 	dir := t.TempDir()
 	target := writeFile(t, dir, "hosts", theirs)

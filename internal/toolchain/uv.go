@@ -17,7 +17,7 @@ import (
 
 // uvVersion is pinned together with uvChecksums: bump all three lines as one,
 // with the end-to-end suite green. The pin is why tamp never runs uv's shell
-// installer — a piped download cannot be verified against anything.
+// installer: a piped download cannot be verified against anything.
 const uvVersion = "0.12.6"
 
 // uvChecksums are the published SHA-256 digests of the pinned release's Linux
@@ -73,7 +73,7 @@ func fetchRelease(ctx context.Context, url, want, name string) ([]byte, error) {
 	if sum := hex.EncodeToString(digest[:]); sum != want {
 		return nil, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s does not match the checksum tamp ships: got %s, want %s", name, sum, want),
-			"try again — if it keeps failing, do not use the download, and report it")
+			"try again. If it keeps failing, do not use the download, and report it")
 	}
 	return extractUV(body, name)
 }
@@ -111,7 +111,7 @@ func extractUV(body []byte, name string) ([]byte, error) {
 	corrupt := func(err error) error {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("the uv %s download is not readable: %v", uvVersion, err),
-			"try again — the download matched its checksum, so this is a bug in tamp")
+			"try again. The download matched its checksum, so this is a bug in tamp")
 	}
 
 	gz, err := gzip.NewReader(bytes.NewReader(body))

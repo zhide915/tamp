@@ -200,7 +200,7 @@ func (m *Manager) preflight(
 }
 
 // requireSnapshotApps refuses a restore the bench cannot carry. Like site
-// creation, tamp names the apps and leaves the branch to the user — it is the
+// creation, tamp names the apps and leaves the branch to the user: it is the
 // one part tamp cannot supply.
 func (m *Manager) requireSnapshotApps(ctx context.Context, e *Environment, bench *frappe.Bench, manifest snapshotManifest) error {
 	onBench, err := bench.Apps(ctx)
@@ -229,7 +229,7 @@ func (m *Manager) requireSnapshotApps(ctx context.Context, e *Environment, bench
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("%s cannot restore %s: the bench is missing %s",
 			e.Name(), manifest.Name, strings.Join(missing, ", ")),
-		"fetch the apps above onto the bench first — nothing was restored")
+		"fetch the apps above onto the bench first: nothing was restored")
 }
 
 // requireFreeHostnames refuses to recreate a site whose hostname the machine
@@ -253,10 +253,10 @@ func (m *Manager) hostsGivenAway(manifest snapshotManifest, clashes []HostClaim)
 	}
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("%s holds hostnames that belong to another environment now", manifest.Name),
-		"remove the other site, or rename that environment — nothing was restored")
+		"remove the other site, or rename that environment: nothing was restored")
 }
 
-// previewRestore prints exactly what --yes would destroy — the point of the
+// previewRestore prints exactly what --yes would destroy: the point of the
 // exit-5 contract.
 func (m *Manager) previewRestore(e *Environment, manifest snapshotManifest, present, overwritten []string) {
 	m.Out.Print(fmt.Sprintf("restoring %s would replace, in %s:", manifest.Name, e.Name()))

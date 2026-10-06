@@ -48,7 +48,7 @@ func (c *cli) manifest(t *testing.T, name, snapshot string) map[string]any {
 	return got
 }
 
-// rewriteManifest edits a snapshot in place — a snapshot is a user's file, so
+// rewriteManifest edits a snapshot in place: a snapshot is a user's file, so
 // a manifest describing a bench this one is not is a real situation.
 func (c *cli) rewriteManifest(t *testing.T, name, snapshot string, change func(map[string]any)) {
 	t.Helper()
@@ -63,7 +63,7 @@ func (c *cli) rewriteManifest(t *testing.T, name, snapshot string, change func(m
 	}
 }
 
-// ranSince reports whether anything after mark ran in a container — what
+// ranSince reports whether anything after mark ran in a container: what
 // pins that a refusal left the bench alone.
 func (c *cli) ranSince(mark int, fragment string) bool {
 	return execIndex(c.engine.Execs[mark:], fragment) >= 0
@@ -124,7 +124,7 @@ func TestBareSnapshotTakesOne(t *testing.T) {
 }
 
 // A snapshot protects the data layer, so an environment with nothing in it
-// has nothing to protect — and says so rather than writing an empty bundle.
+// has nothing to protect, and says so rather than writing an empty bundle.
 func TestSnapshotOfAnEnvironmentWithNoSitesIsRefused(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

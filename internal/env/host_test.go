@@ -25,7 +25,7 @@ func TestAHostnameTampCanRoute(t *testing.T) {
 				t.Fatalf("ParseHost(%q) = %v", host, err)
 			}
 			if got.String() != host {
-				t.Errorf("ParseHost(%q) = %q — tamp renamed the site", host, got)
+				t.Errorf("ParseHost(%q) = %q, tamp renamed the site", host, got)
 			}
 		})
 	}

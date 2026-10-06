@@ -122,7 +122,7 @@ func newSiteRemoveCommand(d deps) *cobra.Command {
 	return cmd
 }
 
-// envAndOneArg accepts a hostname optionally preceded by the environment —
+// envAndOneArg accepts a hostname optionally preceded by the environment,
 // hostname last, so the optional environment sits where every other command
 // puts it.
 func envAndOneArg(missing string) cobra.PositionalArgs {

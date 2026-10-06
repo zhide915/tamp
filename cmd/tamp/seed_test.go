@@ -86,7 +86,7 @@ func TestTheFirstSiteOfAnAppSetCachesItsBackupAsASeed(t *testing.T) {
 }
 
 // Docker creates a newly mounted volume root-owned, and only a create runs
-// the provisioning that chowns the rest — so an environment made before this
+// the provisioning that chowns the rest, so an environment made before this
 // store existed could never write to it.
 func TestTheSeedStoreIsHandedToTheBenchUserBeforeASave(t *testing.T) {
 	c := sandbox(t)
@@ -187,7 +187,7 @@ func TestSeedWithNoMatchingSeedRefusesAndCreatesNothing(t *testing.T) {
 }
 
 // A seed stands in for the app installs, so an app set of none has nothing
-// to save — and the refusal has to say that rather than blame the cache.
+// to save, and the refusal has to say that rather than blame the cache.
 func TestSeedWithoutAppsRefusesAndNamesWhy(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo")

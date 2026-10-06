@@ -16,7 +16,7 @@ const FirstDBPort = 33061
 // a hang.
 const lastDBPort = FirstDBPort + 99
 
-// AllocateDBPort picks the MariaDB host port — the only port an environment
+// AllocateDBPort picks the MariaDB host port, the only port an environment
 // publishes, so the only allocation tamp does.
 func AllocateDBPort(reg Registry) (int, error) {
 	return allocateDBPort(takenDBPorts(reg), portIsFree)
@@ -36,7 +36,7 @@ func allocateDBPort(taken map[int]bool, free func(int) bool) (int, error) {
 		"stop an environment you are not using, or free a port in that range")
 }
 
-// takenDBPorts reads the registry and nothing else — the only source safe
+// takenDBPorts reads the registry and nothing else: the only source safe
 // under the machine lock. Each environment's tamp.toml is written after the
 // lock releases, so reading configs could hand out one port twice.
 func takenDBPorts(reg Registry) map[int]bool {

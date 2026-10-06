@@ -13,7 +13,7 @@ import (
 )
 
 // SecretsDirName lives inside .tamp/, which the generated .gitignore
-// excludes — on NTFS a 0600 mode means nothing, so staying out of git is the
+// excludes: on NTFS a 0600 mode means nothing, so staying out of git is the
 // protection that works.
 const SecretsDirName = "secrets"
 
@@ -33,7 +33,7 @@ func ReadDBRootPassword(dir string) (string, error) {
 	if err != nil {
 		return "", exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot read %s: %v", path, err),
-			"the environment's database credential is missing — recreate the environment")
+			"the environment's database credential is missing: recreate the environment")
 	}
 	return strings.TrimSpace(string(body)), nil
 }
@@ -56,7 +56,7 @@ func EnsureDBRootPassword(dir string) error {
 			fmt.Sprintf("cannot create %s: %v", SecretsDir(dir), err),
 			"check the permissions on the environment directory")
 	}
-	// rand.Text: ~130 bits, alphanumeric — the password travels through a
+	// rand.Text: ~130 bits, alphanumeric. The password travels through a
 	// compose file, a shell and a MariaDB client, any of which could mangle
 	// punctuation. No trailing newline: the whole file is the password.
 	if err := os.WriteFile(path, []byte(rand.Text()), 0o600); err != nil {

@@ -56,7 +56,7 @@ func (r *credentialRefusal) Error() string {
 // the container, before the expensive bench build; a source that looks
 // private goes over the bridge and is retried with the credential injected.
 // An app already on the bench, or in the host tree a re-adoption's sync
-// session will mirror in, is never fetched — so it is not probed either.
+// session will mirror in, is never fetched, so it is not probed either.
 func (m *Manager) preflightApps(ctx context.Context, e *Environment, bench *frappe.Bench, apps []App, log *createLog) (*bridge, error) {
 	br := m.newBridge()
 	if len(apps) == 0 {
@@ -93,8 +93,8 @@ func (m *Manager) preflightApps(ctx context.Context, e *Environment, bench *frap
 }
 
 // preflightSource probes one source. failed is that source's own verdict and
-// lets the preflight go on; err — the engine, or host git producing no
-// credential — ends it undecided, so nothing is rejected.
+// lets the preflight go on; err (the engine, or host git producing no
+// credential) ends it undecided, so nothing is rejected.
 func (m *Manager) preflightSource(ctx context.Context, bench *frappe.Bench, source string, br *bridge, log *createLog) (failed, err error) {
 	// A tamp.toml from before the bridge can carry an ssh source the flag
 	// parser now refuses; the fix is rewriting it, not a reachability answer.
@@ -175,7 +175,7 @@ func (b *bridge) credential(ctx context.Context, source string, log *createLog) 
 
 	// The helper may open its own sign-in prompt; without this line the
 	// pause reads as a hang.
-	log.note(fmt.Sprintf("%s looks private — waiting on the host's git credential system for %s (a sign-in prompt may appear)", source, host))
+	log.note(fmt.Sprintf("%s looks private, waiting on the host's git credential system for %s (a sign-in prompt may appear)", source, host))
 	cred, err := gitcred.Fill(ctx, protocol, host, path, b.out.Err)
 	switch {
 	case errors.Is(err, gitcred.ErrNoGit):
@@ -211,7 +211,7 @@ func (b *bridge) envFor(source string) []string {
 }
 
 // approve runs once per host, so the helper caches what worked. Its own
-// failure only warns — the fetch already succeeded.
+// failure only warns: the fetch already succeeded.
 func (b *bridge) approve(ctx context.Context, source string) {
 	_, host, _, err := sourceParts(source)
 	if err != nil {
@@ -257,7 +257,7 @@ func remoteRefusal(err error) (*frappe.RemoteError, error) {
 	return nil, err
 }
 
-// indicts reports whether a presented credential was refused outright — the
+// indicts reports whether a presented credential was refused outright, the
 // one answer that blames the sign-in rather than access to the repository.
 // The host check keeps a fetch transcript's other-host failures out.
 func indicts(output, host string) bool {
@@ -265,7 +265,7 @@ func indicts(output, host string) bool {
 }
 
 // authShaped reports whether git's output to a bare probe is a credential
-// demand rather than any other failure — the trigger for the bridge.
+// demand rather than any other failure, the trigger for the bridge.
 func authShaped(output string) bool {
 	for _, marker := range []string{
 		"could not read Username",
@@ -287,7 +287,7 @@ func unreachableSource(refusal *frappe.RemoteError, log *createLog) error {
 	fmt.Fprintln(log.stream(), strings.TrimSpace(refusal.Output))
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("cannot reach the app source %s from inside the environment", refusal.Source),
-		"check the URL for a typo, and that the repository still exists — git's answer is in the output above")
+		"check the URL for a typo, and that the repository still exists (git's answer is in the output above)")
 }
 
 func refusedCredential(source, host string) error {
@@ -305,7 +305,7 @@ func deniedRepository(source, host string) error {
 // signInFix is the one action that repairs any credential problem: the
 // user's own git triggers their helper's sign-in, and the next run finds it.
 func signInFix(source string) string {
-	return fmt.Sprintf("sign in on this machine — 'git ls-remote %s' in your own shell will prompt — then run this again", source)
+	return fmt.Sprintf("sign in on this machine ('git ls-remote %s' in your own shell will prompt), then run this again", source)
 }
 
 // sourceParts splits an app source URL into what the credential protocol

@@ -37,7 +37,7 @@ func TestUnknownCommandIsAUsageError(t *testing.T) {
 		t.Errorf("stderr spans %d lines, want one:\n%s", lines+1, r.stderr)
 	}
 	if r.stdout != "" {
-		t.Errorf("stdout = %q, want empty — errors never go to stdout", r.stdout)
+		t.Errorf("stdout = %q, want empty: errors never go to stdout", r.stdout)
 	}
 }
 

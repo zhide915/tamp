@@ -32,7 +32,7 @@ func (c *cli) benchRan(t *testing.T, fragment string) enginetest.Exec {
 	return enginetest.Exec{}
 }
 
-// registered is the recorded site list — what the router's routes are
+// registered is the recorded site list: what the router's routes are
 // assembled from.
 func (c *cli) registered(t *testing.T, name string) []string {
 	t.Helper()

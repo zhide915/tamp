@@ -63,7 +63,7 @@ func TestReportedCarriesTheCodeAndIsSilent(t *testing.T) {
 	}
 }
 
-// An empty message is not the silence mark — only Reported is.
+// An empty message is not the silence mark. Only Reported is.
 func TestOnlyReportedErrorsAreSilent(t *testing.T) {
 	for _, err := range []error{
 		exitcode.New(exitcode.CodeFailed, "", ""),

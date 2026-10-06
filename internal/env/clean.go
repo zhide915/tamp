@@ -11,7 +11,7 @@ import (
 
 // sourceUntouched is deliberately not "tamp never deletes apps/": a deps
 // clean takes the node_modules and __pycache__ that sit inside it.
-const sourceUntouched = "your source code is untouched — tamp deletes nothing you wrote"
+const sourceUntouched = "your source code is untouched: tamp deletes nothing you wrote"
 
 // keptSource is the line every destructive preview ends on: the one layer no
 // confirmation is ever about, named with the directory it lives in.
@@ -28,7 +28,7 @@ type CleanRequest struct {
 	Data   bool
 	// All names every wipeable layer at once; source is not one of them.
 	All bool
-	// Yes replaces a prompt — agents run these commands, so confirmation is a
+	// Yes replaces a prompt: agents run these commands, so confirmation is a
 	// flag.
 	Yes bool
 }
@@ -58,8 +58,8 @@ func (r CleanRequest) layers() []string {
 // than table order: dropping a site is a bench command, and a wiped deps
 // layer has no bench to run it with.
 func (m *Manager) Clean(ctx context.Context, req CleanRequest) error {
-	// The layer table is true without an environment — the storage model is
-	// tamp's, not one environment's — so no name is resolved for it.
+	// The layer table is true without an environment (the storage model is
+	// tamp's, not one environment's), so no name is resolved for it.
 	if req.namesNoLayer() {
 		m.printLayers()
 		m.Out.Hint("name a layer to wipe it: tamp clean --deps")
@@ -135,7 +135,7 @@ func (m *Manager) Clean(ctx context.Context, req CleanRequest) error {
 	if req.deps() {
 		// honcho exits with the virtualenv's processes, taking the container
 		// down; removing the Procfile first leaves it idling for rebuild.
-		steps.Step("stopping the bench processes — they run from the virtualenv")
+		steps.Step("stopping the bench processes (they run from the virtualenv)")
 		if err := bench.RemoveProcfile(ctx); err != nil {
 			return err
 		}
@@ -168,7 +168,7 @@ func (m *Manager) requireDeps(ctx context.Context, e *Environment, bench *frappe
 }
 
 // steps counts the numbered output: each data site plus its archive sweep,
-// one for assets, two for deps — stopping its processes, then wiping.
+// one for assets, two for deps: stopping its processes, then wiping.
 func (r CleanRequest) steps(sites int) int {
 	steps := 0
 	if r.data() {
@@ -186,7 +186,7 @@ func (r CleanRequest) steps(sites int) int {
 // announceNextSteps names the command that restores each wiped layer.
 func (m *Manager) announceNextSteps(e *Environment, req CleanRequest) {
 	if req.deps() {
-		m.Out.Note(fmt.Sprintf("%s is up but serving nothing — its processes come back with the dependencies", e.Name()))
+		m.Out.Note(fmt.Sprintf("%s is up but serving nothing: its processes come back with the dependencies", e.Name()))
 	}
 	if req.deps() || req.assets() {
 		m.Out.Hint(fmt.Sprintf("next: tamp rebuild %s", e.Name()))
@@ -200,7 +200,7 @@ func (m *Manager) announceNextSteps(e *Environment, req CleanRequest) {
 func (m *Manager) previewClean(e *Environment, req CleanRequest, hosts []string) {
 	m.Out.Print(fmt.Sprintf("tamp clean would destroy, in %s:", e.Name()))
 	if len(hosts) == 0 {
-		m.Out.Print("  data    no sites — there is nothing in the data layer yet")
+		m.Out.Print("  data    no sites: there is nothing in the data layer yet")
 	}
 	for _, host := range hosts {
 		m.Out.Print("  data    " + host + "  (its database, its files, its config)")
@@ -248,7 +248,7 @@ func (m *Manager) printLayers() {
 	m.Out.Table(
 		[]string{"LAYER", "HOLDS", "WIPED BY", "RESTORED BY"},
 		[][]string{
-			{"source", "apps/ — your code", "nothing tamp does", "it is yours, and tamp never deletes it"},
+			{"source", "apps/ (your code)", "nothing tamp does", "it is yours, and tamp never deletes it"},
 			{"deps", "the virtualenv, node_modules, __pycache__", "tamp clean --deps", "tamp rebuild"},
 			{"assets", "the built JS and CSS", "tamp clean --assets", "tamp rebuild"},
 			{"data", "every site's database, files and config", "tamp clean --data --yes", "tamp site new <host>, or tamp snapshot restore"},
@@ -294,9 +294,9 @@ func (m *Manager) Rebuild(ctx context.Context, name string) error {
 		return err
 	}
 
-	m.Out.OK(fmt.Sprintf("%s rebuilt — deps and assets are back, and it is serving again", e.Name()))
+	m.Out.OK(fmt.Sprintf("%s rebuilt: deps and assets are back, and it is serving again", e.Name()))
 	m.Out.Note(sourceUntouched)
-	m.Out.Note("the data layer was not touched either — every site keeps its database")
+	m.Out.Note("the data layer was not touched either: every site keeps its database")
 	return nil
 }
 

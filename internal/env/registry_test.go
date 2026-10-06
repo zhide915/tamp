@@ -6,11 +6,11 @@ import (
 	"github.com/zhide915/tamp/internal/env"
 )
 
-// Holds the claims ledger to its rules through its own interface — no engine,
+// Holds the claims ledger to its rules through its own interface: no engine,
 // no CLI.
 
 // The port comes back with the environment so a database client's saved
-// connection still works — unless another environment took it, in which case
+// connection still works, unless another environment took it, in which case
 // sharing it would leave only one of the two able to start.
 func TestReclaimKeepsThePortUnlessAnotherEnvironmentTookIt(t *testing.T) {
 	home := t.TempDir()

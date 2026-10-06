@@ -13,7 +13,7 @@ const DBHost = "127.0.0.1"
 // directory.
 const DBUser = "root"
 
-// DB prints how to reach an environment's MariaDB — the one deliberate
+// DB prints how to reach an environment's MariaDB, the one deliberate
 // exception to hostname-only access, because MySQL clients speak TCP and have
 // no Host header to route on.
 func (m *Manager) DB(ctx context.Context, name string) error {
@@ -47,7 +47,7 @@ func (m *Manager) DB(ctx context.Context, name string) error {
 // environment still gets its sites listed.
 func (m *Manager) printDatabases(ctx context.Context, e *Environment, hosts []string, live bool) {
 	if len(hosts) == 0 {
-		m.Out.Print("no databases yet — this bench has no sites")
+		m.Out.Print("no databases yet: this bench has no sites")
 		m.Out.Hint(fmt.Sprintf("create one: tamp site new %s <host>", e.Name()))
 		return
 	}

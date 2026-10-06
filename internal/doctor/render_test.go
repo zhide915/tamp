@@ -31,7 +31,7 @@ func TestPrintAlignsDetailsPastTheLongestName(t *testing.T) {
 	}
 }
 
-// column counts in runes — a byte count would share the very bug the test
+// column counts in runes: a byte count would share the very bug the test
 // hunts for.
 func column(line, needle string) int {
 	return utf8.RuneCountInString(line[:strings.Index(line, needle)])

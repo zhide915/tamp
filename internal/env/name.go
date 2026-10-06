@@ -16,7 +16,7 @@ type Name string
 
 func (n Name) String() string { return string(n) }
 
-// namePattern is a DNS label capped at 32 characters — names appear in
+// namePattern is a DNS label capped at 32 characters: names appear in
 // hostnames and Docker resource names.
 var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
@@ -36,7 +36,7 @@ func ParseName(s string) (Name, error) {
 	if slices.Contains(reservedNames, s) {
 		return "", exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%q is a tamp command word and cannot be an environment name", s),
-			"pick another name — reserved: "+strings.Join(reservedNames, ", "))
+			"pick another name (reserved: "+strings.Join(reservedNames, ", ")+")")
 	}
 	if !namePattern.MatchString(s) {
 		return "", exitcode.New(exitcode.CodeFailed,

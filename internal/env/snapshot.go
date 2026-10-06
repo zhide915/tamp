@@ -29,7 +29,7 @@ const (
 )
 
 // snapshotSchema versions the manifest. A manifest tamp cannot read is a
-// snapshot it cannot vouch for, so it is refused rather than reinterpreted —
+// snapshot it cannot vouch for, so it is refused rather than reinterpreted,
 // the opposite of the template store, where an unreadable manifest costs only
 // time.
 const snapshotSchema = 1
@@ -162,7 +162,7 @@ func (m *Manager) SnapshotCreate(ctx context.Context, req SnapshotCreateRequest)
 
 	m.Out.OK(fmt.Sprintf("snapshot %s of %s: %d site(s), %s",
 		name, e.Name(), len(manifest.Sites), humanSize(size)))
-	m.Out.Note("it is a file in " + snapshotsDir(e.Dir) + " — yours to copy, move or delete")
+	m.Out.Note("it is a file in " + snapshotsDir(e.Dir) + ": yours to copy, move or delete")
 	m.Out.Hint(fmt.Sprintf("next: tamp snapshot list %s", e.Name()))
 	return nil
 }
@@ -311,7 +311,7 @@ func (m *Manager) readSnapshot(e *Environment, name string) (snapshotManifest, e
 	if err := json.Unmarshal(body, &manifest); err != nil {
 		return snapshotManifest{}, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s is not valid JSON: %v", path, err),
-			"the snapshot cannot be vouched for — remove it, or repair the file")
+			"the snapshot cannot be vouched for: remove it, or repair the file")
 	}
 	if manifest.Schema != snapshotSchema {
 		return snapshotManifest{}, exitcode.New(exitcode.CodeFailed,

@@ -9,7 +9,7 @@ const (
 
 // CredentialEnv is the bridge's in-container half (ADR 0002): env-based git
 // config names an inline helper that reads the secret back out of the same
-// environment — no file, no command line — scoped to one host.
+// environment (no file, no command line), scoped to one host.
 func CredentialEnv(protocol, host, username, password string) []string {
 	scope := "credential." + protocol + "://" + host + ".helper"
 	return []string{
@@ -26,5 +26,5 @@ func CredentialEnv(protocol, host, username, password string) []string {
 	}
 }
 
-// envHelper answers only "get" — the host completes store and erase.
+// envHelper answers only "get". The host completes store and erase.
 const envHelper = `!f() { if [ "$1" = get ]; then printf 'username=%s\npassword=%s\n' "$TAMP_GIT_USERNAME" "$TAMP_GIT_PASSWORD"; fi; }; f`
