@@ -148,6 +148,15 @@ func (r *Router) Refresh(ctx context.Context, envs []Env) (Status, error) {
 	return st, r.reload(ctx, nil)
 }
 
+// Down removes the router's container and network, once no environment is
+// left to route: it would only hold the port. The next start brings it back.
+func (r *Router) Down(ctx context.Context, out io.Writer) error {
+	if _, err := os.Stat(r.composePath()); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return r.Engine.ComposeDown(ctx, r.project(), engine.KeepVolumes, out)
+}
+
 // Attach connects the router to an environment's network, its only way to
 // reach containers that publish nothing. A missing network (environment never
 // started, or down) is not an error: routes for stopped environments are kept.

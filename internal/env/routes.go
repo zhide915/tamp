@@ -47,10 +47,22 @@ func (m *Manager) applyRoutes(ctx context.Context, out io.Writer) (router.Status
 }
 
 // refreshRoutes reassembles the Caddyfile and reloads an already-running
-// router, what rm calls.
+// router, what rm calls. The last environment's removal takes the router down.
 func (m *Manager) refreshRoutes(ctx context.Context) (router.Status, error) {
 	return m.underLock(func(r *router.Router, envs []router.Env) (router.Status, error) {
-		return r.Refresh(ctx, envs)
+		if len(envs) > 0 {
+			return r.Refresh(ctx, envs)
+		}
+		// The environment is gone by now, so a router left up only warns,
+		// after a reload drops the routes to the gone upstreams.
+		if err := r.Down(ctx, m.Out.Stream()); err != nil {
+			still := ""
+			if _, rerr := r.Refresh(ctx, nil); rerr != nil {
+				still = fmt.Sprintf(", and it still routes the removed environment (%v)", rerr)
+			}
+			m.Out.Warn(fmt.Sprintf("could not take the router down (%v)%s: remove it with docker compose -p %s down", err, still, router.Project))
+		}
+		return router.Status{}, nil
 	})
 }
 

@@ -38,7 +38,11 @@ func (d *Docker) ComposeDown(ctx context.Context, p ComposeProject, removal Remo
 	args := []string{"down", "--remove-orphans"}
 	if removal == RemoveVolumes {
 		args = append(args, "--volumes")
+		return d.compose(ctx, p, out, args...)
 	}
+	// rm --volumes takes only anonymous volumes (redis's /data), which no later
+	// container mounts. Compose prints its own failure, and the down decides.
+	_ = d.compose(ctx, p, out, "rm", "--stop", "--force", "--volumes")
 	return d.compose(ctx, p, out, args...)
 }
 

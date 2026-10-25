@@ -79,6 +79,8 @@ type Fake struct {
 	StopErr    error
 	RestartErr error
 	DownErr    error
+	// DownErrs fails compose down for the named projects only.
+	DownErrs map[string]error
 
 	// NetworkErr fails every network operation.
 	NetworkErr error
@@ -242,6 +244,9 @@ func (f *Fake) ComposeDown(_ context.Context, p engine.ComposeProject, removal e
 	}
 	if f.DownErr != nil {
 		return f.DownErr
+	}
+	if err := f.DownErrs[p.Name]; err != nil {
+		return err
 	}
 	delete(f.running, p.Name)
 	delete(f.networks, p.Name)

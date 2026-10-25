@@ -31,7 +31,8 @@ type ComposeProject struct {
 type Removal int
 
 const (
-	// KeepVolumes removes containers and the network only.
+	// KeepVolumes removes containers, their anonymous volumes and the
+	// network, and keeps every volume the compose file declares.
 	KeepVolumes Removal = iota
 	// RemoveVolumes also destroys the environment's volumes.
 	RemoveVolumes
@@ -126,8 +127,8 @@ type Engine interface {
 	// ComposeRestart restarts one service, re-running the command its
 	// container was created with.
 	ComposeRestart(ctx context.Context, p ComposeProject, service string, out io.Writer) error
-	// ComposeDown removes containers and the network; volumes only with
-	// RemoveVolumes.
+	// ComposeDown removes containers and the network, and declared volumes
+	// only with RemoveVolumes.
 	ComposeDown(ctx context.Context, p ComposeProject, removal Removal, out io.Writer) error
 
 	// Containers reports the project's containers, running or not. No

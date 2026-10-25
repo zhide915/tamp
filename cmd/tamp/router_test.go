@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -119,6 +120,67 @@ func TestRemovingAnEnvironmentTakesOnlyItsRoutes(t *testing.T) {
 	down := slices.Index(c.engine.Calls, "ComposeDown")
 	if detach < 0 || down < 0 || detach > down {
 		t.Errorf("rm detached the router after tearing the environment down: %v", c.engine.Calls)
+	}
+}
+
+// A router with nothing to route would only hold port 80.
+func TestRemovingTheLastEnvironmentTakesTheRouterDown(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.create(t, "other")
+
+	c.run(t, "rm", "demo", "--yes").assertCode(t, exitcode.CodeOK)
+	if downs := c.routerOps("ComposeDown"); len(downs) != 0 {
+		t.Fatalf("removing demo took the router down while other still needs it: %v", downs)
+	}
+
+	c.run(t, "rm", "other", "--yes").assertCode(t, exitcode.CodeOK)
+	if downs := c.routerOps("ComposeDown"); len(downs) != 1 {
+		t.Errorf("removing the last environment ran %d compose downs on the router, want 1", len(downs))
+	}
+}
+
+// A router that stays up and also fails its reload still serves the removed
+// environment's routes. The warning must say so.
+func TestARouterLeftUpThatCannotReloadSaysItStillRoutes(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.engine.DownErrs = map[string]error{router.Project: errors.New("compose down failed")}
+	c.engine.ExecErr = errors.New("caddy reload failed")
+
+	r := c.run(t, "rm", "demo", "--yes")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStderrContains(t, "could not take the router down", "still routes the removed environment")
+}
+
+// By then the environment is out of the registry, so failing would leave a
+// retry with nothing to find.
+func TestARouterThatWillNotComeDownOnlyWarnsTheLastRemoval(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.engine.DownErrs = map[string]error{router.Project: errors.New("compose down failed")}
+
+	r := c.run(t, "rm", "demo", "--yes")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStderrContains(t, "could not take the router down", "docker compose -p "+router.Project+" down")
+	if strings.Contains(c.caddyfile(t), "mail.demo.localhost") {
+		t.Errorf("the router left up still routes the removed environment:\n%s", c.caddyfile(t))
+	}
+}
+
+// With no route left there is nothing to reload, so a router that would fail
+// a reload cannot fail the last removal either.
+func TestTheLastRemovalNeverReloadsTheRouter(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo")
+	c.engine.ExecErr = errors.New("caddy reload failed")
+
+	c.run(t, "rm", "demo", "--yes").assertCode(t, exitcode.CodeOK)
+
+	if downs := c.routerOps("ComposeDown"); len(downs) != 1 {
+		t.Errorf("the last removal ran %d compose downs on the router, want 1", len(downs))
 	}
 }
 

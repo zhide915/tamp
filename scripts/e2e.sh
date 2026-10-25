@@ -4,6 +4,9 @@ set -euo pipefail
 
 TAMP=${1:?usage: e2e.sh /path/to/tamp}
 WORK=$(mktemp -d)
+# Anonymous volumes carry no project label, so leaks show only as new ones.
+anonymous() { docker volume ls -q --filter label=com.docker.volume.anonymous | sort; }
+ANONYMOUS_BEFORE=$(anonymous)
 
 say() { printf '\n=== %s\n' "$*"; }
 
@@ -270,6 +273,15 @@ fi
 say "sixteen still serves after fifteen is gone"
 expect sixteen.localhost /api/method/ping
 
+say "removing the last environment leaves no router and no anonymous volume"
 "$TAMP" rm sixteen --yes
+# Captured first: under pipefail, grep -q closing the pipe early can make
+# docker die of SIGPIPE and the check pass on a surviving router.
+containers=$(docker ps -a --format '{{.Names}}')
+if grep -q '^tamp-router-' <<< "$containers"; then
+  fail "the router survived the last environment's removal"
+fi
+leaked=$(comm -13 <(echo "$ANONYMOUS_BEFORE") <(anonymous))
+[ -z "$leaked" ] || fail "rm left anonymous volumes behind: $leaked"
 
 say "e2e passed"
