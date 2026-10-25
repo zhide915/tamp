@@ -35,6 +35,10 @@ type Fake struct {
 	// sessions maps name to paused. Pause and resume are modelled together
 	// because tamp pauses on stop and resumes on start.
 	sessions map[string]bool
+
+	// OnCreate, when set, runs as a session is created: the hook for what
+	// Mutagen's first pass carries across.
+	OnCreate func(syncer.Session)
 }
 
 // Installed is a machine that already has the pinned Mutagen.
@@ -82,6 +86,9 @@ func (f *Fake) Create(_ context.Context, s syncer.Session, out io.Writer) error 
 		return f.SessionErr
 	}
 	f.Created = append(f.Created, s)
+	if f.OnCreate != nil {
+		f.OnCreate(s)
+	}
 	f.set(s.Name, false)
 	if out != nil {
 		// Real Mutagen narrates the first pass; staying silent would let a

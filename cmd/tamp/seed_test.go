@@ -254,6 +254,17 @@ func TestASeedNeverCrossesAppSources(t *testing.T) {
 	r.assertCode(t, exitcode.CodeNotFound)
 }
 
+func TestASeedNeverCrossesAppBranches(t *testing.T) {
+	c := sandbox(t)
+	c.create(t, "demo", "--apps", "erpnext:version-15")
+	c.siteNew(t, "demo", "shop.localhost", "--apps", "erpnext")
+	c.create(t, "other", "--apps", "erpnext:develop")
+
+	r := c.run(t, "site", "new", "other", "second.localhost", "--apps", "erpnext", "--seed")
+
+	r.assertCode(t, exitcode.CodeNotFound)
+}
+
 func TestASeedNeverCrossesFrappeVersions(t *testing.T) {
 	c := sandbox(t)
 	c.seededSite(t, "demo", "shop.localhost", "erpnext")

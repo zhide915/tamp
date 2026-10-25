@@ -216,6 +216,28 @@ func TestReadoptWithFreshVolumesRegistersTheAppsTheSyncBringsBack(t *testing.T) 
 	}
 }
 
+// The sync session carries the app in, so the adoption fetches nothing and
+// needs no network: an unreachable source must not fail it.
+func TestReadoptWithFreshVolumesNeverProbesTheSourcesTheSyncBringsBack(t *testing.T) {
+	c := sandbox(t)
+	const custom = "https://github.com/myorg/custom"
+	c.create(t, "demo", "--sync", "mutagen", "--apps", custom+":main")
+	c.leaveSource(t, "demo")
+	c.plantApp(t, "demo", "custom")
+	c.run(t, "rm", "demo", "--volumes", "--yes").assertCode(t, exitcode.CodeOK)
+	c.engine.MissingRepos = map[string]bool{custom: true}
+	container := c.container(t, "demo", env.FrappeService)
+	c.sync.OnCreate = func(syncer.Session) { c.engine.AddApp(container, "custom") }
+
+	before := len(c.engine.Execs)
+	r := c.inside(t, c.path("demo"), "init")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if ranAny(c.engine.Execs[before:], "git ls-remote") {
+		t.Error("the adoption probed a source the sync session carries in")
+	}
+}
+
 func TestInitAfterRemoveWithVolumesStartsWithNothingInTheDatabase(t *testing.T) {
 	c := sandbox(t)
 	c.create(t, "demo", "--sync", "bind")
@@ -267,6 +289,18 @@ func (c *cli) leaveSource(t *testing.T, name string) {
 	}
 	// tamp probes the bench for the app, so the fake holds it too.
 	c.engine.AddApp(c.container(t, name, env.FrappeService), "frappe")
+}
+
+// plantApp adds an app to the apps tree leaveSource planted.
+func (c *cli) plantApp(t *testing.T, name, app string) {
+	t.Helper()
+	dir := filepath.Join(c.path(name, syncer.AppsDirName), app)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "hooks.py"), []byte("app_name = \""+app+"\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (c *cli) removedVolumes(t *testing.T) bool {
