@@ -20,6 +20,12 @@ const GitignoreFile = ".gitignore"
 
 func ComposePath(dir string) string { return filepath.Join(dir, ComposeFile) }
 
+// ClientConfigFile is the bench container's MariaDB client configuration,
+// regenerated with compose.yaml.
+const ClientConfigFile = "mariadb-client.cnf"
+
+func ClientConfigPath(dir string) string { return filepath.Join(StateDir(dir), ClientConfigFile) }
+
 // composeData feeds the compose template. Every value derives from tamp.toml
 // or the environment's resource names.
 type composeData struct {
@@ -33,6 +39,8 @@ type composeData struct {
 	DBPort       int
 	DBSecretName string
 	DBSecretFile string
+
+	ClientConfigFile string
 
 	DBVolume    string
 	CodeVolume  string
@@ -79,6 +87,13 @@ func (e *Environment) Generate(sync syncer.Effective) error {
 		appsBind = "./" + syncer.AppsDirName
 	}
 
+	if err := os.MkdirAll(StateDir(e.Dir), 0o755); err != nil {
+		return err
+	}
+	if err := assets.Write("mariadb-client.cnf.tmpl", ClientConfigPath(e.Dir), nil); err != nil {
+		return err
+	}
+
 	return assets.Write("compose.yaml.tmpl", ComposePath(e.Dir), composeData{
 		Name:         e.Config.Name,
 		Project:      e.Resources.Project(),
@@ -90,6 +105,8 @@ func (e *Environment) Generate(sync syncer.Effective) error {
 		DBPort:       e.Config.Ports.DB,
 		DBSecretName: DBRootPasswordFile,
 		DBSecretFile: "./" + StateDirName + "/" + SecretsDirName + "/" + DBRootPasswordFile,
+
+		ClientConfigFile: "./" + StateDirName + "/" + ClientConfigFile,
 
 		DBVolume:    e.Resources.Volume(DataVolume),
 		CodeVolume:  e.Resources.Volume(CodeVolume),

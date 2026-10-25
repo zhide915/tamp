@@ -59,6 +59,9 @@ services:
       - yarn-cache:{{ .YarnCacheDir }}
       - templates:{{ .TemplateDir }}
       - seeds:{{ .SeedDir }}
+      # The image's MariaDB client requires TLS, which the database below
+      # does not offer before 11.4. This file turns that off.
+      - {{ .ClientConfigFile }}:/etc/mysql/conf.d/tamp.cnf:ro
 
   # One MariaDB per environment, at the version this Frappe release wants.
   # The character-set flags are not optional: without them site creation fails

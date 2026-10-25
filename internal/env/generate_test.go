@@ -2,6 +2,7 @@ package env
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -221,6 +222,25 @@ func TestTheBenchContainerMountsEveryLayerAndTheSharedVolumes(t *testing.T) {
 		if !strings.Contains(body, mount) {
 			t.Errorf("the bench container does not mount %s:\n%s", mount, body)
 		}
+	}
+}
+
+// The bench image's MariaDB 11.8 client demands TLS by default, and a 10.x
+// server has none: every site creation would fail on its first query.
+func TestTheBenchsMariaDBClientsDoNotDemandTLS(t *testing.T) {
+	e, body := generated(t)
+
+	const mount = "./.tamp/mariadb-client.cnf"
+	if !strings.Contains(body, mount+":/etc/mysql/conf.d/") {
+		t.Errorf("the bench container does not mount %s:\n%s", mount, body)
+	}
+	// Read where the mount points, so a file written elsewhere fails here.
+	cnf, err := os.ReadFile(filepath.Join(e.Dir, mount))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !regexp.MustCompile(`(?m)^\[client\]\n(?:#.*\n|\s*\n)*skip-ssl$`).Match(cnf) {
+		t.Errorf("the client configuration does not turn TLS off for [client]:\n%s", cnf)
 	}
 }
 
