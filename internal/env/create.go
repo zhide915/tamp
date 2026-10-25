@@ -346,8 +346,8 @@ func (m *Manager) fetchApp(ctx context.Context, bench *frappe.Bench, bridge *bri
 		bridge.approve(ctx, app.Source)
 		return nil
 	}
-	// The preflight retry proved this credential on this host, so a refusal
-	// now means it was revoked mid-run. Reject is host-scoped and the host
+	// The preflight retry proved this credential in its scope, so a refusal
+	// now means it was revoked mid-run. Reject is per scope and the scope
 	// accepted it, so none fires; the next run's preflight rejects instead.
 	if _, host, _, hostErr := sourceParts(app.Source); hostErr == nil && indicts(said.String(), host) {
 		return refusedCredential(app.Source, host)

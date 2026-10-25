@@ -47,5 +47,8 @@ The Mutagen two-way sync between an environment's host `apps/` folder and its co
 The relay of the host's git credentials to a single fetch inside a container: read from the host's credential system at use time, never stored.
 _Avoid_: token, credential store
 
+**Credential scope**:
+What one bridged credential covers: a host (`https://github.com`), or one repository on it where the host's git scopes credentials by path (`credential.useHttpPath`). The bridge fills, approves and rejects once per scope per run.
+
 **Toolchain**:
 The pinned Python/Node/MariaDB set matched to a Frappe version via tamp's version matrix, provisioned into the shared `tamp-toolchain` volume.

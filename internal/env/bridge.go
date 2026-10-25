@@ -15,16 +15,26 @@ import (
 )
 
 // bridge is one run's credential bridge (ADR 0002): the host's git
-// credentials, filled at most once per host, held in memory, and injected
+// credentials, filled at most once per scope, held in memory, and injected
 // into individual container execs. tamp is a conduit, never a store.
 type bridge struct {
-	out   *ui.Printer
+	out *ui.Printer
+	// creds is keyed by scope: protocol://host, or protocol://host/path where
+	// the host's git scopes credentials by path (credential.useHttpPath).
 	creds map[string]gitcred.Credential
+	// scopes maps each source that went over the bridge to its scope.
+	scopes map[string]string
+	// whole marks the scopes that cover a whole host.
+	whole map[string]bool
+	// httpPath is the host git's useHttpPath config, read once and replayed
+	// with each host scope's credential (frappe.CredentialEnv).
+	httpPath     []gitcred.Setting
+	httpPathRead bool
 	// needs marks the sources whose preflight required the credential; a
 	// public app on the same host still fetches bare.
 	needs    map[string]bool
 	approved map[string]bool
-	// accepted marks the hosts where some source answered to the credential,
+	// accepted marks the scopes where some source answered to the credential,
 	// indicted those where some source refused it outright.
 	accepted map[string]bool
 	indicted map[string]bool
@@ -34,6 +44,8 @@ func (m *Manager) newBridge() *bridge {
 	return &bridge{
 		out:      m.Out,
 		creds:    map[string]gitcred.Credential{},
+		scopes:   map[string]string{},
+		whole:    map[string]bool{},
 		needs:    map[string]bool{},
 		approved: map[string]bool{},
 		accepted: map[string]bool{},
@@ -42,10 +54,10 @@ func (m *Manager) newBridge() *bridge {
 }
 
 // credentialRefusal is a source refusing the injected credential. Its verdict
-// waits until every source has answered: on a host that accepted the
-// credential elsewhere it is a repository-scoped denial, not a stale sign-in.
+// waits until every source has answered: where the same credential was
+// accepted elsewhere it is a repository-scoped denial, not a stale sign-in.
 type credentialRefusal struct {
-	source, host string
+	source, host, scope string
 }
 
 func (r *credentialRefusal) Error() string {
@@ -118,34 +130,34 @@ func (m *Manager) preflightSource(ctx context.Context, bench *frappe.Bench, sour
 	if err != nil {
 		return nil, err
 	}
-	cred, err := br.credential(ctx, source, log)
+	cred, scope, err := br.credential(ctx, source, log)
 	if err != nil {
 		return nil, err
 	}
 
-	refusal, err = remoteRefusal(bench.CheckRemote(ctx, source, credentialEnv(cred)))
+	refusal, err = remoteRefusal(bench.CheckRemote(ctx, source, br.env(cred, scope)))
 	if err != nil {
 		return nil, err
 	}
 	if refusal == nil {
 		br.needs[source] = true
-		br.accepted[host] = true
+		br.accepted[scope] = true
 		return nil, nil
 	}
 	fmt.Fprintln(log.stream(), strings.TrimSpace(refusal.Output))
 	if !indicts(refusal.Output, host) {
 		return deniedRepository(source, host), nil
 	}
-	br.indicted[host] = true
-	return &credentialRefusal{source: source, host: host}, nil
+	br.indicted[scope] = true
+	return &credentialRefusal{source: source, host: host, scope: scope}, nil
 }
 
 // settle completes the credential protocol once every source has answered:
-// only a credential that worked nowhere on its host is rejected.
+// only a credential that worked nowhere it was presented is rejected.
 func (b *bridge) settle(ctx context.Context) {
-	for host := range b.indicted {
-		if !b.accepted[host] {
-			b.reject(ctx, host)
+	for scope := range b.indicted {
+		if !b.accepted[scope] {
+			b.reject(ctx, scope)
 		}
 	}
 }
@@ -156,21 +168,31 @@ func (b *bridge) verdict(failed error) error {
 	if !errors.As(failed, &cr) {
 		return failed
 	}
-	if b.accepted[cr.host] {
+	if b.accepted[cr.scope] {
 		return deniedRepository(cr.source, cr.host)
 	}
 	return refusedCredential(cr.source, cr.host)
 }
 
-// credential fills at most once per host per run, delegating to whatever
-// helper the host's git is configured with.
-func (b *bridge) credential(ctx context.Context, source string, log *createLog) (gitcred.Credential, error) {
+// credential fills at most once per scope per run, through the host git's own
+// helper. Where that git scopes by path, each repository fills its own.
+func (b *bridge) credential(ctx context.Context, source string, log *createLog) (gitcred.Credential, string, error) {
 	protocol, host, path, err := sourceParts(source)
 	if err != nil {
-		return gitcred.Credential{}, err
+		return gitcred.Credential{}, "", err
 	}
-	if cred, ok := b.creds[host]; ok {
-		return cred, nil
+	pathScoped, err := gitcred.PathScoped(ctx, protocol, host, path)
+	if err != nil {
+		return gitcred.Credential{}, "", hostGitFailed(ctx, source, err)
+	}
+	scope := protocol + "://" + host
+	if pathScoped {
+		scope += "/" + path
+	}
+	b.scopes[source] = scope
+	b.whole[scope] = !pathScoped
+	if cred, ok := b.creds[scope]; ok {
+		return cred, scope, nil
 	}
 
 	// The helper may open its own sign-in prompt; without this line the
@@ -178,70 +200,90 @@ func (b *bridge) credential(ctx context.Context, source string, log *createLog) 
 	log.note(fmt.Sprintf("%s looks private, waiting on the host's git credential system for %s (a sign-in prompt may appear)", source, host))
 	cred, err := gitcred.Fill(ctx, protocol, host, path, b.out.Err)
 	switch {
-	case errors.Is(err, gitcred.ErrNoGit):
-		return gitcred.Credential{}, exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("%s looks private, and tamp found no git on this machine to ask for its credentials", source),
-			"install git, sign in to the repository's host once, and run this again")
 	case errors.Is(err, gitcred.ErrNoCredential):
-		return gitcred.Credential{}, exitcode.New(exitcode.CodeFailed,
+		return gitcred.Credential{}, "", exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s looks private, and the host's git credential system has no credential for %s", source, host),
 			signInFix(source))
 	case err != nil:
-		return gitcred.Credential{}, err
+		return gitcred.Credential{}, "", hostGitFailed(ctx, source, err)
 	}
-	b.creds[host] = cred
-	return cred, nil
+	if !pathScoped && !b.httpPathRead {
+		if b.httpPath, err = gitcred.HTTPPathSettings(ctx); err != nil {
+			return gitcred.Credential{}, "", hostGitFailed(ctx, source, err)
+		}
+		b.httpPathRead = true
+	}
+	b.creds[scope] = cred
+	return cred, scope, nil
+}
+
+// hostGitFailed is the verdict on host git failing the bridge. A cancelled
+// run stays a cancellation.
+func hostGitFailed(ctx context.Context, source string, err error) error {
+	switch {
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case errors.Is(err, gitcred.ErrNoGit):
+		return exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("%s looks private, and tamp found no git on this machine to ask for its credentials", source),
+			"install git, sign in to the repository's host once, and run this again")
+	}
+	return exitcode.New(exitcode.CodeFailed,
+		fmt.Sprintf("%s looks private, and the host's git failed when tamp asked it: %v", source, err),
+		"check that 'git config --list' runs cleanly in your own shell, then run this again")
+}
+
+// held is the credential already filled for a source, and its scope.
+func (b *bridge) held(source string) (gitcred.Credential, string, bool) {
+	scope, ok := b.scopes[source]
+	if !ok {
+		return gitcred.Credential{}, "", false
+	}
+	cred, ok := b.creds[scope]
+	return cred, scope, ok
 }
 
 // envFor is the injection for one fetch: the credential for the source's
-// host, or nil when this source never needed one.
+// scope, or nil when this source never needed one.
 func (b *bridge) envFor(source string) []string {
 	if !b.needs[source] {
 		return nil
 	}
-	_, host, _, err := sourceParts(source)
-	if err != nil {
-		return nil
-	}
-	cred, ok := b.creds[host]
+	cred, scope, ok := b.held(source)
 	if !ok {
 		return nil
 	}
-	return credentialEnv(cred)
+	return b.env(cred, scope)
 }
 
-// approve runs once per host, so the helper caches what worked. Its own
+// approve runs once per scope, so the helper caches what worked. Its own
 // failure only warns: the fetch already succeeded.
 func (b *bridge) approve(ctx context.Context, source string) {
-	_, host, _, err := sourceParts(source)
-	if err != nil {
+	cred, scope, ok := b.held(source)
+	if !ok || b.approved[scope] {
 		return
 	}
-	cred, ok := b.creds[host]
-	if !ok || b.approved[host] {
-		return
-	}
-	b.approved[host] = true
+	b.approved[scope] = true
 	if err := gitcred.Approve(ctx, cred, b.out.Err); err != nil {
-		b.out.Warn(fmt.Sprintf("could not tell the host's credential helper the %s credential worked: %v", host, err))
+		b.out.Warn(fmt.Sprintf("could not tell the host's credential helper the %s credential worked: %v", scope, err))
 	}
 }
 
 // reject tells the host's helper its credential was refused, so the next run
 // prompts instead of replaying the same stale secret.
-func (b *bridge) reject(ctx context.Context, host string) {
-	cred, ok := b.creds[host]
+func (b *bridge) reject(ctx context.Context, scope string) {
+	cred, ok := b.creds[scope]
 	if !ok {
 		return
 	}
-	delete(b.creds, host)
+	delete(b.creds, scope)
 	if err := gitcred.Reject(ctx, cred, b.out.Err); err != nil {
-		b.out.Warn(fmt.Sprintf("could not tell the host's credential helper the %s credential failed: %v", host, err))
+		b.out.Warn(fmt.Sprintf("could not tell the host's credential helper the %s credential failed: %v", scope, err))
 	}
 }
 
-func credentialEnv(cred gitcred.Credential) []string {
-	return frappe.CredentialEnv(cred.Protocol, cred.Host, cred.Username, cred.Password)
+func (b *bridge) env(cred gitcred.Credential, scope string) []string {
+	return frappe.CredentialEnv(scope, cred.Username, cred.Password, b.whole[scope], b.httpPath)
 }
 
 // remoteRefusal separates git's "no" from an engine fault: only the former
@@ -317,5 +359,17 @@ func sourceParts(source string) (protocol, host, path string, err error) {
 			fmt.Sprintf("cannot make sense of the app source %q as a URL", source),
 			"write the app as a full https URL")
 	}
-	return u.Scheme, u.Host, strings.TrimPrefix(u.Path, "/"), nil
+	// Git's credential path is everything after the host, decoded.
+	path = strings.TrimPrefix(u.Path, "/")
+	if u.RawQuery != "" {
+		query, err := url.PathUnescape(u.RawQuery)
+		if err != nil {
+			query = u.RawQuery
+		}
+		path += "?" + query
+	}
+	if u.Fragment != "" {
+		path += "#" + u.Fragment
+	}
+	return u.Scheme, u.Host, path, nil
 }
