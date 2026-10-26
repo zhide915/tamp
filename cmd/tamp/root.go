@@ -1,61 +1,37 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zhide915/tamp/internal/engine"
+	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
-	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-// deps is the shared wiring handed to every command constructor.
-type deps struct {
-	p    *ui.Printer
-	eng  engine.Engine
-	sync syncer.Mutagen
-	// browser hands a URL to the machine's browser: a seam, so a test never
-	// opens a window on the developer's screen.
-	browser func(context.Context, string) error
-	// lookupEnv is the process environment as a seam: the hosts file tamp
-	// reconciles is read through it, so tests never aim at the real one.
-	lookupEnv func(string) (string, bool)
+// globals are the flags every command takes.
+type globals struct {
+	env   string
+	quiet bool
 }
 
-func (d deps) manager() (*env.Manager, error) {
-	return env.NewManager(d.eng, d.sync, d.browser, d.p, d.lookupEnv)
-}
-
-// newRootCommand builds the command tree; one shared Printer applies
-// --quiet and --no-color in a single place.
-func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, browser func(context.Context, string) error, stdin io.Reader, lookupEnv func(string) (string, bool)) *cobra.Command {
-	d := deps{p: p, eng: eng, sync: sync, browser: browser, lookupEnv: lookupEnv}
-	var noColor, quiet bool
+func newRootCommand(p *ui.Printer, dc docker.Client) *cobra.Command {
+	var g globals
+	manager := func() *env.Manager { return env.NewManager(p, dc) }
 
 	root := &cobra.Command{
 		Use:   "tamp",
 		Short: "tamp: environment manager for Frappe Framework",
-		Long: "tamp: environment manager for Frappe Framework.\n\n" +
-			"tamp creates and manages containerized Frappe environments,\n" +
-			"each with its own pinned toolchain, reachable by hostname.",
-		// tamp formats its own errors; cobra's default adds usage noise.
+		Long: "tamp builds each Frappe bench in Docker from its recipe, tamp.toml,\n" +
+			"and serves every site by hostname.",
+		// tamp prints its own one-line errors; cobra would add usage text.
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		// Handle unknown commands ourselves so they get tamp's usage error.
-		Args: cobra.ArbitraryArgs,
-		// These flags can only narrow what ui.NewPrinter already decided, so
-		// output stays sane even when parsing fails.
-		PersistentPreRun: func(*cobra.Command, []string) {
-			if noColor {
-				p.DisableColor()
-			}
-			p.Quiet = quiet
-		},
+		// Without this, cobra answers an unknown command itself with exit 0.
+		Args:             cobra.ArbitraryArgs,
+		PersistentPreRun: func(*cobra.Command, []string) { p.Quiet = g.quiet },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return unknownCommand(args[0])
@@ -63,42 +39,27 @@ func newRootCommand(p *ui.Printer, eng engine.Engine, sync syncer.Mutagen, brows
 			return cmd.Help()
 		},
 	}
-
 	root.SetOut(p.Out)
 	root.SetErr(p.Err)
 	root.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
-		return exitcode.Usage(err.Error(), usageHint(cmd))
+		return exitcode.Usage(err.Error(), usageFix(cmd))
 	})
 	root.SetHelpCommand(newHelpCommand())
+	// Cobra's completion command is not part of tamp's command tree.
+	root.CompletionOptions.DisableDefaultCmd = true
 
-	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable coloured output")
-	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "print only results and errors")
+	flags := root.PersistentFlags()
+	flags.StringVarP(&g.env, "env", "e", "", "the environment to act on, by name")
+	flags.BoolVar(&g.quiet, "quiet", false, "print only results and errors")
+	// run applies --no-color from the raw arguments.
+	flags.Bool("no-color", false, "print without color")
 
-	root.AddCommand(newCreateCommand(d))
-	root.AddCommand(newInitCommand(d))
-	root.AddCommand(newListCommand(d))
-	root.AddCommand(newStartCommand(d))
-	root.AddCommand(newStopCommand(d))
-	root.AddCommand(newRestartCommand(d))
-	root.AddCommand(newRemoveCommand(d))
-	root.AddCommand(newSiteCommand(d))
-	root.AddCommand(newSnapshotCommand(d))
-	root.AddCommand(newOpenCommand(d))
-	root.AddCommand(newSyncCommand(d))
-	root.AddCommand(newHostsCommand(d))
-	root.AddCommand(newCleanCommand(d))
-	root.AddCommand(newRebuildCommand(d))
-	root.AddCommand(newExecCommand(d, stdin))
-	root.AddCommand(newLogsCommand(d))
-	root.AddCommand(newDBCommand(d))
-	root.AddCommand(newDoctorCommand(d))
+	root.AddCommand(newNewCommand(manager))
 	root.AddCommand(newVersionCommand(p))
-
 	return root
 }
 
-// newHelpCommand replaces cobra's help, which exits 0 on an unknown topic;
-// here that is a usage error like any other misspelled command.
+// newHelpCommand replaces cobra's help, which exits 0 on an unknown topic.
 func newHelpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [command]",
@@ -114,33 +75,18 @@ func newHelpCommand() *cobra.Command {
 }
 
 func unknownCommand(name string) error {
-	return exitcode.Usage(
-		fmt.Sprintf("unknown command %q", name),
-		"run 'tamp --help' to see the available commands",
-	)
+	return exitcode.Usage(fmt.Sprintf("unknown command %q", name),
+		"run `tamp --help` to see the commands")
 }
 
-// exactlyOneArg requires the single argument named in missing.
-func exactlyOneArg(missing string) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, args []string) error {
-		switch {
-		case len(args) == 0:
-			return exitcode.Usage(missing, usageHint(cmd))
-		case len(args) > 1:
-			return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[1]), usageHint(cmd))
-		}
-		return nil
-	}
-}
-
-// noArgs replaces cobra.NoArgs so the failure carries tamp's exit code and hint.
+// noArgs replaces cobra.NoArgs so the error carries exit 2 and a fix.
 func noArgs(cmd *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[0]), usageHint(cmd))
+		return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[0]), usageFix(cmd))
 	}
 	return nil
 }
 
-func usageHint(cmd *cobra.Command) string {
-	return fmt.Sprintf("run '%s --help' for usage", cmd.CommandPath())
+func usageFix(cmd *cobra.Command) string {
+	return fmt.Sprintf("run `%s --help` for usage", cmd.CommandPath())
 }

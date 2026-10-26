@@ -1,6 +1,6 @@
-// Package exitcode carries tamp's exit codes on errors. The numbers are a
-// public contract (scripts and agents branch on them), so they are
-// additive-only: never renumbered, never reused.
+// Package exitcode holds tamp's exit codes and the error that carries one.
+// Scripts and agents branch on the numbers, so a code never changes its
+// number or takes a new meaning.
 package exitcode
 
 import "errors"
@@ -9,40 +9,35 @@ import "errors"
 type Code int
 
 const (
-	CodeOK                   Code = 0 // success
-	CodeFailed               Code = 1 // understood, but the operation failed
-	CodeUsage                Code = 2 // bad command line
-	CodeNotFound             Code = 3 // a named environment, site, snapshot or seed does not exist
-	CodeEngineUnavailable    Code = 4 // no Docker socket, or compose v2 missing
-	CodeConfirmationRequired Code = 5 // destructive action without --yes
+	// CodeOK: the command did what was asked.
+	CodeOK Code = 0
+	// CodeFailed: the command line was right, but the command failed,
+	// including any conflict with the current state.
+	CodeFailed Code = 1
+	// CodeUsage: the command line is wrong, and only that. For example a
+	// bare noun, a missing value, an unknown flag, an unsupported --frappe,
+	// an invalid `new <path>`, no environment named, `open` with several
+	// sites, or a bare `shell` without a terminal.
+	CodeUsage Code = 2
+	// CodeNotFound: the named environment, site, or app does not exist.
+	CodeNotFound Code = 3
+	// CodeDockerUnavailable: tamp cannot reach Docker.
+	CodeDockerUnavailable Code = 4
+	// CodeNeedsYes: the command removes data and was run without --yes.
+	CodeNeedsYes Code = 5
 )
 
-// Error pairs an exit code with a message and a fix. Fix names the user's next
-// action; leave it empty only when there is none.
+// Error is a failure the user can act on: an exit code, a message, and a
+// one-line fix.
 type Error struct {
 	Code Code
 	Msg  string
 	Fix  string
-
-	// Set only by Reported.
-	reported bool
 }
 
+// New builds an Error.
 func New(code Code, msg, fix string) *Error {
 	return &Error{Code: code, Msg: msg, Fix: fix}
-}
-
-// Reported marks a failure the command has already explained in its own
-// output. The mark is explicit (not just an empty message), so an ordinary
-// Error without text still gets printed.
-func Reported(code Code) *Error {
-	return &Error{Code: code, reported: true}
-}
-
-// Silent reports whether err came from Reported and must not be printed again.
-func Silent(err error) bool {
-	var e *Error
-	return errors.As(err, &e) && e.reported
 }
 
 // Usage builds a CodeUsage Error.
@@ -57,8 +52,8 @@ func (e *Error) Error() string {
 	return e.Msg + ": " + e.Fix
 }
 
-// Of maps err to an exit code: CodeOK for nil, a wrapped *Error's own code,
-// CodeFailed for anything unclassified.
+// Of maps err to its exit code: CodeOK for nil, the code of a wrapped
+// *Error, and CodeFailed for any other error.
 func Of(err error) Code {
 	if err == nil {
 		return CodeOK

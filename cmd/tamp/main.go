@@ -1,25 +1,20 @@
-// Command tamp manages containerized Frappe Framework environments.
-//
-// This package is only the cobra layer: each command translates flags into a
-// call on internal/..., keeping the core testable without a TTY and reusable
-// by other frontends.
+// Command tamp is an environment manager for Frappe Framework. This package
+// is the cobra layer only: each command turns its flags into one call on
+// the manager in internal/env.
 package main
 
 import (
-	"context"
 	"io"
 	"os"
-	"os/signal"
+	"strconv"
+	"strings"
 
-	"github.com/zhide915/tamp/internal/browser"
-	"github.com/zhide915/tamp/internal/engine"
-	"github.com/zhide915/tamp/internal/env"
+	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
-	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
-// Set at release time via -ldflags -X; plain builds keep the placeholders.
+// A release build sets these with -ldflags -X.
 var (
 	version   = "dev"
 	commit    = "none"
@@ -28,29 +23,38 @@ var (
 
 func main() {
 	ui.EnableColorSupport()
-	// Error ignored: commands that need a home report its absence themselves.
-	home, _ := env.Home()
-	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, engine.New(), syncer.New(home), browser.Open)))
+	os.Exit(int(run(os.Args[1:], os.Stdout, os.Stderr, os.LookupEnv, docker.New())))
 }
 
-// run is the CLI without the process: tests call it directly, so all I/O,
-// the environment and the engine arrive as parameters.
-func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), eng engine.Engine, sync syncer.Mutagen, browser func(context.Context, string) error) exitcode.Code {
+// run is tamp without the process, so tests drive it in-process.
+func run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), dc docker.Client) exitcode.Code {
 	p := ui.NewPrinter(stdout, stderr, lookupEnv)
-	root := newRootCommand(p, eng, sync, browser, stdin, lookupEnv)
+	if noColor(args) {
+		p.DisableColor()
+	}
+	root := newRootCommand(p, dc)
 	root.SetArgs(args)
-
-	// Ctrl-C cancels the context rather than killing the process, so followed
-	// logs flush and an interrupted create still rolls back.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
-	if err := root.ExecuteContext(ctx); err != nil {
-		// Silent errors were already explained by the command itself.
-		if !exitcode.Silent(err) {
-			p.Error(err)
-		}
+	if err := root.Execute(); err != nil {
+		p.Error(err)
 		return exitcode.Of(err)
 	}
 	return exitcode.CodeOK
+}
+
+// noColor reads --no-color from the raw arguments, before cobra parses them:
+// pflag stops at the first unknown flag, and the error it returns must
+// honor a --no-color that comes after it. The last value wins, as in pflag.
+func noColor(args []string) bool {
+	on := false
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if arg == "--no-color" {
+			on = true
+		} else if v, ok := strings.CutPrefix(arg, "--no-color="); ok {
+			on, _ = strconv.ParseBool(v)
+		}
+	}
+	return on
 }
