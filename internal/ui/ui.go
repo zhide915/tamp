@@ -55,6 +55,22 @@ func (p *Printer) OK(msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiGreen, "✓")+" "+msg)
 }
 
+// Step writes a progress line to stderr; --quiet drops it.
+func (p *Printer) Step(msg string) {
+	if !p.Quiet {
+		fmt.Fprintln(p.Err, msg)
+	}
+}
+
+// Progress is the stream for the output of the tools tamp runs, such as
+// docker and bench: stderr, or nothing under --quiet.
+func (p *Printer) Progress() io.Writer {
+	if p.Quiet {
+		return io.Discard
+	}
+	return p.Err
+}
+
 // Error writes the one-line "error:" form to stderr. An exitcode.Error
 // carries its fix in err.Error().
 func (p *Printer) Error(err error) {

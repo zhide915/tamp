@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +31,15 @@ func sandbox(t *testing.T) *cli {
 	t.Setenv("USERPROFILE", home) // what os.UserHomeDir reads on Windows
 	t.Setenv("NO_COLOR", "")      // empty counts as unset
 	t.Chdir(dir)
+
+	// Host git runs for real, with GitHub rewritten to the local remotes.
+	gitconfig := filepath.Join(home, ".gitconfig")
+	body := fmt.Sprintf("[url %q]\n\tinsteadOf = https://github.com/frappe/\n", fileURL(remotes)+"/")
+	if err := os.WriteFile(gitconfig, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_CONFIG_GLOBAL", gitconfig)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
 	return &cli{dir: dir, docker: &docker.Fake{}}
 }
 
@@ -77,4 +89,58 @@ func (r result) assertOneLineError(t *testing.T, want ...string) {
 			t.Errorf("stderr = %q, want it to contain %q", r.stderr, w)
 		}
 	}
+}
+
+// remotes holds the bare repositories that stand in for github.com/frappe,
+// built once for the test binary.
+var remotes string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "tamp-remotes-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	remotes = dir
+	err = makeFrappeRemote(filepath.Join(dir, "frappe"))
+	code := 1
+	if err == nil {
+		code = m.Run()
+	} else {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+// makeFrappeRemote builds a bare repository with two commits on each
+// supported branch, so a depth-1 clone is visibly shallow.
+func makeFrappeRemote(bare string) error {
+	work := bare + "-work"
+	steps := [][]string{{"init", "--quiet", "--initial-branch", "version-15", work}}
+	for _, branch := range []string{"version-15", "version-16", "develop"} {
+		if branch != "version-15" {
+			steps = append(steps, []string{"-C", work, "checkout", "--quiet", "-b", branch})
+		}
+		for i := 1; i <= 2; i++ {
+			steps = append(steps, []string{"-C", work, "commit", "--quiet", "--allow-empty", "-m", fmt.Sprintf("%s %d", branch, i)})
+		}
+	}
+	steps = append(steps, []string{"clone", "--quiet", "--bare", work, bare})
+	for _, args := range steps {
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
+			"GIT_AUTHOR_NAME=tamp", "GIT_AUTHOR_EMAIL=tamp@example.com",
+			"GIT_COMMITTER_NAME=tamp", "GIT_COMMITTER_EMAIL=tamp@example.com")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	return os.RemoveAll(work)
+}
+
+// fileURL is a file:// URL for a local path: git ignores --depth on a plain
+// path.
+func fileURL(path string) string {
+	return "file:///" + strings.TrimPrefix(filepath.ToSlash(path), "/")
 }

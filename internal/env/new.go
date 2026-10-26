@@ -11,10 +11,10 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// New writes the recipe and the .gitignore of a new environment at path.
-// It checks every input before it writes anything. A recipe at path comes
-// first: its fix, `tamp start`, applies whatever else is wrong.
-func (m *Manager) New(path, frappe string) error {
+// New writes the recipe and the .gitignore of a new environment at path, then
+// builds it. It checks every input before it writes anything. A recipe at
+// path comes first: its fix, `tamp start`, applies whatever else is wrong.
+func (m *Manager) New(path, frappe string, hosts []string) error {
 	dir, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -24,6 +24,10 @@ func (m *Manager) New(path, frappe string) error {
 			"run `tamp start` in that directory")
 	}
 	if err := checkFrappeBranch(frappe); err != nil {
+		return err
+	}
+	sites, err := siteList(hosts)
+	if err != nil {
 		return err
 	}
 	if err := checkName(filepath.Base(dir)); err != nil {
@@ -37,14 +41,35 @@ func (m *Manager) New(path, frappe string) error {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot create %s: %v", dir, err),
 			"check that you can write to the parent directory")
 	}
-	if err := writeRecipe(dir, Recipe{Frappe: frappe}); err != nil {
+	recipe := Recipe{Frappe: frappe, Sites: sites}
+	if err := writeRecipe(dir, recipe); err != nil {
 		return err
 	}
 	if err := writeFile(dir, ".gitignore", []byte("apps/\ncompose.yaml\n")); err != nil {
 		return err
 	}
 	m.p.OK(fmt.Sprintf("wrote the recipe of environment %s: %s", filepath.Base(dir), filepath.Join(dir, RecipeFile)))
-	return nil
+	where := filepath.Clean(path)
+	if where == "." {
+		where = ""
+	}
+	return m.build(dir, recipe, where)
+}
+
+func siteList(hosts []string) ([]Site, error) {
+	var sites []Site
+	seen := map[string]bool{}
+	for _, host := range hosts {
+		if !localhostName.MatchString(host) {
+			return nil, exitcode.Usage(fmt.Sprintf("%q is not a *.localhost hostname", host), siteHostFix)
+		}
+		if seen[host] {
+			return nil, exitcode.Usage(fmt.Sprintf("the site %s is given twice", host), "give each `--site` once")
+		}
+		seen[host] = true
+		sites = append(sites, Site{Host: host})
+	}
+	return sites, nil
 }
 
 func checkFrappeBranch(frappe string) error {

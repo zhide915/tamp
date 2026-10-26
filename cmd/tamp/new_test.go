@@ -43,9 +43,6 @@ func TestNewWritesTheRecipeAndAGitignoreIntoANewDirectory(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	assertEnvironmentWritten(t, filepath.Join(c.dir, "erp-dev"), "version-15")
-	if r.stderr != "" {
-		t.Errorf("stderr = %q, want empty", r.stderr)
-	}
 	if r.stdout == "" {
 		t.Error("stdout is empty, want a result line")
 	}

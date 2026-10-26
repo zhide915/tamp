@@ -55,6 +55,7 @@ func newRootCommand(p *ui.Printer, dc docker.Client) *cobra.Command {
 	flags.Bool("no-color", false, "print without color")
 
 	root.AddCommand(newNewCommand(manager))
+	root.AddCommand(newStartCommand(manager))
 	root.AddCommand(newVersionCommand(p))
 	return root
 }

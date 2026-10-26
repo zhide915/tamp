@@ -10,9 +10,10 @@ import (
 
 func newNewCommand(manager func() *env.Manager) *cobra.Command {
 	var frappe string
+	var sites []string
 	cmd := &cobra.Command{
-		Use:   "new <path> --frappe <branch>",
-		Short: "Create an environment at a new or empty directory",
+		Use:   "new <path> --frappe <branch> [--site <host>]...",
+		Short: "Create an environment at a new or empty directory, and build it",
 		Args: func(cmd *cobra.Command, args []string) error {
 			const fix = "run `tamp new <path> --frappe <branch>`"
 			switch {
@@ -24,9 +25,10 @@ func newNewCommand(manager func() *env.Manager) *cobra.Command {
 			return nil
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
-			return manager().New(args[0], frappe)
+			return manager().New(args[0], frappe, sites)
 		},
 	}
 	cmd.Flags().StringVar(&frappe, "frappe", "", "the Frappe branch: "+env.FrappeBranchList())
+	cmd.Flags().StringArrayVar(&sites, "site", nil, "a *.localhost site to create; repeat for more")
 	return cmd
 }
