@@ -11,12 +11,10 @@ ENV_DIR=$WORK/erp-dev
 FRAPPE=erp-dev-frappe-1
 
 cleanup() {
-  # tamp never removes the router; the network below cannot go while it is attached.
+  "$TAMP" remove -e erp-dev --yes --quiet || true
+  # tamp never removes the router.
   docker rm --force tamp-router >/dev/null 2>&1 || true
-  if [ -f "$ENV_DIR/compose.yaml" ]; then
-    docker compose --project-name erp-dev --file "$ENV_DIR/compose.yaml" down --volumes --timeout 5 || true
-  fi
-  docker volume rm erp-dev_bench >/dev/null 2>&1 || true
+  docker network rm tamp-router_default >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -31,6 +29,21 @@ fail() {
 # *.localhost resolves to on this machine. curl sends no Origin header.
 through_router() {
   curl -sf --max-time 10 --resolve shop.localhost:80:127.0.0.1 "$@"
+}
+
+# pongs polls a site's ping through the router for up to 60 s and prints the
+# reply: tamp start does not wait for Frappe to finish booting.
+pongs() {
+  local host=$1 body deadline=$((SECONDS + 60))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if body=$(curl -sf --max-time 10 --resolve "$host:80:127.0.0.1" "http://$host/api/method/ping") &&
+      grep -q pong <<<"$body"; then
+      echo "$body"
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
 }
 
 # socketio_handshake logs in, opens an engine.io session by polling, and
@@ -130,16 +143,7 @@ docker inspect --format '{{ range .Mounts }}{{ .Type }}:{{ .Destination }} {{ en
   fail "the router does not mount its directory at /etc/caddy"
 
 say "curl --resolve reaches shop.localhost through the router"
-answered=
-for _ in $(seq 1 30); do
-  if body=$(through_router http://shop.localhost/api/method/ping); then
-    answered=$body
-    break
-  fi
-  sleep 2
-done
-echo "$answered"
-grep -q pong <<<"$answered" || fail "shop.localhost did not answer through the router"
+pongs shop.localhost || fail "shop.localhost did not answer through the router"
 
 say "a socket.io handshake through the router succeeds with no Origin from the client"
 socketio_handshake || fail "the socket.io handshake through the router failed"
@@ -162,8 +166,7 @@ if grep -q 'building the image\|Cloning\|running bench init\|creating the site' 
 fi
 
 say "after a second start, the reloaded router still serves the site and socket.io"
-after=$(through_router http://shop.localhost/api/method/ping) || fail "shop.localhost stopped answering after the reload"
-grep -q pong <<<"$after" || fail "shop.localhost answered $after after the reload"
+pongs shop.localhost || fail "shop.localhost stopped answering after the reload"
 socketio_handshake || fail "the socket.io handshake failed after the reload"
 
 say "a site added to the recipe is routed by the running router after tamp start"
@@ -171,8 +174,93 @@ printf '\n[[sites]]\n  host = "erp.localhost"\n' >>tamp.toml
 "$TAMP" start
 [ "$(docker inspect --format '{{ .State.StartedAt }}' tamp-router)" = "$router_started" ] ||
   fail "tamp start restarted the router instead of reloading it"
-added=$(curl -sf --max-time 10 --resolve erp.localhost:80:127.0.0.1 http://erp.localhost/api/method/ping) ||
-  fail "erp.localhost does not answer through the router"
-grep -q pong <<<"$added" || fail "erp.localhost answered $added"
+pongs erp.localhost || fail "erp.localhost does not answer through the router"
+
+say "the frappe container outlives honcho, and runs the bench's processes again"
+docker exec "$FRAPPE" bash -c 'for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = honcho ] && kill -TERM "${p#/proc/}"; done; true'
+sleep 3
+[ "$(docker inspect --format '{{ .State.Running }}' "$FRAPPE")" = true ] || fail "the frappe container exited with honcho"
+pongs shop.localhost || fail "shop.localhost did not come back after honcho exited"
+
+CADDYFILE=$HOME/.tamp/router/Caddyfile
+
+say "tamp stop stops the containers and takes the sites off the router"
+"$TAMP" stop
+for service in frappe mariadb redis-cache redis-queue; do
+  [ "$(docker inspect --format '{{ .State.Running }}' "erp-dev-$service-1")" = false ] || fail "erp-dev-$service-1 still runs"
+done
+[ "$(docker inspect --format '{{ .State.Running }}' tamp-router)" = true ] || fail "tamp stop stopped the router"
+if grep -q 'shop.localhost' "$CADDYFILE"; then fail "the Caddyfile still routes the stopped shop.localhost"; fi
+
+cd "$WORK"
+
+say "tamp list shows the stopped environment with its sites"
+out=$("$TAMP" list)
+echo "$out"
+grep -Eq "^erp-dev +stopped +$ENV_DIR\$" <<<"$out" || fail "tamp list does not show erp-dev as stopped"
+grep -qx '  http://shop.localhost' <<<"$out" || fail "tamp list does not nest shop.localhost"
+
+say "tamp status -e from another directory shows the containers and site URLs"
+out=$("$TAMP" status -e erp-dev)
+echo "$out"
+grep -Eq '^  erp-dev-frappe-1 +stopped$' <<<"$out" || fail "tamp status does not show the stopped frappe container"
+grep -qx '  http://erp.localhost' <<<"$out" || fail "tamp status does not show erp.localhost"
+
+say "no -e outside an environment directory exits 2; an unknown -e exits 3"
+code=0
+"$TAMP" status || code=$?
+[ "$code" = 2 ] || fail "exit code $code, want 2"
+code=0
+"$TAMP" status -e nope || code=$?
+[ "$code" = 3 ] || fail "exit code $code, want 3"
+
+say "a moved directory's start recreates the containers with the new path and keeps the sites"
+mkdir "$WORK/moved"
+mv "$ENV_DIR" "$WORK/moved/"
+ENV_DIR=$WORK/moved/erp-dev
+cd "$ENV_DIR"
+"$TAMP" start
+[ "$(docker inspect --format '{{ index .Config.Labels "tamp.path" }}' "$FRAPPE")" = "$ENV_DIR" ] ||
+  fail "the frappe container does not carry the new tamp.path"
+pongs shop.localhost || fail "shop.localhost does not answer after the move"
+
+say "a same-named environment elsewhere that has a recipe makes start exit 1"
+mkdir -p "$WORK/second/erp-dev"
+printf 'frappe = "version-15"\n' >"$WORK/second/erp-dev/tamp.toml"
+code=0
+out=$(cd "$WORK/second/erp-dev" && "$TAMP" start 2>&1) || code=$?
+echo "$out"
+[ "$code" = 1 ] || fail "exit code $code, want 1"
+grep -q 'rename the directory' <<<"$out" || fail "the error does not say to rename the directory"
+
+say "a recipe for another Frappe version makes start exit 1 and build nothing"
+cp tamp.toml "$WORK/tamp.toml.saved"
+sed -i 's/^frappe = .*/frappe = "version-16"/' tamp.toml
+code=0
+out=$("$TAMP" start 2>&1) || code=$?
+echo "$out"
+[ "$code" = 1 ] || fail "exit code $code, want 1"
+grep -qF 'check out version-16 in apps/frappe, then `tamp remove --yes` and `tamp start`' <<<"$out" ||
+  fail "the error lacks the version fix"
+if grep -q 'building the image' <<<"$out"; then fail "start built an image"; fi
+cp "$WORK/tamp.toml.saved" tamp.toml
+
+say "tamp remove without --yes exits 5 and removes nothing"
+code=0
+"$TAMP" remove || code=$?
+[ "$code" = 5 ] || fail "exit code $code, want 5"
+docker inspect "$FRAPPE" >/dev/null || fail "tamp remove without --yes removed the frappe container"
+
+say "tamp remove --yes deletes the containers, network and volumes, and keeps the directory"
+"$TAMP" remove --yes
+[ -z "$(docker ps --all --quiet --filter label=tamp.env=erp-dev)" ] || fail "erp-dev's containers remain"
+if docker network inspect erp-dev_default >/dev/null 2>&1; then fail "erp-dev_default remains"; fi
+for volume in erp-dev_db erp-dev_bench; do
+  if docker volume inspect "$volume" >/dev/null 2>&1; then fail "$volume remains"; fi
+done
+docker volume inspect tamp-cache >/dev/null || fail "tamp remove deleted tamp-cache"
+[ -f tamp.toml ] && [ -d apps/frappe ] || fail "tamp remove touched the directory"
+[ "$(docker inspect --format '{{ .State.Running }}' tamp-router)" = true ] || fail "tamp remove stopped the router"
+if grep -q 'localhost' "$CADDYFILE"; then fail "the Caddyfile still routes erp-dev's sites"; fi
 
 say "e2e passed"

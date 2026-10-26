@@ -3,8 +3,6 @@ package env
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -13,16 +11,16 @@ import (
 
 // Open hands a site's URL to the default browser: host, or the only site
 // the recipe lists. With several sites and no host it guesses none.
-func (m *Manager) Open(host string) error {
-	dir, err := os.Getwd()
+func (m *Manager) Open(envFlag, host string) error {
+	t, err := m.locate(context.Background(), envFlag)
 	if err != nil {
 		return err
 	}
-	r, err := readRecipe(dir)
+	r, err := readRecipe(t.dir)
 	if err != nil {
 		return err
 	}
-	name := filepath.Base(dir)
+	name := t.name
 	var hosts []string
 	for _, s := range r.Sites {
 		hosts = append(hosts, s.Host)

@@ -44,6 +44,12 @@ type Client interface {
 
 	// Containers lists the running containers that carry the label.
 	Containers(ctx context.Context, label string) ([]Container, error)
+	// AllContainers lists the containers that carry the label, running or not.
+	AllContainers(ctx context.Context, label string) ([]Container, error)
+	// StopContainer stops a container.
+	StopContainer(ctx context.Context, name string) error
+	// RemoveContainer removes a container, running or not.
+	RemoveContainer(ctx context.Context, name string) error
 	// Inspect returns one container, running or not, or an error wrapping
 	// ErrNoContainer.
 	Inspect(ctx context.Context, name string) (Container, error)
@@ -52,6 +58,13 @@ type Client interface {
 	ConnectNetwork(ctx context.Context, network, container string, aliases []string) error
 	// DisconnectNetwork detaches a container from a network.
 	DisconnectNetwork(ctx context.Context, network, container string) error
+	// RemoveNetwork removes a network, and does nothing when there is none.
+	RemoveNetwork(ctx context.Context, network string) error
+
+	// InspectVolume returns a volume, or an error wrapping ErrNoVolume.
+	InspectVolume(ctx context.Context, name string) (Volume, error)
+	// RemoveVolume removes a volume, and does nothing when there is none.
+	RemoveVolume(ctx context.Context, name string) error
 }
 
 // ErrNotExist is ReadFile's answer for a missing file.
@@ -60,8 +73,11 @@ var ErrNotExist = errors.New("file does not exist")
 // ErrNoContainer is Inspect's answer for a missing container.
 var ErrNoContainer = errors.New("no such container")
 
-// ErrPortTaken is wrapped by a ComposeUp that failed because a port it
-// publishes is already in use on the host.
+// ErrNoVolume is InspectVolume's answer for a missing volume.
+var ErrNoVolume = errors.New("no such volume")
+
+// ErrPortTaken is wrapped by a ComposeUp of a project that publishes ports
+// and failed because one is already in use on the host.
 var ErrPortTaken = errors.New("a published port is taken")
 
 // Container is one container as Docker reports it.
@@ -96,6 +112,9 @@ type Project struct {
 	File string
 	// Out receives compose's progress.
 	Out io.Writer
+	// Publishes is set for a project that publishes host ports: only its
+	// failure is read for a taken port.
+	Publishes bool
 }
 
 // Exec is one command run in a container.

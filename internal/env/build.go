@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/zhide915/tamp/internal/docker"
@@ -12,45 +11,116 @@ import (
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// Start builds the environment in the working directory from its recipe.
-func (m *Manager) Start() error {
-	dir, err := os.Getwd()
+// Start builds the environment that envFlag names, or the one in the working
+// directory, from its recipe.
+func (m *Manager) Start(envFlag string) error {
+	t, err := m.find(context.Background(), envFlag)
 	if err != nil {
 		return err
 	}
-	r, err := readRecipe(dir)
+	r, err := readRecipe(t.dir)
 	if err != nil {
 		return err
 	}
-	return m.build(dir, r, "")
+	return m.build(t, r)
 }
 
-// build makes the environment at dir match its recipe. Nothing rolls back, so
-// every fix ends in `tamp start`, in where unless where is empty.
-func (m *Manager) build(dir string, r Recipe, where string) error {
-	err := m.steps(context.Background(), dir, r)
+// build makes the environment t match its recipe. It checks that the
+// environment is t's alone and built for the recipe's Frappe branch before
+// it builds anything.
+func (m *Manager) build(t target, r Recipe) error {
+	ctx := context.Background()
+	if err := m.docker.Ping(ctx); err != nil {
+		return t.resume(err)
+	}
+	if err := checkName(t.name); err != nil {
+		var e *exitcode.Error
+		errors.As(err, &e)
+		// A directory that exists is state, not the command line.
+		return t.resume(exitcode.New(exitcode.CodeFailed, e.Msg, e.Fix))
+	}
+	if err := m.claim(ctx, t); err != nil {
+		return t.resume(err)
+	}
+	if err := m.checkVersion(ctx, t, r); err != nil {
+		return err
+	}
+	return t.resume(m.steps(ctx, t.dir, r))
+}
+
+// resume adds to err's fix the start that resumes the build: nothing rolls
+// back, so every build failure ends in `tamp start`.
+func (t target) resume(err error) error {
 	var e *exitcode.Error
-	if errors.As(err, &e) {
-		start := "run `tamp start`"
-		if where != "" {
-			start += " in " + where
-		}
-		fix := start
-		if e.Fix != "" {
-			fix = e.Fix + ", then " + start
-		}
-		return exitcode.New(e.Code, e.Msg, fix)
+	if !errors.As(err, &e) {
+		return err
+	}
+	start := "run " + t.command("start") + t.in()
+	fix := start
+	if e.Fix != "" {
+		fix = e.Fix + ", then " + start
+	}
+	return exitcode.New(e.Code, e.Msg, fix)
+}
+
+// in is where a fix's commands run, for a build that `tamp new` started
+// outside the environment's directory.
+func (t target) in() string {
+	if t.where == "" {
+		return ""
+	}
+	return " in " + t.where
+}
+
+// claim checks that the containers named like the environment are its own.
+// Containers of a moved environment are recreated with the new path, and the
+// volumes kept.
+func (m *Manager) claim(ctx context.Context, t target) error {
+	moved, err := m.owner(ctx, t)
+	if moved != "" {
+		m.p.Warn(fmt.Sprintf("%s moved from %s to %s: tamp recreates its containers and keeps its volumes", t.name, moved, t.dir))
 	}
 	return err
+}
+
+// checkVersion stops a build whose bench was built for another Frappe
+// branch: a major-version change would half-migrate it.
+func (m *Manager) checkVersion(ctx context.Context, t target, r Recipe) error {
+	v, err := m.docker.InspectVolume(ctx, benchVolume(t.name))
+	if errors.Is(err, docker.ErrNoVolume) {
+		return nil
+	}
+	if err != nil {
+		return t.resume(err)
+	}
+	if built := v.Labels[LabelFrappe]; built != r.Frappe {
+		fix := fmt.Sprintf("check out %s in apps/frappe, then `tamp remove --yes` and `tamp start`", r.Frappe)
+		// After the remove, -e finds nothing: only the directory names the
+		// environment.
+		if dir := t.elsewhere(); dir != "" {
+			fix = fmt.Sprintf("in %s, check out %s in apps/frappe, then run `tamp remove --yes` and `tamp start`", dir, r.Frappe)
+		}
+		return exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("the bench of %s was built for Frappe %s, but the recipe names %s", t.name, built, r.Frappe), fix)
+	}
+	return nil
+}
+
+// elsewhere is the environment's directory when the command did not run in
+// it, as given to `tamp new` or found by -e.
+func (t target) elsewhere() string {
+	switch {
+	case t.where != "":
+		return t.where
+	case t.flag != "":
+		return t.dir
+	}
+	return ""
 }
 
 func (m *Manager) steps(ctx context.Context, dir string, r Recipe) error {
 	name := filepath.Base(dir)
 	out := m.p.Progress()
-
-	if err := m.docker.Ping(ctx); err != nil {
-		return err
-	}
 
 	image := imageBuild(r.Frappe)
 	exists, err := m.docker.ImageExists(ctx, image.Tag)

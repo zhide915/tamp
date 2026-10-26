@@ -8,7 +8,7 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-func newOpenCommand(manager func() *env.Manager) *cobra.Command {
+func newOpenCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "open [host]",
 		Short: "Open a site in the default browser: the host given, or the only site",
@@ -23,7 +23,7 @@ func newOpenCommand(manager func() *env.Manager) *cobra.Command {
 			if len(args) == 1 {
 				host = args[0]
 			}
-			return manager().Open(host)
+			return manager().Open(g.env, host)
 		},
 	}
 }

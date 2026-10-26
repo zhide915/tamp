@@ -7,16 +7,95 @@ import (
 	"strings"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"github.com/zhide915/tamp/internal/exitcode"
 )
 
+func (d *Daemon) StopContainer(ctx context.Context, name string) error {
+	_, api, err := d.connect()
+	if err != nil {
+		return err
+	}
+	_, err = api.ContainerStop(ctx, name, client.ContainerStopOptions{})
+	return refused("stop the container "+name, err)
+}
+
+func (d *Daemon) RemoveContainer(ctx context.Context, name string) error {
+	_, api, err := d.connect()
+	if err != nil {
+		return err
+	}
+	_, err = api.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
+	return refused("remove the container "+name, err)
+}
+
+func (d *Daemon) RemoveNetwork(ctx context.Context, net string) error {
+	_, api, err := d.connect()
+	if err != nil {
+		return err
+	}
+	if _, err := api.NetworkRemove(ctx, net, client.NetworkRemoveOptions{}); !cerrdefs.IsNotFound(err) {
+		return refused("remove the network "+net, err)
+	}
+	return nil
+}
+
+func (d *Daemon) InspectVolume(ctx context.Context, name string) (Volume, error) {
+	_, api, err := d.connect()
+	if err != nil {
+		return Volume{}, err
+	}
+	res, err := api.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	if cerrdefs.IsNotFound(err) {
+		return Volume{}, fmt.Errorf("%s: %w", name, ErrNoVolume)
+	}
+	if err != nil {
+		return Volume{}, unavailable("inspect the volume "+name, err)
+	}
+	return Volume{Name: res.Volume.Name, Labels: res.Volume.Labels}, nil
+}
+
+func (d *Daemon) RemoveVolume(ctx context.Context, name string) error {
+	_, api, err := d.connect()
+	if err != nil {
+		return err
+	}
+	if _, err := api.VolumeRemove(ctx, name, client.VolumeRemoveOptions{}); !cerrdefs.IsNotFound(err) {
+		return refused("remove the volume "+name, err)
+	}
+	return nil
+}
+
+// refused tells an unreachable Docker from one that answered and refused,
+// such as a network that a container is still on.
+func refused(what string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if client.IsErrConnectionFailed(err) {
+		return unavailable(what, err)
+	}
+	return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot %s: %v", what, rootCause(err)),
+		"fix what Docker names, then run the command again")
+}
+
 func (d *Daemon) Containers(ctx context.Context, label string) ([]Container, error) {
+	return d.list(ctx, label, false)
+}
+
+func (d *Daemon) AllContainers(ctx context.Context, label string) ([]Container, error) {
+	return d.list(ctx, label, true)
+}
+
+func (d *Daemon) list(ctx context.Context, label string, all bool) ([]Container, error) {
 	_, api, err := d.connect()
 	if err != nil {
 		return nil, err
 	}
 	res, err := api.ContainerList(ctx, client.ContainerListOptions{
+		All:     all,
 		Filters: make(client.Filters).Add("label", label),
 	})
 	if err != nil {
@@ -24,7 +103,7 @@ func (d *Daemon) Containers(ctx context.Context, label string) ([]Container, err
 	}
 	containers := make([]Container, 0, len(res.Items))
 	for _, item := range res.Items {
-		c := Container{Labels: item.Labels, Running: true}
+		c := Container{Labels: item.Labels, Running: item.State == container.StateRunning}
 		if len(item.Names) > 0 {
 			c.Name = strings.TrimPrefix(item.Names[0], "/")
 		}

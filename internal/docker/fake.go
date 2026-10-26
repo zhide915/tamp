@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/zhide915/tamp/internal/frappe"
@@ -28,9 +30,16 @@ type Fake struct {
 	// ExecFails fails each exec whose command line contains a key, with its
 	// error: how a test plants a failure partway through a build.
 	ExecFails map[string]error
+	// ExecOutput writes its value to the stderr of each exec whose command
+	// line contains its key, as the command's own log.
+	ExecOutput map[string]string
 	// UpFails fails the compose up of each project named by a key, with its
 	// error, and starts none of its containers.
 	UpFails map[string]error
+	// StaleList models the engine listing a container as running for a
+	// moment after its stop returns: a stopped container stays listed until
+	// its next compose up. Inspect still sees it stopped.
+	StaleList bool
 
 	// Calls names each method tamp called, in order.
 	Calls []string
@@ -42,9 +51,13 @@ type Fake struct {
 	Execs       []Exec
 	Connects    []Network
 	Disconnects []Network
+	// Stopped, Removed, RemovedNetworks and RemovedVolumes name what each
+	// stop and removal asked for.
+	Stopped, Removed, RemovedNetworks, RemovedVolumes []string
 
 	images     map[string]bool
 	containers map[string]*fakeContainer
+	volumes    map[string]Volume
 	// files is each container's filesystem, keyed by container then path.
 	files map[string]map[string]string
 }
@@ -78,7 +91,49 @@ func (f *Fake) BuildImage(_ context.Context, b ImageBuild) error {
 func (f *Fake) EnsureVolume(_ context.Context, v Volume) error {
 	f.Calls = append(f.Calls, "EnsureVolume")
 	f.Volumes = append(f.Volumes, v)
+	if _, ok := f.volumes[v.Name]; !ok {
+		f.putVolume(v)
+	}
 	return nil
+}
+
+func (f *Fake) InspectVolume(_ context.Context, name string) (Volume, error) {
+	f.Calls = append(f.Calls, "InspectVolume")
+	v, ok := f.volumes[name]
+	if !ok {
+		return Volume{}, fmt.Errorf("%s: %w", name, ErrNoVolume)
+	}
+	v.Labels = maps.Clone(v.Labels)
+	return v, nil
+}
+
+// RemoveVolume fails, as Docker does, for a volume a container still uses.
+func (f *Fake) RemoveVolume(_ context.Context, name string) error {
+	f.Calls = append(f.Calls, "RemoveVolume")
+	f.RemovedVolumes = append(f.RemovedVolumes, name)
+	for _, c := range f.containers {
+		if slices.Contains(c.volumes, name) {
+			return fmt.Errorf("the volume %s is in use by %s", name, c.Name)
+		}
+	}
+	delete(f.volumes, name)
+	return nil
+}
+
+// VolumeNames lists the volumes that exist, sorted.
+func (f *Fake) VolumeNames() []string {
+	return slices.Sorted(maps.Keys(f.volumes))
+}
+
+// SetVolume places a volume, as one left by an earlier build would be.
+func (f *Fake) SetVolume(v Volume) { f.putVolume(v) }
+
+func (f *Fake) putVolume(v Volume) {
+	if f.volumes == nil {
+		f.volumes = map[string]Volume{}
+	}
+	v.Labels = maps.Clone(v.Labels)
+	f.volumes[v.Name] = v
 }
 
 func (f *Fake) ComposeUp(_ context.Context, p Project) error {
@@ -114,6 +169,11 @@ func (f *Fake) Exec(_ context.Context, e Exec) error {
 	// even a failed one leaves it.
 	if len(e.Cmd) > 2 && e.Cmd[0] == "bench" && e.Cmd[1] == "new-site" {
 		f.put(e.Container, frappe.SiteConfig(e.Cmd[2]), `{"db_name": "_site"}`)
+	}
+	for fragment, out := range f.ExecOutput {
+		if strings.Contains(line, fragment) && e.Stderr != nil {
+			fmt.Fprint(e.Stderr, out)
+		}
 	}
 	for fragment, err := range f.ExecFails {
 		if strings.Contains(line, fragment) {

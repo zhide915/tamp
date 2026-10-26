@@ -56,8 +56,12 @@ func newRootCommand(p *ui.Printer, dc docker.Client, openURL func(context.Contex
 	flags.Bool("no-color", false, "print without color")
 
 	root.AddCommand(newNewCommand(manager))
-	root.AddCommand(newStartCommand(manager))
-	root.AddCommand(newOpenCommand(manager))
+	root.AddCommand(newStartCommand(manager, &g))
+	root.AddCommand(newStopCommand(manager, &g))
+	root.AddCommand(newRemoveCommand(manager, &g))
+	root.AddCommand(newListCommand(manager))
+	root.AddCommand(newStatusCommand(manager, &g))
+	root.AddCommand(newOpenCommand(manager, &g))
 	root.AddCommand(newVersionCommand(p))
 	return root
 }

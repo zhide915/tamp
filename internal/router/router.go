@@ -110,25 +110,36 @@ type Router struct {
 	Out io.Writer
 }
 
-// Apply serves envs: it replaces the Caddyfile, starts the router if it is
-// not running or reloads it if it is, and joins each environment's network.
+// Apply serves envs: it replaces the Caddyfile, brings the router up when it
+// is not running or its compose file changed, reloads it when it was
+// running, and joins each environment's network.
 func (r Router) Apply(ctx context.Context, envs []Env) error {
 	if err := r.write(Caddyfile, Render(envs)); err != nil {
 		return err
 	}
-	c, err := r.Docker.Inspect(ctx, Container)
-	switch {
-	case errors.Is(err, docker.ErrNoContainer) || err == nil && !c.Running:
-		if err := r.start(ctx); err != nil {
+	c, running, err := r.inspect(ctx)
+	if err != nil {
+		return err
+	}
+	var compose bytes.Buffer
+	if err := composeTemplate.Execute(&compose, map[string]any{
+		"Project": Project, "Container": Container, "Image": Image, "Port": Port, "Mount": mountDir,
+	}); err != nil {
+		return err
+	}
+	// A running router whose compose file changed is brought up again, so a
+	// new template reaches it.
+	if old, err := os.ReadFile(filepath.Join(r.Dir, composeFile)); !running || err != nil || !bytes.Equal(old, compose.Bytes()) {
+		if err := r.up(ctx, compose.Bytes()); err != nil {
 			return err
 		}
-		// A started container keeps the networks it was on when it stopped.
+		// A started container keeps the networks it was on when it stopped;
+		// a recreated one is on none of them.
 		if c, err = r.Docker.Inspect(ctx, Container); err != nil {
 			return err
 		}
-	case err != nil:
-		return err
-	default:
+	}
+	if running {
 		if err := r.reload(ctx); err != nil {
 			return err
 		}
@@ -141,17 +152,50 @@ func (r Router) Apply(ctx context.Context, envs []Env) error {
 	return nil
 }
 
-func (r Router) start(ctx context.Context) error {
-	var compose bytes.Buffer
-	if err := composeTemplate.Execute(&compose, map[string]any{
-		"Project": Project, "Container": Container, "Image": Image, "Port": Port, "Mount": mountDir,
-	}); err != nil {
+// Reload serves envs without starting the router: it replaces the Caddyfile
+// and reloads a running router. A stopped one reads the file when it starts.
+func (r Router) Reload(ctx context.Context, envs []Env) error {
+	if err := r.write(Caddyfile, Render(envs)); err != nil {
 		return err
 	}
-	if err := r.write(composeFile, compose.Bytes()); err != nil {
+	_, running, err := r.inspect(ctx)
+	if err != nil || !running {
 		return err
 	}
-	err := r.Docker.ComposeUp(ctx, docker.Project{Name: Project, File: filepath.Join(r.Dir, composeFile), Out: r.Out})
+	return r.reload(ctx)
+}
+
+// Leave detaches the router from a network, if it is on it, so the network
+// can be removed.
+func (r Router) Leave(ctx context.Context, network string) error {
+	c, err := r.Docker.Inspect(ctx, Container)
+	if errors.Is(err, docker.ErrNoContainer) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, on := c.Networks[network]; !on {
+		return nil
+	}
+	return r.Docker.DisconnectNetwork(ctx, network, Container)
+}
+
+func (r Router) inspect(ctx context.Context) (docker.Container, bool, error) {
+	c, err := r.Docker.Inspect(ctx, Container)
+	if errors.Is(err, docker.ErrNoContainer) {
+		return c, false, nil
+	}
+	return c, err == nil && c.Running, err
+}
+
+func (r Router) up(ctx context.Context, compose []byte) error {
+	if err := r.write(composeFile, compose); err != nil {
+		return err
+	}
+	err := r.Docker.ComposeUp(ctx, docker.Project{
+		Name: Project, File: filepath.Join(r.Dir, composeFile), Out: r.Out, Publishes: true,
+	})
 	if errors.Is(err, docker.ErrPortTaken) {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("port %d is taken, so the router cannot start", Port),
@@ -167,13 +211,20 @@ func findPortCommand() string {
 	return fmt.Sprintf("`sudo lsof -i :%d`", Port)
 }
 
+// reload prints Caddy's JSON log only when the reload fails, for the error's
+// "output above".
 func (r Router) reload(ctx context.Context) error {
-	return r.Docker.Exec(ctx, docker.Exec{
+	var log bytes.Buffer
+	err := r.Docker.Exec(ctx, docker.Exec{
 		Container: Container,
 		Cmd:       []string{"caddy", "reload", "--config", mountDir + "/" + Caddyfile, "--adapter", "caddyfile"},
-		Stdout:    r.Out,
-		Stderr:    r.Out,
+		Stdout:    &log,
+		Stderr:    &log,
 	})
+	if err != nil && r.Out != nil {
+		_, _ = r.Out.Write(log.Bytes())
+	}
+	return err
 }
 
 // join attaches the router to an environment's network under its hosts as

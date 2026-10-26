@@ -1,6 +1,7 @@
 package env
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -36,6 +37,19 @@ func (m *Manager) New(path, frappe string, hosts []string) error {
 	if err := checkNewDirectory(dir); err != nil {
 		return err
 	}
+	where := filepath.Clean(path)
+	if where == "." {
+		where = ""
+	}
+	t := target{name: filepath.Base(dir), dir: dir, where: where}
+	// A name another environment holds is refused before anything is written.
+	ctx := context.Background()
+	if err := m.docker.Ping(ctx); err != nil {
+		return err
+	}
+	if _, err := m.owner(ctx, t); err != nil {
+		return err
+	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot create %s: %v", dir, err),
@@ -49,11 +63,7 @@ func (m *Manager) New(path, frappe string, hosts []string) error {
 		return err
 	}
 	m.p.OK(fmt.Sprintf("wrote the recipe of environment %s: %s", filepath.Base(dir), filepath.Join(dir, RecipeFile)))
-	where := filepath.Clean(path)
-	if where == "." {
-		where = ""
-	}
-	return m.build(dir, recipe, where)
+	return m.build(t, recipe)
 }
 
 func siteList(hosts []string) ([]Site, error) {

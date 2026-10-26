@@ -58,8 +58,11 @@ func readRecipe(dir string) (Recipe, error) {
 	var r Recipe
 	if _, err := toml.DecodeFile(path, &r); err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return Recipe{}, exitcode.Usage(fmt.Sprintf("no recipe in %s", dir),
-				"run the command in an environment's directory, or create one with `tamp new <path> --frappe <branch>`")
+			// find has already checked the working directory, so dir is one
+			// that a container's label names.
+			return Recipe{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("no recipe in %s", dir),
+				fmt.Sprintf("run `tamp start` in the directory the environment moved to, or remove it with `tamp remove -e %s --yes`",
+					filepath.Base(dir)))
 		}
 		return Recipe{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot read %s: %v", path, err),
 			"fix the TOML in "+path)
