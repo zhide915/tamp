@@ -119,7 +119,7 @@ version = "version-15"
 [toolchain]
 python = "3.11"
 node = "18"
-mariadb = "10.8"
+mariadb = "10.11"
 
 [engine]
 kind = "docker"

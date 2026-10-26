@@ -110,6 +110,16 @@ func TestMariaDBIsConfiguredForFrappesCharacterSet(t *testing.T) {
 	}
 }
 
+// The bench's MariaDB 11.8 client writes dumps that set note_verbosity, so a
+// restore needs a server that knows it.
+func TestAVersion15EnvironmentRunsMariaDB1011(t *testing.T) {
+	_, body := generated(t)
+
+	if !strings.Contains(body, "image: mariadb:10.11\n") {
+		t.Errorf("the version-15 compose.yaml does not run mariadb:10.11:\n%s", body)
+	}
+}
+
 // Bound to loopback: a development database.
 func TestOnlyMariaDBPublishesAHostPort(t *testing.T) {
 	e, body := generated(t)

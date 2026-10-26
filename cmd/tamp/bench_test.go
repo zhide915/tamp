@@ -52,6 +52,15 @@ func TestCreateStreamsItsStepsAndNamesTheToolchain(t *testing.T) {
 	)
 }
 
+func TestCreateWithoutAFrappeVersionNamesTheVersion15Toolchain(t *testing.T) {
+	c := sandbox(t)
+
+	r := c.run(t, "create", "demo")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertStdoutContains(t, "python 3.11 · node 18 · mariadb 10.11")
+}
+
 func TestCreateRejectsAFrappeVersionTampDoesNotCarry(t *testing.T) {
 	c := sandbox(t)
 
