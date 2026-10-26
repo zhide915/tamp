@@ -4,11 +4,13 @@
 package main
 
 import (
+	"context"
 	"io"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/zhide915/tamp/internal/browser"
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/ui"
@@ -23,16 +25,17 @@ var (
 
 func main() {
 	ui.EnableColorSupport()
-	os.Exit(int(run(os.Args[1:], os.Stdout, os.Stderr, os.LookupEnv, docker.New())))
+	os.Exit(int(run(os.Args[1:], os.Stdout, os.Stderr, os.LookupEnv, docker.New(), browser.Open)))
 }
 
 // run is tamp without the process, so tests drive it in-process.
-func run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool), dc docker.Client) exitcode.Code {
+func run(args []string, stdout, stderr io.Writer, lookupEnv func(string) (string, bool),
+	dc docker.Client, openURL func(context.Context, string) error) exitcode.Code {
 	p := ui.NewPrinter(stdout, stderr, lookupEnv)
 	if noColor(args) {
 		p.DisableColor()
 	}
-	root := newRootCommand(p, dc)
+	root := newRootCommand(p, dc, openURL)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
 		p.Error(err)

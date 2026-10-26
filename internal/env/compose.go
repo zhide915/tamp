@@ -29,6 +29,10 @@ const (
 // frappeContainer is compose's name for the environment's frappe container.
 func frappeContainer(name string) string { return name + "-frappe-1" }
 
+// network is compose's default network for the environment, which the
+// router joins.
+func network(name string) string { return name + "_default" }
+
 // The services' hostnames on the environment's network.
 const (
 	dbService         = "mariadb"
@@ -78,6 +82,9 @@ services:
     image: {{.BenchImage}}
     # Idles until tamp writes the Procfile, then runs the bench's processes.
     command: [bash, -c, 'until [ -f {{.Procfile}} ]; do sleep 1; done; exec honcho start']
+    environment:
+      # develop's web server binds loopback without it, out of the router's reach.
+      FRAPPE_BIND_ADDR: 0.0.0.0
     labels:
 {{- range .Labels}}
       {{.}}

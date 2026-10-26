@@ -41,10 +41,37 @@ type Client interface {
 	ReadFile(ctx context.Context, container, path string) ([]byte, error)
 	// WriteFile replaces a file in a container, owned by the image's user.
 	WriteFile(ctx context.Context, container, path string, data []byte) error
+
+	// Containers lists the running containers that carry the label.
+	Containers(ctx context.Context, label string) ([]Container, error)
+	// Inspect returns one container, running or not, or an error wrapping
+	// ErrNoContainer.
+	Inspect(ctx context.Context, name string) (Container, error)
+	// ConnectNetwork attaches a container to a network, where it also
+	// answers to the aliases. Aliases stay fixed until it is disconnected.
+	ConnectNetwork(ctx context.Context, network, container string, aliases []string) error
+	// DisconnectNetwork detaches a container from a network.
+	DisconnectNetwork(ctx context.Context, network, container string) error
 }
 
 // ErrNotExist is ReadFile's answer for a missing file.
 var ErrNotExist = errors.New("file does not exist")
+
+// ErrNoContainer is Inspect's answer for a missing container.
+var ErrNoContainer = errors.New("no such container")
+
+// ErrPortTaken is wrapped by a ComposeUp that failed because a port it
+// publishes is already in use on the host.
+var ErrPortTaken = errors.New("a published port is taken")
+
+// Container is one container as Docker reports it.
+type Container struct {
+	Name    string
+	Running bool
+	Labels  map[string]string
+	// Networks maps each network the container is on to its aliases there.
+	Networks map[string][]string
+}
 
 // ImageBuild is one image to build.
 type ImageBuild struct {

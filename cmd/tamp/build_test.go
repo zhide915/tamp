@@ -134,10 +134,11 @@ func TestNewBuildsTheImageTheContainersTheBenchAndTheSite(t *testing.T) {
 		}
 	}
 
-	if len(f.Ups) != 1 {
-		t.Fatalf("compose ups = %d, want 1", len(f.Ups))
+	ups := f.UpsOf("erp-dev")
+	if len(ups) != 1 {
+		t.Fatalf("compose ups of erp-dev = %d, want 1", len(ups))
 	}
-	up := f.Ups[0]
+	up := ups[0]
 	if up.Project.Name != "erp-dev" || up.Project.File != filepath.Join(dir, "compose.yaml") {
 		t.Errorf("compose project = %+v, want erp-dev at %s", up.Project, filepath.Join(dir, "compose.yaml"))
 	}
@@ -255,7 +256,7 @@ func TestASecondStartRepeatsNoCompletedWork(t *testing.T) {
 	if len(c.docker.Builds) != builds {
 		t.Errorf("start built the image again")
 	}
-	if again := c.docker.ExecLines()[execs:]; len(again) > 0 {
+	if again := benchExecs(c.docker.Execs[execs:]); len(again) > 0 {
 		t.Errorf("start ran %q again, want no bench command", again)
 	}
 	if strings.Contains(r.stderr, "Cloning") {
@@ -478,4 +479,15 @@ func TestComposeNamesTheProjectAsAStringWhateverTheEnvironmentIsCalled(t *testin
 			}
 		})
 	}
+}
+
+// benchExecs is the command lines of the execs in the frappe container.
+func benchExecs(execs []docker.Exec) []string {
+	var lines []string
+	for _, e := range execs {
+		if e.Container == frappeContainer {
+			lines = append(lines, strings.Join(e.Cmd, " "))
+		}
+	}
+	return lines
 }

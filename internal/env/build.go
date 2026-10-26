@@ -101,6 +101,10 @@ func (m *Manager) steps(ctx context.Context, dir string, r Recipe) error {
 			return err
 		}
 	}
+	m.p.Step("routing the sites")
+	if err := m.route(ctx); err != nil {
+		return err
+	}
 	m.p.OK("environment " + name + " is built")
 	return nil
 }

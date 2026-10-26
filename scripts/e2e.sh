@@ -11,6 +11,8 @@ ENV_DIR=$WORK/erp-dev
 FRAPPE=erp-dev-frappe-1
 
 cleanup() {
+  # tamp never removes the router; the network below cannot go while it is attached.
+  docker rm --force tamp-router >/dev/null 2>&1 || true
   if [ -f "$ENV_DIR/compose.yaml" ]; then
     docker compose --project-name erp-dev --file "$ENV_DIR/compose.yaml" down --volumes --timeout 5 || true
   fi
@@ -23,6 +25,31 @@ say() { printf '\n=== %s\n' "$*"; }
 fail() {
   echo "e2e: $*" >&2
   exit 1
+}
+
+# through_router fetches a URL from the router on port 80, whatever
+# *.localhost resolves to on this machine. curl sends no Origin header.
+through_router() {
+  curl -sf --max-time 10 --resolve shop.localhost:80:127.0.0.1 "$@"
+}
+
+# socketio_handshake logs in, opens an engine.io session by polling, and
+# connects to the site's namespace, which the realtime server refuses
+# without an Origin matching the host.
+socketio_handshake() {
+  local jar=$WORK/cookies base=http://shop.localhost/socket.io/?EIO=4 open= sid= reply=
+  through_router -c "$jar" --data usr=Administrator --data pwd=password http://shop.localhost/api/method/login >/dev/null || return 1
+  for _ in $(seq 1 15); do
+    if open=$(through_router -b "$jar" "$base&transport=polling"); then break; fi
+    sleep 2
+  done
+  echo "open: $open"
+  sid=$(sed -n 's/^0{"sid":"\([^"]*\)".*/\1/p' <<<"$open")
+  [ -n "$sid" ] || return 1
+  through_router -b "$jar" -H 'Content-Type: text/plain;charset=UTF-8' --data '40/shop.localhost,' "$base&transport=polling&sid=$sid" >/dev/null || return 1
+  reply=$(through_router -b "$jar" "$base&transport=polling&sid=$sid") || return 1
+  echo "connect: $reply"
+  grep -q '40/shop.localhost,{"sid"' <<<"$reply"
 }
 
 say "tamp version prints the version, commit, and build date"
@@ -94,6 +121,38 @@ say "the site is a developer site"
 docker exec "$FRAPPE" grep -q '"developer_mode": 1' sites/shop.localhost/site_config.json ||
   fail "shop.localhost lacks developer_mode 1"
 
+say "the router runs Caddy on port 80, restarting unless stopped, on the environment's network"
+[ "$(docker inspect --format '{{ .HostConfig.RestartPolicy.Name }}' tamp-router)" = unless-stopped ] ||
+  fail "the router's restart policy is not unless-stopped"
+docker inspect --format '{{ range $net, $_ := .NetworkSettings.Networks }}{{ $net }} {{ end }}' tamp-router | grep -qw erp-dev_default ||
+  fail "the router is not on erp-dev_default"
+docker inspect --format '{{ range .Mounts }}{{ .Type }}:{{ .Destination }} {{ end }}' tamp-router | grep -qw 'bind:/etc/caddy' ||
+  fail "the router does not mount its directory at /etc/caddy"
+
+say "curl --resolve reaches shop.localhost through the router"
+answered=
+for _ in $(seq 1 30); do
+  if body=$(through_router http://shop.localhost/api/method/ping); then
+    answered=$body
+    break
+  fi
+  sleep 2
+done
+echo "$answered"
+grep -q pong <<<"$answered" || fail "shop.localhost did not answer through the router"
+
+say "a socket.io handshake through the router succeeds with no Origin from the client"
+socketio_handshake || fail "the socket.io handshake through the router failed"
+
+say "the site fetches its own URL from inside the frappe container"
+own=$(docker exec "$FRAPPE" env/bin/python -c \
+  'import urllib.request; print(urllib.request.urlopen("http://shop.localhost/api/method/ping", timeout=10).read().decode())') ||
+  fail "the site cannot fetch http://shop.localhost from inside its container"
+echo "$own"
+grep -q pong <<<"$own" || fail "http://shop.localhost from inside the container did not answer pong"
+
+router_started=$(docker inspect --format '{{ .State.StartedAt }}' tamp-router)
+
 say "a second tamp start repeats no completed work"
 cd erp-dev
 out=$("$TAMP" start 2>&1)
@@ -101,5 +160,19 @@ echo "$out"
 if grep -q 'building the image\|Cloning\|running bench init\|creating the site' <<<"$out"; then
   fail "tamp start repeated work"
 fi
+
+say "after a second start, the reloaded router still serves the site and socket.io"
+after=$(through_router http://shop.localhost/api/method/ping) || fail "shop.localhost stopped answering after the reload"
+grep -q pong <<<"$after" || fail "shop.localhost answered $after after the reload"
+socketio_handshake || fail "the socket.io handshake failed after the reload"
+
+say "a site added to the recipe is routed by the running router after tamp start"
+printf '\n[[sites]]\n  host = "erp.localhost"\n' >>tamp.toml
+"$TAMP" start
+[ "$(docker inspect --format '{{ .State.StartedAt }}' tamp-router)" = "$router_started" ] ||
+  fail "tamp start restarted the router instead of reloading it"
+added=$(curl -sf --max-time 10 --resolve erp.localhost:80:127.0.0.1 http://erp.localhost/api/method/ping) ||
+  fail "erp.localhost does not answer through the router"
+grep -q pong <<<"$added" || fail "erp.localhost answered $added"
 
 say "e2e passed"

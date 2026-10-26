@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,8 +17,10 @@ import (
 // cli runs tamp in-process through the cobra root, against a temp home, a
 // temp working directory, and the Docker fake.
 type cli struct {
-	dir    string
-	docker *docker.Fake
+	dir, home string
+	docker    *docker.Fake
+	// opened records each URL handed to the browser, which no test opens.
+	opened []string
 	// terminal makes stdout and stderr claim to be a terminal, for the
 	// color rules.
 	terminal bool
@@ -40,7 +43,7 @@ func sandbox(t *testing.T) *cli {
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", gitconfig)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
-	return &cli{dir: dir, docker: &docker.Fake{}}
+	return &cli{dir: dir, home: home, docker: &docker.Fake{}}
 }
 
 type result struct {
@@ -58,11 +61,11 @@ func (c *cli) run(t *testing.T, args ...string) result {
 	t.Helper()
 	if c.terminal {
 		var stdout, stderr terminalBuffer
-		code := run(args, &stdout, &stderr, os.LookupEnv, c.docker)
+		code := run(args, &stdout, &stderr, os.LookupEnv, c.docker, c.openURL)
 		return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 	}
 	var stdout, stderr bytes.Buffer
-	code := run(args, &stdout, &stderr, os.LookupEnv, c.docker)
+	code := run(args, &stdout, &stderr, os.LookupEnv, c.docker, c.openURL)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 
@@ -143,4 +146,9 @@ func makeFrappeRemote(bare string) error {
 // path.
 func fileURL(path string) string {
 	return "file:///" + strings.TrimPrefix(filepath.ToSlash(path), "/")
+}
+
+func (c *cli) openURL(_ context.Context, url string) error {
+	c.opened = append(c.opened, url)
+	return nil
 }

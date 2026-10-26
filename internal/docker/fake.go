@@ -28,16 +28,23 @@ type Fake struct {
 	// ExecFails fails each exec whose command line contains a key, with its
 	// error: how a test plants a failure partway through a build.
 	ExecFails map[string]error
+	// UpFails fails the compose up of each project named by a key, with its
+	// error, and starts none of its containers.
+	UpFails map[string]error
 
 	// Calls names each method tamp called, in order.
 	Calls []string
-	// Builds, Volumes, Ups and Execs record each request in full.
-	Builds  []ImageBuild
-	Volumes []Volume
-	Ups     []Up
-	Execs   []Exec
+	// Builds, Volumes, Ups, Execs, Connects and Disconnects record each
+	// request in full.
+	Builds      []ImageBuild
+	Volumes     []Volume
+	Ups         []Up
+	Execs       []Exec
+	Connects    []Network
+	Disconnects []Network
 
-	images map[string]bool
+	images     map[string]bool
+	containers map[string]*fakeContainer
 	// files is each container's filesystem, keyed by container then path.
 	files map[string]map[string]string
 }
@@ -81,7 +88,22 @@ func (f *Fake) ComposeUp(_ context.Context, p Project) error {
 		return err
 	}
 	f.Ups = append(f.Ups, Up{Project: p, Compose: string(body)})
+	if err := f.UpFails[p.Name]; err != nil {
+		return err
+	}
+	f.up(p.Name, string(body))
 	return nil
+}
+
+// UpsOf returns the recorded compose ups of one project, in order.
+func (f *Fake) UpsOf(project string) []Up {
+	var ups []Up
+	for _, u := range f.Ups {
+		if u.Project.Name == project {
+			ups = append(ups, u)
+		}
+	}
+	return ups
 }
 
 func (f *Fake) Exec(_ context.Context, e Exec) error {

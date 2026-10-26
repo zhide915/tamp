@@ -11,9 +11,10 @@ import (
 )
 
 const (
-	ansiReset = "\x1b[0m"
-	ansiRed   = "\x1b[31m"
-	ansiGreen = "\x1b[32m"
+	ansiReset  = "\x1b[0m"
+	ansiRed    = "\x1b[31m"
+	ansiGreen  = "\x1b[32m"
+	ansiYellow = "\x1b[33m"
 )
 
 // Printer writes all of tamp's output. It never touches the process's own
@@ -25,7 +26,7 @@ type Printer struct {
 	// and the stream still on a terminal keeps its color.
 	ColorOut bool
 	ColorErr bool
-	// Quiet drops progress; results and errors still print.
+	// Quiet drops progress; results, warnings and errors still print.
 	Quiet bool
 }
 
@@ -69,6 +70,12 @@ func (p *Printer) Progress() io.Writer {
 		return io.Discard
 	}
 	return p.Err
+}
+
+// Warn writes a "warning:" line to stderr. --quiet keeps it: a warning
+// names something that still needs the user.
+func (p *Printer) Warn(msg string) {
+	fmt.Fprintln(p.Err, paint(p.ColorErr, ansiYellow, "warning:")+" "+msg)
 }
 
 // Error writes the one-line "error:" form to stderr. An exitcode.Error

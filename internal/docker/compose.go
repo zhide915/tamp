@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -43,17 +44,34 @@ func (d *Daemon) cli(ctx context.Context, dir string, stdin io.Reader, out io.Wr
 	if out == nil {
 		out = io.Discard
 	}
-	// Both streams are progress: compose and build write it to stderr.
-	cmd.Stdout, cmd.Stderr = out, out
+	// Both streams are progress: compose and build write it to stderr. The
+	// copy is read only to tell a taken port from other failures.
+	var seen bytes.Buffer
+	cmd.Stdout = io.MultiWriter(out, &seen)
+	cmd.Stderr = cmd.Stdout
 	if err := cmd.Run(); err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return exitcode.New(exitcode.CodeDockerUnavailable,
 				"the docker command is not on PATH",
 				"install Docker Desktop, or add the docker CLI with its compose plugin to PATH")
 		}
+		if portTaken(seen.String()) {
+			return fmt.Errorf("docker %s failed: %w", args[0], ErrPortTaken)
+		}
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("docker %s failed: %v", args[0], err),
 			"fix what the docker output above names")
 	}
 	return nil
+}
+
+// portTaken reads Docker's wording for a publish that could not bind: the
+// engine's own, and Docker Desktop's, whose port forwarder binds on the host.
+func portTaken(output string) bool {
+	for _, s := range []string{"port is already allocated", "address already in use", "ports are not available"} {
+		if strings.Contains(output, s) {
+			return true
+		}
+	}
+	return false
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -17,9 +18,9 @@ type globals struct {
 	quiet bool
 }
 
-func newRootCommand(p *ui.Printer, dc docker.Client) *cobra.Command {
+func newRootCommand(p *ui.Printer, dc docker.Client, openURL func(context.Context, string) error) *cobra.Command {
 	var g globals
-	manager := func() *env.Manager { return env.NewManager(p, dc) }
+	manager := func() *env.Manager { return env.NewManager(p, dc, openURL) }
 
 	root := &cobra.Command{
 		Use:   "tamp",
@@ -50,12 +51,13 @@ func newRootCommand(p *ui.Printer, dc docker.Client) *cobra.Command {
 
 	flags := root.PersistentFlags()
 	flags.StringVarP(&g.env, "env", "e", "", "the environment to act on, by name")
-	flags.BoolVar(&g.quiet, "quiet", false, "print only results and errors")
+	flags.BoolVar(&g.quiet, "quiet", false, "print only results, warnings and errors")
 	// run applies --no-color from the raw arguments.
 	flags.Bool("no-color", false, "print without color")
 
 	root.AddCommand(newNewCommand(manager))
 	root.AddCommand(newStartCommand(manager))
+	root.AddCommand(newOpenCommand(manager))
 	root.AddCommand(newVersionCommand(p))
 	return root
 }
