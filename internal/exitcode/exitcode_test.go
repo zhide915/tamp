@@ -6,7 +6,6 @@ import (
 	"github.com/zhide915/tamp/internal/exitcode"
 )
 
-// No command returns 3 or 5 yet, so the CLI tests cannot pin those.
 func TestEveryCodeKeepsItsDocumentedNumber(t *testing.T) {
 	for _, tc := range []struct {
 		code exitcode.Code

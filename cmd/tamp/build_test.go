@@ -481,11 +481,12 @@ func TestComposeNamesTheProjectAsAStringWhateverTheEnvironmentIsCalled(t *testin
 	}
 }
 
-// benchExecs is the command lines of the execs in the frappe container.
+// benchExecs are the commands run in the frappe container, without the
+// read-only listing of its sites.
 func benchExecs(execs []docker.Exec) []string {
 	var lines []string
 	for _, e := range execs {
-		if e.Container == frappeContainer {
+		if e.Container == frappeContainer && !slices.Equal(e.Cmd, frappe.ListSites()) {
 			lines = append(lines, strings.Join(e.Cmd, " "))
 		}
 	}

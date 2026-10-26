@@ -9,6 +9,7 @@ TAMP=$(cd "$(dirname "$TAMP")" && pwd)/$(basename "$TAMP")
 WORK=$(mktemp -d)
 ENV_DIR=$WORK/erp-dev
 FRAPPE=erp-dev-frappe-1
+CADDYFILE=$HOME/.tamp/router/Caddyfile
 
 cleanup() {
   "$TAMP" remove -e erp-dev --yes --quiet || true
@@ -176,13 +177,50 @@ printf '\n[[sites]]\n  host = "erp.localhost"\n' >>tamp.toml
   fail "tamp start restarted the router instead of reloading it"
 pongs erp.localhost || fail "erp.localhost does not answer through the router"
 
+say "tamp site add writes the recipe, creates the site, and routes it"
+"$TAMP" site add blog.localhost
+grep -qx '  host = "blog.localhost"' tamp.toml || fail "the recipe lacks blog.localhost: $(cat tamp.toml)"
+grep -q '^http://blog.localhost {' "$CADDYFILE" || fail "the Caddyfile does not route blog.localhost"
+pongs blog.localhost || fail "blog.localhost does not answer through the router"
+
+say "tamp site add of a host that is not *.localhost exits 2"
+code=0
+"$TAMP" site add blog.example.com || code=$?
+[ "$code" = 2 ] || fail "exit code $code, want 2"
+
+say "tamp site list prints each site with its URL"
+out=$("$TAMP" site list)
+echo "$out"
+grep -Eq '^blog\.localhost +http://blog\.localhost$' <<<"$out" || fail "tamp site list does not show blog.localhost"
+
+say "tamp site remove without --yes exits 5 and keeps the site"
+code=0
+"$TAMP" site remove blog.localhost || code=$?
+[ "$code" = 5 ] || fail "exit code $code, want 5"
+docker exec "$FRAPPE" test -f sites/blog.localhost/site_config.json || fail "the site is gone"
+
+say "tamp site remove --yes drops the site, edits the recipe, and the route is gone"
+"$TAMP" site remove blog.localhost --yes
+if docker exec "$FRAPPE" test -e sites/blog.localhost; then fail "sites/blog.localhost remains"; fi
+if grep -q 'blog.localhost' tamp.toml; then fail "the recipe still lists blog.localhost"; fi
+if grep -q 'blog.localhost' "$CADDYFILE"; then fail "the Caddyfile still routes blog.localhost"; fi
+pongs shop.localhost || fail "shop.localhost stopped answering after the remove"
+
+say "start warns about a site the recipe does not list, and deletes nothing"
+cp tamp.toml "$WORK/tamp.toml.sites"
+printf 'frappe = "version-15"\n\n[[sites]]\n  host = "shop.localhost"\n' >tamp.toml
+out=$("$TAMP" start 2>&1)
+echo "$out"
+grep -q 'warning: the bench holds the site erp.localhost, which the recipe does not list' <<<"$out" ||
+  fail "start did not warn about erp.localhost"
+docker exec "$FRAPPE" test -f sites/erp.localhost/site_config.json || fail "start deleted erp.localhost"
+cp "$WORK/tamp.toml.sites" tamp.toml
+
 say "the frappe container outlives honcho, and runs the bench's processes again"
 docker exec "$FRAPPE" bash -c 'for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = honcho ] && kill -TERM "${p#/proc/}"; done; true'
 sleep 3
 [ "$(docker inspect --format '{{ .State.Running }}' "$FRAPPE")" = true ] || fail "the frappe container exited with honcho"
 pongs shop.localhost || fail "shop.localhost did not come back after honcho exited"
-
-CADDYFILE=$HOME/.tamp/router/Caddyfile
 
 say "tamp stop stops the containers and takes the sites off the router"
 "$TAMP" stop

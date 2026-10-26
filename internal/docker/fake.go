@@ -30,6 +30,9 @@ type Fake struct {
 	// ExecFails fails each exec whose command line contains a key, with its
 	// error: how a test plants a failure partway through a build.
 	ExecFails map[string]error
+	// ExecFailsFirst fails the first n execs whose command line contains a
+	// key: how a test models a command that works once retried.
+	ExecFailsFirst map[string]int
 	// ExecOutput writes its value to the stderr of each exec whose command
 	// line contains its key, as the command's own log.
 	ExecOutput map[string]string
@@ -175,12 +178,31 @@ func (f *Fake) Exec(_ context.Context, e Exec) error {
 			fmt.Fprint(e.Stderr, out)
 		}
 	}
+	for fragment, n := range f.ExecFailsFirst {
+		if strings.Contains(line, fragment) && n > 0 {
+			f.ExecFailsFirst[fragment] = n - 1
+			return fmt.Errorf("%s failed", line)
+		}
+	}
 	for fragment, err := range f.ExecFails {
 		if strings.Contains(line, fragment) {
 			return err
 		}
 	}
 	switch {
+	case slices.Equal(e.Cmd, frappe.ListSites()):
+		if e.Stdout != nil {
+			for _, host := range f.sites(e.Container) {
+				fmt.Fprintln(e.Stdout, host)
+			}
+		}
+	case len(e.Cmd) > 2 && e.Cmd[0] == "bench" && e.Cmd[1] == "drop-site":
+		// bench moves the site's folder out of sites/.
+		for path := range f.files[e.Container] {
+			if strings.HasPrefix(path, frappe.SitesDir+"/"+e.Cmd[2]+"/") {
+				delete(f.files[e.Container], path)
+			}
+		}
 	case strings.Contains(line, "bench init"):
 		f.put(e.Container, frappe.CommonSiteConfig, BenchInitConfig)
 		f.put(e.Container, frappe.SitesDir+"/apps.txt", "frappe\n")
@@ -188,6 +210,20 @@ func (f *Fake) Exec(_ context.Context, e Exec) error {
 		return f.setSiteConfig(e.Container, e.Cmd[2], e.Cmd[5], e.Cmd[6])
 	}
 	return nil
+}
+
+// sites are the hosts whose site config is in the container, sorted.
+func (f *Fake) sites(container string) []string {
+	var hosts []string
+	for path := range f.files[container] {
+		rest, ok := strings.CutPrefix(path, frappe.SitesDir+"/")
+		host, isConfig := strings.CutSuffix(rest, "/site_config.json")
+		if ok && isConfig && !strings.Contains(host, "/") {
+			hosts = append(hosts, host)
+		}
+	}
+	slices.Sort(hosts)
+	return hosts
 }
 
 // setSiteConfig is `bench --site <host> set-config -p <key> <value>`, for a

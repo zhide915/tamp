@@ -83,7 +83,7 @@ func (m *Manager) Remove(envFlag string, yes bool) error {
 	if err := m.reroute(ctx, t.name); err != nil {
 		return err
 	}
-	m.p.OK(fmt.Sprintf("removed environment %s; its directory %s remains", t.name, t.dir))
+	m.p.OK(fmt.Sprintf("removed environment %s, and kept its directory %s", t.name, t.dir))
 	return nil
 }
 
@@ -106,7 +106,7 @@ func (m *Manager) List() error {
 	}
 	slices.Sort(names)
 	if len(names) == 0 {
-		m.p.Step("no environment has containers; create one with `tamp new <path> --frappe <branch>`")
+		m.p.Step("no environment has containers: create one with `tamp new <path> --frappe <branch>`")
 		return nil
 	}
 	width := 0
@@ -139,7 +139,7 @@ func (m *Manager) Status(envFlag string) error {
 	m.p.Print("directory: " + t.dir)
 	m.p.Print("containers:")
 	if len(containers) == 0 {
-		m.p.Print("  none; build them with " + t.command("start"))
+		m.p.Print("  none: build them with " + t.command("start"))
 	}
 	width := 0
 	for _, c := range containers {

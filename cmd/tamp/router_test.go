@@ -240,7 +240,7 @@ func TestAHostnameTwoEnvironmentsListGoesToTheFirstByNameWithAWarning(t *testing
 	r := c.run(t, "start", "--quiet")
 
 	r.assertCode(t, exitcode.CodeOK)
-	if want := "warning: alpha and zeta both list shop.localhost; the router sends it to alpha\n"; r.stderr != want {
+	if want := "warning: alpha and zeta both list shop.localhost, so the router sends it to alpha\n"; r.stderr != want {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
 	caddyfile := c.caddyfile(t)

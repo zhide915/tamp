@@ -68,7 +68,7 @@ func (m *Manager) routes(ctx context.Context, except string) (router.Router, []r
 	}
 	envs, dups := router.Resolve(envs)
 	for _, d := range dups {
-		m.p.Warn(fmt.Sprintf("%s and %s both list %s; the router sends it to %s", d.Winner, d.Loser, d.Host, d.Winner))
+		m.p.Warn(fmt.Sprintf("%s and %s both list %s, so the router sends it to %s", d.Winner, d.Loser, d.Host, d.Winner))
 	}
 
 	r, err := m.router()

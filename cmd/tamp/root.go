@@ -62,6 +62,7 @@ func newRootCommand(p *ui.Printer, dc docker.Client, openURL func(context.Contex
 	root.AddCommand(newListCommand(manager))
 	root.AddCommand(newStatusCommand(manager, &g))
 	root.AddCommand(newOpenCommand(manager, &g))
+	root.AddCommand(newSiteCommand(manager, &g))
 	root.AddCommand(newVersionCommand(p))
 	return root
 }

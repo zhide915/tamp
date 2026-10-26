@@ -60,6 +60,20 @@ func NewSite(host string) []string {
 		"--admin-password", AdminPassword}
 }
 
+// DropSite drops a site and its database. Force drops one that bench
+// new-site never finished.
+func DropSite(host string) []string {
+	return []string{"bench", "drop-site", host,
+		"--db-root-password", DBRootPassword, "--no-backup", "--force"}
+}
+
+// ListSites prints the name of each site in the bench, one per line.
+func ListSites() []string {
+	return []string{"bash", "-c",
+		`cd "$1" && for f in */site_config.json; do if [ -e "$f" ]; then echo "${f%/site_config.json}"; fi; done`,
+		"tamp", SitesDir}
+}
+
 // DeveloperMode turns on developer mode in a site's own config.
 func DeveloperMode(host string) []string {
 	return []string{"bench", "--site", host, "set-config", "-p", "developer_mode", "1"}

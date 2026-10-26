@@ -29,6 +29,6 @@ func newNewCommand(manager func() *env.Manager) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&frappe, "frappe", "", "the Frappe branch: "+env.FrappeBranchList())
-	cmd.Flags().StringArrayVar(&sites, "site", nil, "a *.localhost site to create; repeat for more")
+	cmd.Flags().StringArrayVar(&sites, "site", nil, "a *.localhost site to create: repeat the flag for more")
 	return cmd
 }

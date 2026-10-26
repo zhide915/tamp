@@ -1,10 +1,13 @@
 package env
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -45,7 +48,7 @@ func (m *Manager) build(t target, r Recipe) error {
 	if err := m.checkVersion(ctx, t, r); err != nil {
 		return err
 	}
-	return t.resume(m.steps(ctx, t.dir, r))
+	return t.resume(m.steps(ctx, t, r))
 }
 
 // resume adds to err's fix the start that resumes the build: nothing rolls
@@ -118,8 +121,8 @@ func (t target) elsewhere() string {
 	return ""
 }
 
-func (m *Manager) steps(ctx context.Context, dir string, r Recipe) error {
-	name := filepath.Base(dir)
+func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
+	dir, name := t.dir, t.name
 	out := m.p.Progress()
 
 	image := imageBuild(r.Frappe)
@@ -167,12 +170,15 @@ func (m *Manager) steps(ctx context.Context, dir string, r Recipe) error {
 		return err
 	}
 	for _, s := range r.Sites {
-		if err := b.ensureSite(s.Host); err != nil {
+		if err := b.ensureSite(t, s.Host); err != nil {
 			return err
 		}
 	}
 	m.p.Step("routing the sites")
 	if err := m.route(ctx); err != nil {
+		return err
+	}
+	if err := b.warnUnlisted(t, r); err != nil {
 		return err
 	}
 	m.p.OK("environment " + name + " is built")
@@ -216,7 +222,7 @@ func (b bench) configure(branch string) error {
 
 // ensureSite creates the site or finishes tamp's steps on it. A site that bench
 // new-site never finished stops the build: tamp neither skips nor recreates it.
-func (b bench) ensureSite(host string) error {
+func (b bench) ensureSite(t target, host string) error {
 	_, err := b.read(frappe.SiteConfig(host))
 	switch {
 	case errors.Is(err, docker.ErrNotExist):
@@ -233,7 +239,7 @@ func (b bench) ensureSite(host string) error {
 		if _, err := b.read(frappe.SiteInstalled(host)); errors.Is(err, docker.ErrNotExist) {
 			return exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("the site %s was only partly created", host),
-				fmt.Sprintf("run `tamp site remove %s --yes`", host))
+				"run "+t.command("site remove "+host+" --yes")+t.in())
 		} else if err != nil {
 			return err
 		}
@@ -262,4 +268,21 @@ func (b bench) read(path string) ([]byte, error) {
 func (b bench) run(cmd []string) error {
 	out := b.m.p.Progress()
 	return b.m.docker.Exec(b.ctx, docker.Exec{Container: b.container, Cmd: cmd, Stdout: out, Stderr: out})
+}
+
+// warnUnlisted names each site the bench holds that the recipe does not
+// list. start deletes nothing, so the user decides.
+func (b bench) warnUnlisted(t target, r Recipe) error {
+	var out bytes.Buffer
+	if err := b.m.docker.Exec(b.ctx, docker.Exec{Container: b.container, Cmd: frappe.ListSites(), Stdout: &out}); err != nil {
+		return err
+	}
+	for _, host := range strings.Fields(out.String()) {
+		if slices.Contains(r.hosts(), host) {
+			continue
+		}
+		b.m.p.Warn(fmt.Sprintf("the bench holds the site %s, which the recipe does not list: drop it with %s%s",
+			host, t.command("site remove "+host+" --yes"), t.in()))
+	}
+	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -129,7 +130,9 @@ func (r Router) Apply(ctx context.Context, envs []Env) error {
 	}
 	// A running router whose compose file changed is brought up again, so a
 	// new template reaches it.
+	upped := false
 	if old, err := os.ReadFile(filepath.Join(r.Dir, composeFile)); !running || err != nil || !bytes.Equal(old, compose.Bytes()) {
+		upped = true
 		if err := r.up(ctx, compose.Bytes()); err != nil {
 			return err
 		}
@@ -140,7 +143,11 @@ func (r Router) Apply(ctx context.Context, envs []Env) error {
 		}
 	}
 	if running {
-		if err := r.reload(ctx); err != nil {
+		tries := 1
+		if upped {
+			tries = reloadTries
+		}
+		if err := r.reload(ctx, tries); err != nil {
 			return err
 		}
 	}
@@ -162,7 +169,7 @@ func (r Router) Reload(ctx context.Context, envs []Env) error {
 	if err != nil || !running {
 		return err
 	}
-	return r.reload(ctx)
+	return r.reload(ctx, 1)
 }
 
 // Leave detaches the router from a network, if it is on it, so the network
@@ -211,17 +218,38 @@ func findPortCommand() string {
 	return fmt.Sprintf("`sudo lsof -i :%d`", Port)
 }
 
-// reload prints Caddy's JSON log only when the reload fails, for the error's
-// "output above".
-func (r Router) reload(ctx context.Context) error {
+// A recreated router's admin API may not listen yet, so a reload right after
+// up is tried this often, this far apart.
+const (
+	reloadTries = 10
+	reloadWait  = 500 * time.Millisecond
+)
+
+// reload tries Caddy's reload up to tries times. It prints Caddy's JSON log
+// only when the last try fails, for the error's "output above".
+func (r Router) reload(ctx context.Context, tries int) error {
 	var log bytes.Buffer
-	err := r.Docker.Exec(ctx, docker.Exec{
-		Container: Container,
-		Cmd:       []string{"caddy", "reload", "--config", mountDir + "/" + Caddyfile, "--adapter", "caddyfile"},
-		Stdout:    &log,
-		Stderr:    &log,
-	})
-	if err != nil && r.Out != nil {
+	var err error
+	for i := range tries {
+		if i > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(reloadWait):
+			}
+		}
+		log.Reset()
+		err = r.Docker.Exec(ctx, docker.Exec{
+			Container: Container,
+			Cmd:       []string{"caddy", "reload", "--config", mountDir + "/" + Caddyfile, "--adapter", "caddyfile"},
+			Stdout:    &log,
+			Stderr:    &log,
+		})
+		if err == nil {
+			return nil
+		}
+	}
+	if r.Out != nil {
 		_, _ = r.Out.Write(log.Bytes())
 	}
 	return err
