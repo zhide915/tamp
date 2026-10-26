@@ -120,6 +120,16 @@ func TestAVersion15EnvironmentRunsMariaDB1011(t *testing.T) {
 	}
 }
 
+// --connect fails while the entrypoint's socket-only init server runs, so
+// the bench never starts against a half-initialised database.
+func TestMariaDBIsHealthyOnlyOnceTheRealServerAnswers(t *testing.T) {
+	_, body := generated(t)
+
+	if !strings.Contains(body, `test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]`) {
+		t.Errorf("compose.yaml does not health-check MariaDB with the image's healthcheck.sh --connect --innodb_initialized:\n%s", body)
+	}
+}
+
 // Bound to loopback: a development database.
 func TestOnlyMariaDBPublishesAHostPort(t *testing.T) {
 	e, body := generated(t)

@@ -83,9 +83,8 @@ services:
     volumes:
       - db:/var/lib/mysql
     healthcheck:
-      # Not the image's healthcheck.sh: 10.8 never provisions its healthcheck
-      # user. Bootstrap is socket-only, so answering TCP means the real server.
-      test: ["CMD-SHELL", "mariadb-admin ping --protocol=tcp -uroot -p\"$(cat /run/secrets/{{ .DBSecretName }})\" --silent"]
+      # --connect fails while the entrypoint's socket-only init server runs.
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
       timeout: 5s
       retries: 20
