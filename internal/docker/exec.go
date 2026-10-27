@@ -66,12 +66,23 @@ func (d *Daemon) exec(ctx context.Context, e Exec, stdin io.Reader) error {
 		return execError(e, err)
 	}
 	if res.ExitCode != 0 {
-		return exitcode.New(exitcode.CodeFailed,
+		return &ExitError{Status: res.ExitCode, Err: exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s exited %d in %s", commandLine(e.Cmd), res.ExitCode, e.Container),
-			"fix what the output above names")
+			"fix what the output above names")}
 	}
 	return nil
 }
+
+// ExitError is Exec's answer for a command that ran and exited non-zero, as
+// against one that Docker could not run.
+type ExitError struct {
+	Status int
+	Err    *exitcode.Error
+}
+
+func (e *ExitError) Error() string { return e.Err.Error() }
+
+func (e *ExitError) Unwrap() error { return e.Err }
 
 func (d *Daemon) ReadFile(ctx context.Context, container, path string) ([]byte, error) {
 	_, api, err := d.connect()

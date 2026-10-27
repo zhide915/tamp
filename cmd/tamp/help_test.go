@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -127,4 +128,32 @@ func TestTheREADMECommandSectionIsTheHelpOfEveryCommand(t *testing.T) {
 		return
 	}
 	t.Errorf("README.md's command section is stale: run `go test ./cmd/tamp -run TestTheREADMECommandSectionIsTheHelpOfEveryCommand -update-readme`")
+}
+
+func TestTheHelpOfEachCommandThatRewritesTheRecipeSaysItDropsItsComments(t *testing.T) {
+	c := sandbox(t)
+	for _, path := range [][]string{{"start"}, {"site", "add"}, {"site", "remove"}, {"app", "add"}, {"app", "remove"}} {
+		r := c.run(t, append(path, "--help")...)
+
+		r.assertCode(t, exitcode.CodeOK)
+		if !regexp.MustCompile(`.
+It rewrites tamp.toml[^
+]*, which drops the recipe's comments.
+`).MatchString(r.stdout) {
+			t.Errorf("`tamp %s --help` = %q, want it to say the rewrite drops the recipe's comments", strings.Join(path, " "), r.stdout)
+		}
+	}
+}
+
+func TestStartRewritesTheRecipeOnlyToRecordAnAppsNameOrBranch(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--app", "erpnext#version-15", "--site", "shop.localhost")
+	body := "# the team's recipe\n" + readFile(t, filepath.Join(dir, "tamp.toml"))
+	writeRecipe(t, dir, body)
+
+	c.run(t, "start").assertCode(t, exitcode.CodeOK)
+
+	if got := readFile(t, filepath.Join(dir, "tamp.toml")); got != body {
+		t.Errorf("tamp.toml = %q, want it untouched: %q", got, body)
+	}
 }

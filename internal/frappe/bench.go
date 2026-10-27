@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"strconv"
 )
 
 // The bench lives in the bench volume, with apps/ synced from the host.
@@ -116,6 +117,52 @@ watch: bench watch
 schedule: bench schedule
 worker: bench worker
 `
+
+// HonchoExits is where the frappe container logs each time honcho exits on
+// its own, as "<unix time> <exit code>". The container empties it when it
+// starts, and each build before it waits for the sites.
+const HonchoExits = "/tmp/tamp-honcho-exits"
+
+// The bench is crash looping when honcho exited on its own CrashExits times
+// or more in the last CrashWindow seconds, by the container's clock. honcho
+// stops every process when one exits, and the container runs it again 5 s
+// later; tamp's own stops signal it, which the log leaves out.
+const (
+	CrashExits  = 2
+	CrashWindow = 120
+)
+
+// recent prints the exit code of each exit in the log $1 from the last
+// CrashWindow seconds, one per line.
+var recent = `recent() {
+  now=$(date +%s)
+  if [ -f "$1" ]; then
+    while read -r at code; do
+      if [ "$at" -ge $((now - ` + strconv.Itoa(CrashWindow) + `)) ]; then echo "$code"; fi
+    done <"$1"
+  fi
+}
+`
+
+// RecentExits prints the exit code of each time honcho exited on its own in
+// the last CrashWindow seconds, one per line. It only reads.
+func RecentExits() []string {
+	return []string{"bash", "-c", recent + `recent "$1"`, "tamp", HonchoExits}
+}
+
+// GaveUp is WaitForSite's exit code when the site never answered.
+const GaveUp = 1
+
+// WaitForSite polls a site's ping on the web server, inside the container,
+// until it answers 200. It gives up after seconds, or at once when the bench
+// is crash looping, and exits GaveUp.
+func WaitForSite(host string, seconds int) []string {
+	return []string{"bash", "-c", recent + `deadline=$((SECONDS + $3))
+until curl -sf --max-time 5 -o /dev/null -H "Host: $1" http://127.0.0.1:` + strconv.Itoa(WebPort) + `/api/method/ping; do
+  if [ "$(recent "$2" | wc -l)" -ge ` + strconv.Itoa(CrashExits) + ` ] || [ "$SECONDS" -ge "$deadline" ]; then exit ` + strconv.Itoa(GaveUp) + `; fi
+  sleep 1
+done`, "tamp", host, HonchoExits, strconv.Itoa(seconds)}
+}
 
 // Settings are the bench settings tamp owns, keyed as Frappe reads them.
 // dbHost, redisCache and redisQueue are the services' hostnames.

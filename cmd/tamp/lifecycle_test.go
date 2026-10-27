@@ -11,6 +11,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
 	"github.com/zhide915/tamp/internal/router"
 )
 
@@ -262,13 +263,56 @@ func TestAVersionLabelMismatchExits1WithTheFixAndBuildsNothing(t *testing.T) {
 	r := c.run(t, "start")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, "version-15", "check out version-16 in apps/frappe, then `tamp remove --yes` and `tamp start`")
+	r.assertOneLineError(t, "version-15", versionFix+", then run `tamp remove --yes` and `tamp start`")
 	if !strings.HasSuffix(r.stderr, "and `tamp start`\n") {
 		t.Errorf("stderr = %q, want the fix to end at `tamp start`", r.stderr)
 	}
 	assertOnlyReads(t, c.callsSince(calls))
 	if got := git(t, filepath.Join(dir, "apps", "frappe"), "branch", "--show-current"); got != "version-15" {
 		t.Errorf("apps/frappe is on %s, want it untouched on version-15", got)
+	}
+}
+
+const versionFix = "run `tamp stop`, fetch and check out version-16 with `git -C apps/frappe remote set-branches --add upstream version-16`, `git -C apps/frappe fetch --depth 1 upstream version-16` and `git -C apps/frappe checkout version-16`"
+
+func TestFollowingTheVersionMismatchFixOnTampsShallowCloneBuildsTheRecipesBranch(t *testing.T) {
+	c := sandbox(t)
+	sync := c.mutagen()
+	dir := c.newIn(t, "erp-dev")
+	writeRecipe(t, dir, "frappe = \"version-16\"\n")
+	r := c.run(t, "start", "--quiet")
+	r.assertCode(t, exitcode.CodeFailed)
+
+	// The user runs each command the fix names, as printed, in order.
+	commands := regexp.MustCompile("`([^`]*)`").FindAllStringSubmatch(r.stderr, -1)
+	if len(commands) != 6 {
+		t.Fatalf("stderr = %q, want a fix of six commands", r.stderr)
+	}
+	for _, cmd := range commands {
+		words := strings.Fields(cmd[1])
+		switch words[0] {
+		case "git":
+			// On Windows, git writing packs into a watching sync fails.
+			if s, err := sync.Peek(context.Background(), "tamp-erp--dev"); err != nil || s == nil || !s.Paused {
+				t.Errorf("the sync session = %v, %v when the fix runs git, want it paused", s, err)
+			}
+			git(t, dir, words[1:]...)
+		case "tamp":
+			c.run(t, words[1:]...).assertCode(t, exitcode.CodeOK)
+		default:
+			t.Fatalf("the fix names %q, want only git and tamp", cmd[1])
+		}
+	}
+
+	if got := git(t, filepath.Join(dir, "apps", "frappe"), "branch", "--show-current"); got != "version-16" {
+		t.Errorf("apps/frappe is on %s, want version-16", got)
+	}
+	if got := git(t, filepath.Join(dir, "apps", "frappe"), "rev-parse", "--abbrev-ref", "version-16@{upstream}"); got != "upstream/version-16" {
+		t.Errorf("version-16 tracks %q, want upstream/version-16", got)
+	}
+	v, err := c.docker.InspectVolume(context.Background(), "erp-dev_bench")
+	if err != nil || v.Labels["tamp.frappe"] != "version-16" {
+		t.Errorf("bench volume = %v, %v, want one built for version-16", v, err)
 	}
 }
 
@@ -443,7 +487,7 @@ func TestWithEAVersionMismatchFixNamesTheDirectoryBecauseEFindsNothingAfterTheRe
 	r := c.run(t, "start", "-e", "erp-dev")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, "in "+dir+", check out version-16 in apps/frappe, then run `tamp remove --yes` and `tamp start`")
+	r.assertOneLineError(t, "in "+dir+", "+versionFix+", then run `tamp remove --yes` and `tamp start`")
 	if strings.Contains(r.stderr, "-e erp-dev") {
 		t.Errorf("stderr = %q, want no command with -e", r.stderr)
 	}
@@ -508,4 +552,117 @@ func TestAContainerDeletedByHandReadsAsPartlyRunningInListStatusContextAndDoctor
 	}
 	ctx.assertContains(t, "The environment is partly running: erp-dev-frappe-1 is missing. Start the rest with `tamp start -e erp-dev`")
 	doctor.assertContains(t, "the environment erp-dev is partly running: run `tamp start`")
+}
+
+func TestStatusReadsACrashLoopingBenchAsSuchAndNamesTheLogsCommand(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	crashing(c)
+
+	r := c.run(t, "status")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertContains(t, "environment erp-dev: crash looping\n")
+	if want := "warning: " + crashMsg + ": see why with `tamp logs frappe`\n"; !strings.Contains(r.stderr, want) {
+		t.Errorf("stderr = %q, want %q", r.stderr, want)
+	}
+}
+
+func TestOneExitOfHonchoIsNotACrashLoop(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.ExecStdout = map[string]string{frappe.HonchoExits: "1\n"}
+
+	r := c.run(t, "status")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertContains(t, "environment erp-dev: running\n")
+	if r.stderr != "" {
+		t.Errorf("stderr = %q, want nothing", r.stderr)
+	}
+}
+
+func TestListShowsACrashLoopingEnvironmentWithTheLogsFixByE(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	other := c.newIn(t, "other")
+	c.run(t, "stop").assertCode(t, exitcode.CodeOK)
+	t.Chdir(c.dir)
+	crashing(c)
+	execs := len(c.docker.Execs)
+
+	r := c.run(t, "list")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if !regexp.MustCompile(`(?m)^erp-dev +crash looping +` + regexp.QuoteMeta(dir) + `$`).MatchString(r.stdout) {
+		t.Errorf("stdout = %q, want erp-dev crash looping", r.stdout)
+	}
+	if !regexp.MustCompile(`(?m)^other +stopped +` + regexp.QuoteMeta(other) + `$`).MatchString(r.stdout) {
+		t.Errorf("stdout = %q, want the stopped other as before", r.stdout)
+	}
+	if want := "warning: " + crashMsg + ": see why with `tamp logs frappe -e erp-dev`\n"; r.stderr != want {
+		t.Errorf("stderr = %q, want %q", r.stderr, want)
+	}
+	for _, e := range c.docker.Execs[execs:] {
+		if e.Container != frappeContainer {
+			t.Errorf("list ran %q in %s, want nothing run in a stopped environment", e.Cmd, e.Container)
+		}
+	}
+}
+
+func TestListShowsEveryEnvironmentWhenOneBenchCannotBeAskedAboutCrashes(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	c.newIn(t, "other")
+	t.Chdir(c.dir)
+	c.docker.ExecFails = map[string]error{frappe.HonchoExits: exitcode.New(exitcode.CodeFailed,
+		"cannot run bash -c ... in erp-dev-frappe-1: container is paused", "check that the container is running with `docker ps`")}
+
+	r := c.run(t, "list")
+
+	r.assertCode(t, exitcode.CodeOK)
+	for _, name := range []string{"erp-dev", "other"} {
+		if !regexp.MustCompile(`(?m)^` + name + ` +running `).MatchString(r.stdout) {
+			t.Errorf("stdout = %q, want %s listed as its containers show it", r.stdout, name)
+		}
+		if !strings.Contains(r.stderr, "warning: cannot tell whether the bench processes of "+name+" keep crashing: cannot run") {
+			t.Errorf("stderr = %q, want a warning for %s", r.stderr, name)
+		}
+	}
+}
+
+const pausedWarning = "warning: erp-dev-frappe-1 is paused, so the environment's sites do not answer: unpause it with `docker unpause erp-dev-frappe-1`\n"
+
+func TestStatusNamesAPausedContainerPausedWithTheUnpauseFix(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+
+	r := c.run(t, "status")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertContains(t, "environment erp-dev: paused\n")
+	if !regexp.MustCompile(`(?m)^  erp-dev-frappe-1 +paused$`).MatchString(r.stdout) {
+		t.Errorf("stdout = %q, want erp-dev-frappe-1 paused", r.stdout)
+	}
+	if r.stderr != pausedWarning {
+		t.Errorf("stderr = %q, want %q", r.stderr, pausedWarning)
+	}
+}
+
+func TestListShowsAnEnvironmentWithAPausedContainerAsPausedWithTheUnpauseFix(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	t.Chdir(c.dir)
+	c.docker.Pause(frappeContainer)
+
+	r := c.run(t, "list")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if !regexp.MustCompile(`(?m)^erp-dev +paused +` + regexp.QuoteMeta(dir) + `$`).MatchString(r.stdout) {
+		t.Errorf("stdout = %q, want erp-dev paused", r.stdout)
+	}
+	if r.stderr != pausedWarning {
+		t.Errorf("stderr = %q, want %q", r.stderr, pausedWarning)
+	}
 }

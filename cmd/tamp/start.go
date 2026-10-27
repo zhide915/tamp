@@ -6,7 +6,7 @@ import (
 )
 
 func newStartCommand(manager func() *env.Manager, g *globals) *cobra.Command {
-	return &cobra.Command{
+	return rewritesRecipe(" to record the name or branch of a recipe app that lacks one", &cobra.Command{
 		Use:   "start",
 		Short: "Build whatever the recipe lists that is missing, and start the environment",
 		Example: "  tamp start\n" +
@@ -15,5 +15,5 @@ func newStartCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 		RunE: func(*cobra.Command, []string) error {
 			return manager().Start(g.env)
 		},
-	}
+	})
 }

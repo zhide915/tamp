@@ -33,7 +33,7 @@ func newSiteCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 }
 
 func newSiteAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
-	return &cobra.Command{
+	return rewritesRecipe("", &cobra.Command{
 		Use:   "add <host>",
 		Short: "Add a *.localhost site to the recipe, create it with every app, and route it",
 		Example: "  tamp site add blog.localhost\n" +
@@ -42,7 +42,7 @@ func newSiteAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().SiteAdd(g.env, args[0])
 		},
-	}
+	})
 }
 
 func newSiteListCommand(manager func() *env.Manager, g *globals) *cobra.Command {
@@ -71,5 +71,12 @@ func newSiteRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Comman
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm dropping the site's database")
+	return rewritesRecipe("", cmd)
+}
+
+// rewritesRecipe adds to a command's help that it rewrites tamp.toml, which
+// drops the recipe's comments. A non-empty when says when it does.
+func rewritesRecipe(when string, cmd *cobra.Command) *cobra.Command {
+	cmd.Long = cmd.Short + ".\nIt rewrites tamp.toml" + when + ", which drops the recipe's comments."
 	return cmd
 }

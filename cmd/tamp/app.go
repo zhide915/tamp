@@ -33,7 +33,7 @@ func newAppCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 }
 
 func newAppAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
-	return &cobra.Command{
+	return rewritesRecipe("", &cobra.Command{
 		Use:   "add <url|name>[#branch]",
 		Short: "Clone an app, or adopt the one in apps/, record it in the recipe, and install it on every site",
 		Example: "  tamp app add payments#version-15\n" +
@@ -42,7 +42,7 @@ func newAppAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().AppAdd(g.env, args[0])
 		},
-	}
+	})
 }
 
 func newAppListCommand(manager func() *env.Manager, g *globals) *cobra.Command {
@@ -71,5 +71,5 @@ func newAppRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Command
 		},
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deleting the app's data from every site")
-	return cmd
+	return rewritesRecipe("", cmd)
 }

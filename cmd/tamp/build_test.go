@@ -292,7 +292,7 @@ func TestAFailurePartwayInNewNamesTheDirectoryToStartInAndStartThereFinishesTheS
 	}
 }
 
-func TestStartStopsAtAPartlyCreatedSiteWithTheRemoveThenStartFix(t *testing.T) {
+func TestStartStopsAtAPartlyCreatedSiteWithTheRemoveThenAddFix(t *testing.T) {
 	c := sandbox(t)
 	c.docker.ExecFails = map[string]error{"new-site": exitcode.New(exitcode.CodeFailed,
 		"bench new-site shop.localhost exited 1 in erp-dev-frappe-1", "fix what the output above names")}
@@ -306,7 +306,10 @@ func TestStartStopsAtAPartlyCreatedSiteWithTheRemoveThenStartFix(t *testing.T) {
 		r := c.run(t, "start", "--quiet")
 
 		r.assertCode(t, exitcode.CodeFailed)
-		r.assertOneLineError(t, "shop.localhost", "run `tamp site remove shop.localhost --yes`, then run `tamp start`")
+		r.assertOneLineError(t, "shop.localhost", "run `tamp site remove shop.localhost --yes`, then `tamp site add shop.localhost`")
+		if strings.Contains(r.stderr, "tamp start") {
+			t.Errorf("stderr = %q, want no `tamp start`, which would not rebuild the removed site", r.stderr)
+		}
 		if again := c.docker.ExecLines()[execs:]; len(again) > 0 {
 			t.Errorf("start ran %q, want it to neither recreate nor finish the site", again)
 		}
@@ -486,14 +489,164 @@ func isSiteAppsList(cmd []string) bool {
 	return len(cmd) > 3 && slices.Equal(cmd, frappe.SiteApps(cmd[2]))
 }
 
+// isSiteWait reports whether cmd is part of every build's wait for its sites:
+// the reset of honcho's exits, the wait itself, or the read of the exits.
+func isSiteWait(cmd []string) bool {
+	return slices.Equal(cmd, []string{"rm", "-f", frappe.HonchoExits}) ||
+		slices.Equal(cmd, frappe.RecentExits()) ||
+		len(cmd) == 7 && cmd[2] == frappe.WaitForSite("", 0)[2]
+}
+
 // benchExecs are the commands run in the frappe container, without the
-// read-only listings of its sites and their apps.
+// read-only listings of its sites and their apps, and the wait for the sites.
 func benchExecs(execs []docker.Exec) []string {
 	var lines []string
 	for _, e := range execs {
-		if e.Container == frappeContainer && !slices.Equal(e.Cmd, frappe.ListSites()) && !isSiteAppsList(e.Cmd) {
+		if e.Container == frappeContainer && !slices.Equal(e.Cmd, frappe.ListSites()) && !isSiteAppsList(e.Cmd) && !isSiteWait(e.Cmd) {
 			lines = append(lines, strings.Join(e.Cmd, " "))
 		}
 	}
 	return lines
+}
+
+// crashing makes the frappe container report two exits of honcho on its own
+// in the last two minutes: a crash loop.
+func crashing(c *cli) {
+	c.docker.ExecStdout = map[string]string{frappe.HonchoExits: "1\n1\n"}
+}
+
+const crashMsg = "the bench processes of erp-dev keep crashing: honcho exited 2 times in the last 2 minutes"
+
+func TestStartWaitsForEachSiteToAnswerAfterTheRouterServesIt(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost", "--site", "erp.localhost")
+	execs := len(c.docker.Execs)
+
+	r := c.run(t, "start")
+
+	r.assertCode(t, exitcode.CodeOK)
+	lines := c.docker.ExecLines()[execs:]
+	reload := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, "caddy reload") })
+	var waited []string
+	for i, e := range c.docker.Execs[execs:] {
+		if len(e.Cmd) == 7 && e.Cmd[2] == frappe.WaitForSite("", 0)[2] {
+			if i < reload {
+				t.Errorf("the wait for %s ran before the router reloaded", e.Cmd[4])
+			}
+			if e.Container != frappeContainer {
+				t.Errorf("the wait ran in %s, want %s", e.Container, frappeContainer)
+			}
+			if secs, err := strconv.Atoi(e.Cmd[6]); err != nil || secs < 110 || secs > 120 {
+				t.Errorf("the wait for %s gets %q seconds, want about 120", e.Cmd[4], e.Cmd[6])
+			}
+			waited = append(waited, e.Cmd[4])
+		}
+	}
+	if reload < 0 || !slices.Equal(waited, []string{"shop.localhost", "erp.localhost"}) {
+		t.Errorf("execs = %q, want a router reload, then a wait for each site", lines)
+	}
+}
+
+func TestASiteThatNeverAnswersFailsStartWithExit1AndTheLogsFix(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.ExecFails = map[string]error{"/api/method/ping": probeGaveUp}
+
+	r := c.run(t, "start", "--quiet")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertOneLineError(t, "the site shop.localhost did not answer within 2 minutes: see why with `tamp logs frappe`, then run `tamp start`")
+}
+
+func TestACrashLoopWhileWaitingFailsStartWithTheCrashAndTheLogsFix(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.ExecFails = map[string]error{"/api/method/ping": probeGaveUp}
+	crashing(c)
+
+	r := c.run(t, "start", "-e", "erp-dev", "--quiet")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertOneLineError(t, crashMsg+": see why with `tamp logs frappe -e erp-dev`, then run `tamp start -e erp-dev`")
+}
+
+func TestACrashLoopAfterTheSitesAnswerIsAWarningAndStartExits0(t *testing.T) {
+	c := sandbox(t)
+	c.docker.ExecStdout = map[string]string{frappe.HonchoExits: "1\n1\n"}
+
+	r := c.run(t, "new", "erp-dev", "--frappe", "version-15", "--site", "shop.localhost")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if want := "warning: " + crashMsg + ": see why with `tamp logs frappe` in erp-dev\n"; !strings.Contains(r.stderr, want) {
+		t.Errorf("stderr = %q, want %q", r.stderr, want)
+	}
+}
+
+func TestEachBuildForgetsTheExitsOfHonchoBeforeItWaits(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	execs := len(c.docker.Execs)
+
+	c.run(t, "start").assertCode(t, exitcode.CodeOK)
+
+	lines := c.docker.ExecLines()[execs:]
+	forget := slices.Index(lines, "rm -f "+frappe.HonchoExits)
+	wait := slices.IndexFunc(c.docker.Execs[execs:], func(e docker.Exec) bool {
+		return len(e.Cmd) == 7 && e.Cmd[2] == frappe.WaitForSite("", 0)[2]
+	})
+	if forget < 0 || wait < forget {
+		t.Errorf("execs = %q, want honcho's exits removed before the wait", lines)
+	}
+}
+
+func TestTheFrappeContainerLogsEachExitOfHonchoThatNoSignalCaused(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15")
+
+	svc := services(t, c.docker.UpsOf("erp-dev")[0].Compose)["frappe"]
+
+	for _, want := range []string{
+		"rm -f /tmp/tamp-honcho-exits\n",
+		"code=$$?\n",
+		"130 | 143) ;;\n",
+		`*) echo "$$(date +%s) $$code" >>/tmp/tamp-honcho-exits ;;`,
+	} {
+		if !strings.Contains(svc, want) {
+			t.Errorf("the frappe service lacks %q:\n%s", want, svc)
+		}
+	}
+}
+
+// probeGaveUp is the wait for a site exiting 1, as it does on its timeout.
+var probeGaveUp = &docker.ExitError{Status: 1, Err: exitcode.New(exitcode.CodeFailed,
+	"bash -c ... exited 1 in erp-dev-frappe-1", "fix what the output above names")}
+
+func TestAWaitDockerCannotRunFailsStartWithDockersOwnErrorNotATimeout(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.ExecFails = map[string]error{"/api/method/ping": exitcode.New(exitcode.CodeFailed,
+		"cannot run bash -c ... in erp-dev-frappe-1: container is not running", "check that the container is running with `docker ps`")}
+
+	r := c.run(t, "start", "--quiet")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertOneLineError(t, "cannot run bash -c ... in erp-dev-frappe-1: container is not running: check that the container is running with `docker ps`, then run `tamp start`")
+	if strings.Contains(r.stderr, "did not answer") {
+		t.Errorf("stderr = %q, want Docker's error, not a timeout", r.stderr)
+	}
+}
+
+func TestAWaitThatExitsWithAnotherCodeThanItsGiveUpFailsStartWithThatExit(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.ExecFails = map[string]error{"/api/method/ping": &docker.ExitError{Status: 127, Err: exitcode.New(exitcode.CodeFailed,
+		"bash -c ... exited 127 in erp-dev-frappe-1", "fix what the output above names")}}
+
+	r := c.run(t, "start", "--quiet")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertOneLineError(t, "bash -c ... exited 127 in erp-dev-frappe-1: fix what the output above names, then run `tamp start`")
+	if strings.Contains(r.stderr, "did not answer") {
+		t.Errorf("stderr = %q, want the exit 127, not a timeout", r.stderr)
+	}
 }

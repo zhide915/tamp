@@ -52,6 +52,7 @@ type composeData struct {
 	BenchVolume, CacheVolume         string
 	BenchDir, AppsDir, CacheDir      string
 	Procfile, Paused, DBRootPassword string
+	HonchoExits                      string
 	Labels, RedisServices            []string
 	// BindApps bind-mounts apps/; otherwise the sync fills it in the bench volume.
 	BindApps bool
@@ -72,6 +73,7 @@ func renderCompose(name, dir, image string, r Recipe, bindApps bool) ([]byte, er
 		CacheDir:       frappe.CacheDir,
 		Procfile:       frappe.Procfile,
 		Paused:         frappe.Paused,
+		HonchoExits:    frappe.HonchoExits,
 		DBRootPassword: frappe.DBRootPassword,
 		RedisServices:  []string{redisCacheService, redisQueueService},
 		Labels:         []string{LabelEnv + ": " + quote(name), LabelPath + ": " + quote(dir)},
@@ -97,15 +99,23 @@ services:
     # Idles until tamp writes the Procfile, and while tamp pauses the bench.
     # Otherwise runs the bench's processes, and runs them again 5 s after
     # honcho exits: honcho stops them all when one exits, and the container
-    # must stay up for tamp to reach the bench.
+    # must stay up for tamp to reach the bench. Each exit that no signal
+    # caused is logged, so tamp can tell a crash loop. tamp stops honcho with
+    # SIGTERM, on which it exits 143.
     command:
       - bash
       - -c
       - |
         trap 'kill -TERM $$(jobs -p) 2>/dev/null; wait; exit 0' TERM INT
+        rm -f {{.HonchoExits}}
         while :; do
           if [ -f {{.Procfile}} ] && [ ! -e {{.Paused}} ]; then
             honcho start & wait $$!
+            code=$$?
+            case $$code in
+            130 | 143) ;;
+            *) echo "$$(date +%s) $$code" >>{{.HonchoExits}} ;;
+            esac
             sleep 5 & wait $$!
           else
             sleep 1 & wait $$!

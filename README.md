@@ -105,6 +105,8 @@ Each check prints a line, and each failure names its fix.
    tamp start
    ```
 
+   `tamp start`, `tamp new`, `tamp site add` and `tamp app add` build the environment, and return when every site answers. A site that does not answer within 2 minutes makes them exit 1, with the command that shows why. So does a bench whose processes keep crashing while they wait. A crash loop found after every site answered is a warning, and the command exits 0.
+
 Edit the code in `apps/` on the host. Run git on the host too, in each app's folder: the container has none of your credentials. On Linux, the container uses `apps/` directly. On Windows and macOS, tamp syncs `apps/` with the container through [Mutagen](https://mutagen.io), which it downloads itself.
 
 Run a command from the environment's directory, or name the environment with `-e` from anywhere else, such as `tamp status -e erp-dev`.
@@ -200,7 +202,7 @@ Run `tamp context -e erp-dev` at the start of each session.
 The recipe and apps:
 
 - The recipe pins branches, not commits, so two teammates who build on different days can get different code.
-- tamp rewrites `tamp.toml` when a command changes it, and drops its comments.
+- `tamp site add`, `tamp site remove`, `tamp app add` and `tamp app remove` rewrite `tamp.toml`. So does `tamp start`, or any other build, when a recipe app lacks a name or a branch, to record them. Each rewrite drops the recipe's comments.
 - A recipe key that tamp does not know makes `start`, `open`, `context`, `doctor`, and the `site` and `app` commands exit 1, so that tamp never drops the key when it rewrites the recipe. `list` and `status` warn and show no sites, and the router skips the environment with a warning.
 - tamp reads an app's name from `pyproject.toml`, or else from a literal `name="..."` in `setup.py`. It does not read `setup.cfg`.
 - tamp does not check an app `name` you edit by hand in the recipe against the app's package.
@@ -220,7 +222,7 @@ Finding an environment:
 
 Sites and the router:
 
-- `tamp start` does not wait for the web server. On a test machine, a site answered about 2 seconds after `tamp start` returned on a stopped environment, and at once after `tamp new`.
+- `tamp status`, `tamp list` and `tamp doctor` call a bench crash looping when its processes stopped on their own twice in the last 2 minutes. After you fix the cause, they say so until 2 minutes pass, or until `tamp start` runs.
 - Outside a browser, `*.localhost` may not resolve. Point a command-line tool at the router, such as `curl --resolve shop.localhost:80:127.0.0.1 http://shop.localhost`. In PowerShell, type `curl.exe`.
 - A site that fetches its own URL from inside the container may fail.
 - The router keeps running after you remove the last environment.
@@ -311,7 +313,8 @@ Examples:
 ### `tamp app add`
 
 ```text
-Clone an app, or adopt the one in apps/, record it in the recipe, and install it on every site
+Clone an app, or adopt the one in apps/, record it in the recipe, and install it on every site.
+It rewrites tamp.toml, which drops the recipe's comments.
 
 Usage:
   tamp app add <url|name>[#branch] [flags]
@@ -343,7 +346,8 @@ Examples:
 ### `tamp app remove`
 
 ```text
-Uninstall an app from every site and the bench, remove it from the recipe, and keep its clone
+Uninstall an app from every site and the bench, remove it from the recipe, and keep its clone.
+It rewrites tamp.toml, which drops the recipe's comments.
 
 Usage:
   tamp app remove <name> --yes [flags]
@@ -549,7 +553,8 @@ Examples:
 ### `tamp site add`
 
 ```text
-Add a *.localhost site to the recipe, create it with every app, and route it
+Add a *.localhost site to the recipe, create it with every app, and route it.
+It rewrites tamp.toml, which drops the recipe's comments.
 
 Usage:
   tamp site add <host> [flags]
@@ -581,7 +586,8 @@ Examples:
 ### `tamp site remove`
 
 ```text
-Drop a site and its database, remove it from the recipe, and take it off the router
+Drop a site and its database, remove it from the recipe, and take it off the router.
+It rewrites tamp.toml, which drops the recipe's comments.
 
 Usage:
   tamp site remove <host> --yes [flags]
@@ -598,7 +604,8 @@ Examples:
 ### `tamp start`
 
 ```text
-Build whatever the recipe lists that is missing, and start the environment
+Build whatever the recipe lists that is missing, and start the environment.
+It rewrites tamp.toml to record the name or branch of a recipe app that lacks one, which drops the recipe's comments.
 
 Usage:
   tamp start [flags]

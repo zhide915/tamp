@@ -37,7 +37,8 @@ type Client interface {
 	ComposeUp(ctx context.Context, p Project) error
 
 	// Exec runs a command in a running container as the image's user, in
-	// the image's working directory, and waits. A non-zero exit is an error.
+	// the image's working directory, and waits. A non-zero exit is an
+	// *ExitError.
 	Exec(ctx context.Context, e Exec) error
 	// ReadFile returns a file from a container, or an error wrapping
 	// ErrNotExist when the file is not there.
@@ -95,7 +96,10 @@ var ErrPortTaken = errors.New("a published port is taken")
 type Container struct {
 	Name    string
 	Running bool
-	Labels  map[string]string
+	// Paused is a container `docker pause` froze. A listing reads it as not
+	// running, an Inspect as running, as Docker does.
+	Paused bool
+	Labels map[string]string
 	// Networks maps each network the container is on to its aliases there.
 	Networks map[string][]string
 }

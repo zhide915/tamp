@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"time"
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -50,8 +51,22 @@ func (m *Manager) build(t target, r Recipe) error {
 }
 
 // resume adds to err's fix the start that resumes the build: nothing rolls
-// back, so every build failure ends in `tamp start`.
-func (t target) resume(err error) error { return t.again(err, "start") }
+// back, so every build failure ends in `tamp start`, except a fullFix.
+func (t target) resume(err error) error {
+	var full fullFix
+	if errors.As(err, &full) {
+		return full.err
+	}
+	return t.again(err, "start")
+}
+
+// fullFix is a build failure whose fix ends in a command that builds again
+// itself, so resume adds no `tamp start`.
+type fullFix struct{ err *exitcode.Error }
+
+func (f fullFix) Error() string { return f.err.Error() }
+
+func (f fullFix) Unwrap() error { return f.err }
 
 // again adds to err's fix the command that runs again what failed.
 func (t target) again(err error, args string) error {
@@ -98,11 +113,15 @@ func (m *Manager) checkVersion(ctx context.Context, t target, r Recipe) error {
 		return t.resume(err)
 	}
 	if built := v.Labels[LabelFrappe]; built != r.Frappe {
-		fix := fmt.Sprintf("check out %s in apps/frappe, then `tamp remove --yes` and `tamp start`", r.Frappe)
+		// tamp's clone holds one branch at depth 1, so the other is fetched
+		// first. On Windows a watching sync holds git's new pack files open,
+		// and the fetch fails, so the stop pauses the sync first.
+		checkout := fmt.Sprintf("run `tamp stop`, fetch and check out %[1]s with `git -C apps/frappe remote set-branches --add upstream %[1]s`, `git -C apps/frappe fetch --depth 1 upstream %[1]s` and `git -C apps/frappe checkout %[1]s`", r.Frappe)
+		fix := checkout + ", then run `tamp remove --yes` and `tamp start`"
 		// After the remove, -e finds nothing: only the directory names the
 		// environment.
 		if dir := t.elsewhere(); dir != "" {
-			fix = fmt.Sprintf("in %s, check out %s in apps/frappe, then run `tamp remove --yes` and `tamp start`", dir, r.Frappe)
+			fix = "in " + dir + ", " + fix
 		}
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("the bench of %s was built for Frappe %s, but the recipe names %s", t.name, built, r.Frappe), fix)
@@ -199,11 +218,65 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 	if err := m.route(ctx); err != nil {
 		return err
 	}
+	if err := m.waitForSites(ctx, t, r); err != nil {
+		return err
+	}
 	if err := b.warnUnlisted(t, r); err != nil {
 		return err
 	}
 	m.p.OK("environment " + name + " is built")
 	return nil
+}
+
+// siteWait is how long the build waits for its sites to answer. A stopped
+// environment's web server answers within about 15 s, and the 60 s target is
+// for a start that succeeds; a crash loop ends the wait at once.
+const siteWait = 2 * time.Minute
+
+// waitForSites waits until each site answers on the frappe container. The
+// router already serves the sites, so only Frappe's web server can lag, and
+// asking it directly also covers a hostname that the router sends to another
+// environment, whose recipe also lists it.
+func (m *Manager) waitForSites(ctx context.Context, t target, r Recipe) error {
+	container := frappeContainer(t.name)
+	// Exits from before this build would read as a crash loop that it fixed.
+	if err := m.docker.Exec(ctx, docker.Exec{Container: container, Cmd: []string{"rm", "-f", frappe.HonchoExits}}); err != nil {
+		return err
+	}
+	if len(r.Sites) > 0 {
+		m.p.Step("waiting for the sites to answer")
+	}
+	deadline := time.Now().Add(siteWait)
+	for _, s := range r.Sites {
+		err := m.docker.Exec(ctx, docker.Exec{
+			Container: container,
+			Cmd:       frappe.WaitForSite(s.Host, max(1, int(time.Until(deadline).Seconds()))),
+		})
+		if err == nil {
+			continue
+		}
+		// Only the probe's own give-up code says the site did not answer; any other
+		// failure is what it says.
+		var exited *docker.ExitError
+		if !errors.As(err, &exited) || exited.Status != frappe.GaveUp {
+			return err
+		}
+		crash, err := m.crashLoop(ctx, t)
+		switch {
+		case err != nil:
+			return err
+		case crash != nil:
+			return crash
+		}
+		return exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("the site %s did not answer within %d minutes", s.Host, int(siteWait.Minutes())),
+			"see why with "+t.command("logs frappe"))
+	}
+	crash, err := m.crashLoop(ctx, t)
+	if crash != nil {
+		m.p.Warn(crash.Error())
+	}
+	return err
 }
 
 // bench runs the bench steps in one environment's frappe container.
@@ -279,9 +352,11 @@ func (b bench) ensureSite(t target, host string) error {
 		return err
 	default:
 		if _, err := b.read(frappe.SiteInstalled(host)); errors.Is(err, docker.ErrNotExist) {
-			return exitcode.New(exitcode.CodeFailed,
+			// The remove takes the site out of the recipe, and the add puts it
+			// back and builds it.
+			return fullFix{exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("the site %s was only partly created", host),
-				"run "+t.command("site remove "+host+" --yes"))
+				"run "+t.command("site remove "+host+" --yes")+", then "+t.command("site add "+host))}
 		} else if err != nil {
 			return err
 		}

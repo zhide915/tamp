@@ -32,7 +32,7 @@ func (f *Fake) list(label string, all bool) []Container {
 		listed := c.Running || c.stale
 		if _, ok := c.Labels[label]; ok && (all || listed) {
 			out = append(out, c.clone())
-			out[len(out)-1].Running = listed
+			out[len(out)-1].Running = listed && !c.Paused
 		}
 	}
 	return out
@@ -225,3 +225,6 @@ func (f *Fake) composeVolumes(project, section string) map[string]string {
 	}
 	return names
 }
+
+// Pause freezes a container, as `docker pause` would.
+func (f *Fake) Pause(name string) { f.containers[name].Paused = true }

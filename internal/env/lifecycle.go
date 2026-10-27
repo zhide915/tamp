@@ -1,12 +1,15 @@
 package env
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/frappe"
 )
 
 // dbVolume is compose's name for the environment's db volume.
@@ -121,7 +124,8 @@ func (m *Manager) List() error {
 	for _, name := range names {
 		containers := byName[name]
 		dir := containers[0].Labels[LabelPath]
-		m.p.Print(fmt.Sprintf("%-*s  %-14s  %s", width, name, state(name, containers), dir))
+		st := m.benchState(ctx, target{name: name, dir: dir, flag: name}, containers)
+		m.p.Print(fmt.Sprintf("%-*s  %-14s  %s", width, name, st, dir))
 		for _, url := range m.siteURLs(name, dir) {
 			m.p.Print("  " + url)
 		}
@@ -140,7 +144,8 @@ func (m *Manager) Status(envFlag string) error {
 	if err != nil {
 		return err
 	}
-	m.p.Print(fmt.Sprintf("environment %s: %s", t.name, state(t.name, containers)))
+	st := m.benchState(ctx, t, containers)
+	m.p.Print(fmt.Sprintf("environment %s: %s", t.name, st))
 	m.p.Print("directory: " + t.dir)
 	m.p.Print("containers:")
 	if len(containers) == 0 {
@@ -152,7 +157,10 @@ func (m *Manager) Status(envFlag string) error {
 	}
 	for _, c := range containers {
 		running := "stopped"
-		if c.Running {
+		switch {
+		case c.Paused:
+			running = "paused"
+		case c.Running:
 			running = "running"
 		}
 		m.p.Print(fmt.Sprintf("  %-*s  %s", width, c.Name, running))
@@ -197,11 +205,57 @@ const (
 	stateRunning
 	stateStopped
 	statePartly
+	// stateCrashing is running, with honcho exiting again and again.
+	stateCrashing
+	// statePaused has a container that `docker pause` froze, which `tamp start`
+	// cannot start.
+	statePaused
 )
 
 // String is the state in a word or two, as list and status print it.
 func (s runState) String() string {
-	return [...]string{"not built", "running", "stopped", "partly running"}[s]
+	return [...]string{"not built", "running", "stopped", "partly running", "crash looping", "paused"}[s]
+}
+
+// benchState is state, with a running environment whose bench is crash
+// looping read as such, and a paused or crash looping one warned about. A
+// bench tamp cannot ask keeps the state its containers show, with a warning,
+// so one never hides the rest.
+func (m *Manager) benchState(ctx context.Context, t target, containers []docker.Container) runState {
+	st := state(t.name, containers)
+	if st == statePaused {
+		msg, fix := pausedFix(containers)
+		m.p.Warn(msg + ": " + fix)
+	}
+	if st != stateRunning {
+		return st
+	}
+	crash, err := m.crashLoop(ctx, t)
+	switch {
+	case err != nil:
+		m.p.Warn(fmt.Sprintf("cannot tell whether the bench processes of %s keep crashing: %v", t.name, err))
+	case crash != nil:
+		m.p.Warn(crash.Error())
+		return stateCrashing
+	}
+	return st
+}
+
+// crashLoop is the error for t's bench crash looping, or nil when it is not.
+// It runs a read-only query in the running frappe container.
+func (m *Manager) crashLoop(ctx context.Context, t target) (*exitcode.Error, error) {
+	var out bytes.Buffer
+	if err := m.docker.Exec(ctx, docker.Exec{Container: frappeContainer(t.name), Cmd: frappe.RecentExits(), Stdout: &out}); err != nil {
+		return nil, err
+	}
+	n := len(strings.Fields(out.String()))
+	if n < frappe.CrashExits {
+		return nil, nil
+	}
+	return exitcode.New(exitcode.CodeFailed,
+		fmt.Sprintf("the bench processes of %s keep crashing: honcho exited %d times in the last %d minutes",
+			t.name, n, frappe.CrashWindow/60),
+		"see why with "+t.command("logs frappe")), nil
 }
 
 // state counts the environment's services, so a container deleted by hand
@@ -216,6 +270,8 @@ func state(name string, containers []docker.Container) runState {
 	switch {
 	case len(containers) == 0:
 		return stateNotBuilt
+	case len(paused(containers)) > 0:
+		return statePaused
 	case up == 0:
 		return stateStopped
 	case up == len(containers) && len(missingContainers(name, containers)) == 0:
@@ -234,4 +290,27 @@ func missingContainers(name string, containers []docker.Container) []string {
 		}
 	}
 	return out
+}
+
+// paused names the containers that `docker pause` froze.
+func paused(containers []docker.Container) []string {
+	var names []string
+	for _, c := range containers {
+		if c.Paused {
+			names = append(names, c.Name)
+		}
+	}
+	return names
+}
+
+// pausedFix says which containers are paused, and how to unpause them:
+// `tamp start` cannot, as Docker refuses to start a paused container.
+func pausedFix(containers []docker.Container) (msg, fix string) {
+	names := paused(containers)
+	verb, them := "is", "it"
+	if len(names) > 1 {
+		verb, them = "are", "them"
+	}
+	return fmt.Sprintf("%s %s paused, so the environment's sites do not answer", strings.Join(names, ", "), verb),
+		fmt.Sprintf("unpause %s with `docker unpause %s`", them, strings.Join(names, " "))
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -268,21 +269,41 @@ func TestSiteListPrintsEachSiteWithItsURL(t *testing.T) {
 	}
 }
 
-func TestFollowingThePartlyCreatedSiteFixLetsStartFinish(t *testing.T) {
+func TestFollowingThePartlyCreatedSiteFixRebuildsTheSite(t *testing.T) {
 	c := sandbox(t)
 	c.docker.ExecFails = map[string]error{"new-site": exitcode.New(exitcode.CodeFailed,
 		"bench new-site shop.localhost exited 1 in erp-dev-frappe-1", "fix what the output above names")}
 	c.run(t, "new", "erp-dev", "--frappe", "version-15", "--site", "shop.localhost").assertCode(t, exitcode.CodeFailed)
 	c.docker.ExecFails = nil
-	t.Chdir(filepath.Join(c.dir, "erp-dev"))
-	c.run(t, "start").assertCode(t, exitcode.CodeFailed)
+	dir := filepath.Join(c.dir, "erp-dev")
+	t.Chdir(dir)
+	r := c.run(t, "start", "--quiet")
+	r.assertCode(t, exitcode.CodeFailed)
 
-	c.run(t, "site", "remove", "shop.localhost", "--yes").assertCode(t, exitcode.CodeOK)
-	c.run(t, "start").assertCode(t, exitcode.CodeOK)
-
-	if _, ok := c.docker.File(frappeContainer, frappe.SiteConfig("shop.localhost")); ok {
-		t.Error("the partly created shop.localhost is still in the bench")
+	// The user runs each command the fix names, as printed.
+	commands := regexp.MustCompile("`tamp ([^`]*)`").FindAllStringSubmatch(r.stderr, -1)
+	if len(commands) != 2 {
+		t.Fatalf("stderr = %q, want a fix of two commands", r.stderr)
 	}
+	execs := len(c.docker.Execs)
+	for _, cmd := range commands {
+		c.run(t, strings.Fields(cmd[1])...).assertCode(t, exitcode.CodeOK)
+	}
+
+	again := c.docker.ExecLines()[execs:]
+	if got := execsStartingWith(again, "bench drop-site shop.localhost "); len(got) != 1 {
+		t.Errorf("drop-site execs = %q, want one for shop.localhost", got)
+	}
+	if got := execsStartingWith(again, "bench new-site shop.localhost "); len(got) != 1 {
+		t.Errorf("new-site execs = %q, want one for shop.localhost", got)
+	}
+	if _, ok := c.docker.File(frappeContainer, frappe.SiteInstalled("shop.localhost")); !ok {
+		t.Error("shop.localhost is not marked installed")
+	}
+	if got := readFile(t, filepath.Join(dir, "tamp.toml")); !strings.Contains(got, `host = "shop.localhost"`) {
+		t.Errorf("tamp.toml = %q, want it to list shop.localhost again", got)
+	}
+	c.run(t, "start").assertCode(t, exitcode.CodeOK)
 }
 
 func TestWithEThePartlyCreatedSiteFixCarriesE(t *testing.T) {
@@ -295,7 +316,7 @@ func TestWithEThePartlyCreatedSiteFixCarriesE(t *testing.T) {
 	r := c.run(t, "start", "-e", "erp-dev", "--quiet")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, "run `tamp site remove shop.localhost --yes -e erp-dev`, then run `tamp start -e erp-dev`")
+	r.assertOneLineError(t, "run `tamp site remove shop.localhost --yes -e erp-dev`, then `tamp site add shop.localhost -e erp-dev`")
 }
 
 func TestStartWarnsAboutASiteTheRecipeDoesNotListAndDeletesNothing(t *testing.T) {
@@ -449,7 +470,7 @@ func TestDuringNewThePartlyCreatedSiteFixNamesTheDirectory(t *testing.T) {
 	r := c.run(t, "new", where, "--frappe", "version-15", "--site", "shop.localhost", "--quiet")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	if want := "run `tamp site remove shop.localhost --yes` in " + where + ", then run `tamp start` in " + where; !strings.HasSuffix(lastLine(r.stderr), want) {
+	if want := "run `tamp site remove shop.localhost --yes` in " + where + ", then `tamp site add shop.localhost` in " + where; !strings.HasSuffix(lastLine(r.stderr), want) {
 		t.Errorf("stderr = %q, want its last line to end in %q", r.stderr, want)
 	}
 }

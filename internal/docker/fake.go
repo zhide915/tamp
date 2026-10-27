@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/zhide915/tamp/internal/exitcode"
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
@@ -33,7 +34,8 @@ type Fake struct {
 	// error: how a test plants a failure partway through a build.
 	ExecFails map[string]error
 	// ExecFailsFirst fails the first n execs whose command line contains a
-	// key: how a test models a command that works once retried.
+	// key with an *ExitError: how a test models a command that works once
+	// retried.
 	ExecFailsFirst map[string]int
 	// ExecOutput writes its value to the stderr of each exec whose command
 	// line contains its key, as the command's own log.
@@ -226,7 +228,7 @@ func (f *Fake) Exec(ctx context.Context, e Exec) error {
 	for fragment, n := range f.ExecFailsFirst {
 		if strings.Contains(line, fragment) && n > 0 {
 			f.ExecFailsFirst[fragment] = n - 1
-			return fmt.Errorf("%s failed", line)
+			return &ExitError{Status: 1, Err: exitcode.New(exitcode.CodeFailed, line+" exited 1", "fix what the output above names")}
 		}
 	}
 	for fragment, err := range f.ExecFails {

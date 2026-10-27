@@ -51,8 +51,15 @@ through_router() {
   curl -sf --max-time 10 --resolve shop.localhost:80:127.0.0.1 "$@"
 }
 
+# answers fetches a site's ping through the router once, with no retry:
+# tamp start and tamp new return only when each site answers.
+answers() {
+  local body
+  body=$(curl -sf --max-time 10 --resolve "$1:80:127.0.0.1" "http://$1/api/method/ping") && grep -q pong <<<"$body"
+}
+
 # pongs polls a site's ping through the router for up to 60 s and prints the
-# reply: tamp start does not wait for Frappe to finish booting.
+# reply, for a site whose processes are coming back, as after honcho exits.
 pongs() {
   local host=$1 body deadline=$((SECONDS + 60))
   while [ "$SECONDS" -lt "$deadline" ]; do
@@ -125,7 +132,7 @@ start=$SECONDS
 "$TAMP" new erp-two --frappe version-15 --site two.localhost
 target "new environment, image cached" 480 $((SECONDS - start))
 [ "$(bench_images)" = "$images" ] || fail "the second tamp new built an image"
-pongs two.localhost || fail "two.localhost did not answer through the router"
+answers two.localhost || fail "two.localhost did not answer through the router as soon as tamp new returned"
 "$TAMP" remove -e erp-two --yes
 rm -rf erp-two
 
@@ -210,7 +217,7 @@ say "tamp start on a stopped environment takes 1 minute or less"
 start=$SECONDS
 "$TAMP" start
 target "start on an existing environment" 60 $((SECONDS - start))
-pongs shop.localhost || fail "shop.localhost did not answer after stop and start"
+answers shop.localhost || fail "shop.localhost did not answer as soon as tamp start returned on the stopped environment"
 
 say "after a second start, the reloaded router still serves the site and socket.io"
 pongs shop.localhost || fail "shop.localhost stopped answering after the reload"
@@ -221,13 +228,13 @@ printf '\n[[sites]]\n  host = "erp.localhost"\n' >>tamp.toml
 "$TAMP" start
 [ "$(docker inspect --format '{{ .State.StartedAt }}' tamp-router)" = "$router_started" ] ||
   fail "tamp start restarted the router instead of reloading it"
-pongs erp.localhost || fail "erp.localhost does not answer through the router"
+answers erp.localhost || fail "erp.localhost does not answer through the router"
 
 say "tamp site add writes the recipe, creates the site, and routes it"
 "$TAMP" site add blog.localhost
 grep -qx '  host = "blog.localhost"' tamp.toml || fail "the recipe lacks blog.localhost: $(cat tamp.toml)"
 grep -q '^http://blog.localhost {' "$CADDYFILE" || fail "the Caddyfile does not route blog.localhost"
-pongs blog.localhost || fail "blog.localhost does not answer through the router"
+answers blog.localhost || fail "blog.localhost does not answer through the router"
 
 say "tamp site add of a host that is not *.localhost exits 2"
 code=0
@@ -318,6 +325,14 @@ for site in shop.localhost erp.localhost; do
   if site_has_app "$site" acme; then fail "$site still has acme"; fi
 done
 if docker exec "$FRAPPE" env/bin/python -c 'import acme' 2>/dev/null; then fail "acme is still in the bench's Python"; fi
+
+say "the restart that tamp app remove makes logs no exit of honcho, so status stays running"
+# honcho exits 143 on tamp's SIGTERM, and runs again 5 s later.
+sleep 8
+docker exec "$FRAPPE" bash -c 'test ! -s /tmp/tamp-honcho-exits' ||
+  fail "tamp's own restart was logged as an exit: $(docker exec "$FRAPPE" cat /tmp/tamp-honcho-exits)"
+out=$("$TAMP" status 2>&1)
+grep -qx 'environment erp-dev: running' <<<"$out" || fail "tamp status after tamp's own restart: $out"
 
 say "tamp app add adopts the kept clone without cloning"
 out=$("$TAMP" app add "$ACME_URL" 2>&1)
@@ -445,6 +460,48 @@ code=0
 rm "$failing"
 [ "$code" != 0 ] || fail "the test line exited 0 on a failing test: $(tail -5 "$WORK/example.out")"
 
+say "a bench whose processes keep crashing reads as crash looping, and makes tamp start exit 1 at once"
+# A listener on the web port makes bench serve exit as it starts, so honcho
+# exits again and again. Killed by its signal, honcho logs no exit.
+docker exec "$FRAPPE" bash -c 'for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = honcho ] && kill -TERM "${p#/proc/}"; done; true'
+sleep 2
+docker exec --detach "$FRAPPE" env/bin/python -m http.server 8000
+looping=
+for _ in $(seq 1 30); do
+  out=$("$TAMP" status 2>&1)
+  if grep -qx 'environment erp-dev: crash looping' <<<"$out"; then
+    looping=1
+    break
+  fi
+  sleep 2
+done
+echo "$out"
+[ -n "$looping" ] || fail "tamp status does not read the crash loop"
+grep -qF 'warning: the bench processes of erp-dev keep crashing: honcho exited' <<<"$out" &&
+  grep -qF 'see why with `tamp logs frappe`' <<<"$out" || fail "tamp status does not warn with the logs fix"
+out=$(cd "$WORK" && "$TAMP" list 2>&1)
+echo "$out"
+grep -Eq '^erp-dev +crash looping ' <<<"$out" || fail "tamp list does not show the crash loop"
+grep -qF 'see why with `tamp logs frappe -e erp-dev`' <<<"$out" || fail "tamp list does not warn with the logs fix"
+code=0
+out=$("$TAMP" doctor) || code=$?
+echo "$out"
+[ "$code" = 1 ] || fail "exit code $code for doctor on a crash loop, want 1"
+grep -q '^✗ the bench processes of erp-dev keep crashing: honcho exited [0-9]* times in the last 2 minutes: see why with `tamp logs frappe`$' <<<"$out" ||
+  fail "doctor does not fail the crash loop with the logs fix"
+code=0
+start=$SECONDS
+out=$("$TAMP" start 2>&1) || code=$?
+took=$((SECONDS - start))
+echo "$out"
+[ "$code" = 1 ] || fail "exit code $code for start on a crash loop, want 1"
+[ "$took" -lt 60 ] || fail "start took $took s to report the crash loop, want it before its 2-minute wait ends"
+grep -qF 'error: the bench processes of erp-dev keep crashing' <<<"$out" || fail "start does not name the crash loop"
+docker exec "$FRAPPE" pkill -f 'http.server 8000'
+"$TAMP" start
+answers shop.localhost || fail "shop.localhost did not answer after the crash loop ended"
+grep -qx 'environment erp-dev: running' <<<"$("$TAMP" status)" || fail "tamp status still reads a crash loop after start"
+
 say "tamp stop stops the containers and takes the sites off the router"
 "$TAMP" stop
 for service in frappe mariadb redis-cache redis-queue; do
@@ -492,7 +549,7 @@ cd "$ENV_DIR"
 "$TAMP" start
 [ "$(docker inspect --format '{{ index .Config.Labels "tamp.path" }}' "$FRAPPE")" = "$ENV_DIR" ] ||
   fail "the frappe container does not carry the new tamp.path"
-pongs shop.localhost || fail "shop.localhost does not answer after the move"
+answers shop.localhost || fail "shop.localhost does not answer after the move"
 
 say "a same-named environment elsewhere that has a recipe makes start exit 1"
 mkdir -p "$WORK/second/erp-dev"
@@ -510,7 +567,7 @@ code=0
 out=$("$TAMP" start 2>&1) || code=$?
 echo "$out"
 [ "$code" = 1 ] || fail "exit code $code, want 1"
-grep -qF 'check out version-16 in apps/frappe, then `tamp remove --yes` and `tamp start`' <<<"$out" ||
+grep -qF 'run `tamp stop`, fetch and check out version-16 with `git -C apps/frappe remote set-branches --add upstream version-16`, `git -C apps/frappe fetch --depth 1 upstream version-16` and `git -C apps/frappe checkout version-16`, then run `tamp remove --yes` and `tamp start`' <<<"$out" ||
   fail "the error lacks the version fix"
 if grep -q 'building the image' <<<"$out"; then fail "start built an image"; fi
 cp "$WORK/tamp.toml.saved" tamp.toml
@@ -535,7 +592,7 @@ if grep -q 'localhost' "$CADDYFILE"; then fail "the Caddyfile still routes erp-d
 
 say "after tamp remove --yes, tamp start builds a new bench whose sites have their assets and apps"
 "$TAMP" start
-pongs shop.localhost || fail "shop.localhost does not answer on the new bench"
+answers shop.localhost || fail "shop.localhost does not answer on the new bench"
 bundle=$(docker exec "$FRAPPE" sh -c 'ls apps/frappe/frappe/public/dist/js | grep "^frappe-web\.bundle\..*\.js$" | head -n 1')
 [ -n "$bundle" ] || fail "no frappe-web bundle in the clone"
 code=$(through_router -o /dev/null -w '%{http_code}' "http://shop.localhost/assets/frappe/dist/js/$bundle") || code=$?

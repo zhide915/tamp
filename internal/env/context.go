@@ -79,6 +79,9 @@ func (m *Manager) Context(envFlag string) error {
 		line("The environment is not built, so nothing below works yet, and `%s` cannot find it. Build it with %s, run in %s.", e, here.command("start"), t.dir)
 	case st == stateRunning:
 		line("The environment is running.")
+	case st == statePaused:
+		msg, fix := pausedFix(containers)
+		line("The environment is paused: %s. Before anything below, %s.", msg, fix)
 	case st == stateStopped:
 		line("The environment is stopped, so its sites do not answer. Start it with %s.", byE.command("start"))
 	default:

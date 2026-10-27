@@ -128,7 +128,7 @@ func (d *Daemon) list(ctx context.Context, label string, all bool) ([]Container,
 	}
 	containers := make([]Container, 0, len(res.Items))
 	for _, item := range res.Items {
-		c := Container{Labels: item.Labels, Running: item.State == container.StateRunning}
+		c := Container{Labels: item.Labels, Running: item.State == container.StateRunning, Paused: item.State == container.StatePaused}
 		if len(item.Names) > 0 {
 			c.Name = strings.TrimPrefix(item.Names[0], "/")
 		}
@@ -158,7 +158,7 @@ func (d *Daemon) Inspect(ctx context.Context, name string) (Container, error) {
 		c.Labels = cfg.Labels
 	}
 	if st := res.Container.State; st != nil {
-		c.Running = st.Running
+		c.Running, c.Paused = st.Running, st.Paused
 	}
 	if ns := res.Container.NetworkSettings; ns != nil {
 		c.Networks = aliases(ns.Networks)

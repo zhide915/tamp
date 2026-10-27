@@ -19,13 +19,19 @@ import (
 // only to read.
 func (c *cli) doctor(t *testing.T, args ...string) result {
 	t.Helper()
-	calls := len(c.docker.Calls)
+	calls, execs := len(c.docker.Calls), len(c.docker.Execs)
 	syncCalls := 0
 	if c.sync != nil {
 		syncCalls = len(c.sync.Calls)
 	}
 	r := c.run(t, append([]string{"doctor"}, args...)...)
-	assertOnlyReads(t, c.callsSince(calls))
+	// The one command doctor may run is the read of honcho's exits.
+	for _, e := range c.docker.Execs[execs:] {
+		if !slices.Equal(e.Cmd, frappe.RecentExits()) {
+			t.Errorf("doctor ran %q, want only the read of honcho's exits", e.Cmd)
+		}
+	}
+	assertOnlyReads(t, slices.DeleteFunc(slices.Clone(c.callsSince(calls)), func(call string) bool { return call == "Exec" }))
 	if c.sync != nil {
 		for _, call := range c.sync.Calls[syncCalls:] {
 			if call != "Installed" && !strings.HasPrefix(call, "Peek ") {
@@ -387,4 +393,29 @@ func TestDoctorFailsARecipeItCannotReadWithTheFix(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeFailed)
 	r.assertContains(t, `holds the unknown key "sites.colour": remove it from `+recipe)
+}
+
+func TestACrashLoopingBenchFailsDoctorWithTheLogsFix(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	crashing(c)
+
+	r := c.doctor(t)
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertLine(t, "✗ "+crashMsg+": see why with `tamp logs frappe`")
+	if strings.Contains(r.stdout, "erp-dev is running") {
+		t.Errorf("stdout = %q, want the environment not passed as running", r.stdout)
+	}
+}
+
+func TestAPausedContainerWarnsWithTheUnpauseFix(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+
+	r := c.doctor(t)
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertLine(t, "! erp-dev-frappe-1 is paused, so the environment's sites do not answer: unpause it with `docker unpause erp-dev-frappe-1`")
 }

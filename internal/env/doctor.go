@@ -219,6 +219,16 @@ func (m *Manager) checkEnv(ctx context.Context, r *report, t target) {
 		return
 	case statePartly:
 		r.warn("the environment "+t.name+" is partly running", start("starts the rest"))
+	case statePaused:
+		r.warn(pausedFix(containers))
+	case stateRunning:
+		if crash, err := m.crashLoop(ctx, t); err != nil {
+			r.fail(err)
+		} else if crash != nil {
+			r.fail(crash)
+		} else {
+			r.pass("the environment " + t.name + " is running")
+		}
 	default:
 		r.pass("the environment " + t.name + " is " + st.String())
 	}
