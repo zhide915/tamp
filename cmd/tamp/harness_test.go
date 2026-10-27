@@ -35,9 +35,11 @@ func sandbox(t *testing.T) *cli {
 	t.Setenv("NO_COLOR", "")      // empty counts as unset
 	t.Chdir(dir)
 
-	// Host git runs for real, with GitHub rewritten to the local remotes.
+	// Host git runs for real, with GitHub and acme's SSH host rewritten to
+	// the local remotes.
 	gitconfig := filepath.Join(home, ".gitconfig")
-	body := fmt.Sprintf("[url %q]\n\tinsteadOf = https://github.com/frappe/\n", fileURL(remotes)+"/")
+	body := fmt.Sprintf("[url %q]\n\tinsteadOf = https://github.com/frappe/\n[url %q]\n\tinsteadOf = %s\n",
+		fileURL(remotes)+"/", fileURL(filepath.Join(remotes, "acme"))+"/", acmeSSH)
 	if err := os.WriteFile(gitconfig, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +107,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	remotes = dir
-	err = makeFrappeRemote(filepath.Join(dir, "frappe"))
+	err = makeRemotes(dir)
 	code := 1
 	if err == nil {
 		code = m.Run()
@@ -116,20 +118,80 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// makeFrappeRemote builds a bare repository with two commits on each
-// supported branch, so a depth-1 clone is visibly shallow.
-func makeFrappeRemote(bare string) error {
+// acmeSSH is the SSH URL prefix of acme's private repositories, which the
+// sandbox rewrites to remotes/acme.
+const acmeSSH = "git@host:acme/"
+
+// makeRemotes builds the bare repositories that stand in for GitHub's frappe
+// organisation and acme's private host:
+//   - frappe, with every supported branch and a package.json;
+//   - erpnext, named by its setup.py;
+//   - hrms, which requires erpnext and has a package.json;
+//   - acme/acme-erp.git, which holds the package acme, with branches main and
+//     develop and main as its default;
+//   - acme/acme-hr.git, which requires acme by the URL of acme-erp.
+func makeRemotes(dir string) error {
+	pyproject := func(name string) string { return "[project]\nname = \"" + name + "\"\n" }
+	remotes := []struct {
+		path     string
+		branches []string
+		files    map[string]string
+	}{
+		{"frappe", []string{"version-15", "version-16", "develop"}, map[string]string{"package.json": "{}\n"}},
+		{"erpnext", []string{"develop", "version-15"}, map[string]string{
+			"setup.py": "from setuptools import setup\n\nsetup(name=\"erpnext\", version=\"15.0.0\")\n",
+		}},
+		{"hrms", []string{"develop", "version-15"}, map[string]string{
+			"pyproject.toml": pyproject("hrms"),
+			"package.json":   "{}\n",
+			"hrms/hooks.py":  "app_name = \"hrms\"\nrequired_apps = [\n\t\"frappe/erpnext\",\n]\n",
+		}},
+		{"acme/acme-erp.git", []string{"main", "develop"}, map[string]string{
+			"pyproject.toml": pyproject("acme"),
+			"acme/hooks.py":  "app_name = \"acme\"\n",
+		}},
+		{"acme/acme-hr.git", []string{"main"}, map[string]string{
+			"pyproject.toml":   pyproject("acme_hr"),
+			"acme_hr/hooks.py": "app_name = \"acme_hr\"\nrequired_apps = [\"" + acmeSSH + "acme-erp.git\"]\n",
+		}},
+	}
+	for _, r := range remotes {
+		if err := makeRemote(filepath.Join(dir, r.path), r.branches, r.files); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// makeRemote builds a bare repository whose default branch is the first of
+// branches, with files in its first commit and two commits on each branch,
+// so a depth-1 clone is visibly shallow.
+func makeRemote(bare string, branches []string, files map[string]string) error {
 	work := bare + "-work"
-	steps := [][]string{{"init", "--quiet", "--initial-branch", "version-15", work}}
-	for _, branch := range []string{"version-15", "version-16", "develop"} {
-		if branch != "version-15" {
+	for name, body := range files {
+		path := filepath.Join(work, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			return err
+		}
+	}
+	steps := [][]string{
+		{"init", "--quiet", "--initial-branch", branches[0], work},
+		{"-C", work, "add", "--all"},
+	}
+	for i, branch := range branches {
+		if i > 0 {
 			steps = append(steps, []string{"-C", work, "checkout", "--quiet", "-b", branch})
 		}
 		for i := 1; i <= 2; i++ {
 			steps = append(steps, []string{"-C", work, "commit", "--quiet", "--allow-empty", "-m", fmt.Sprintf("%s %d", branch, i)})
 		}
 	}
-	steps = append(steps, []string{"clone", "--quiet", "--bare", work, bare})
+	// The bare clone's default branch is the one checked out.
+	steps = append(steps, []string{"-C", work, "checkout", "--quiet", branches[0]},
+		[]string{"clone", "--quiet", "--bare", work, bare})
 	for _, args := range steps {
 		cmd := exec.Command("git", args...)
 		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",

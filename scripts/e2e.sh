@@ -6,6 +6,7 @@ set -euo pipefail
 TAMP=${1:?usage: e2e.sh /path/to/tamp}
 # Absolute, because the script changes directory before it runs tamp.
 TAMP=$(cd "$(dirname "$TAMP")" && pwd)/$(basename "$TAMP")
+SCRIPTS=$(cd "$(dirname "$0")" && pwd)
 WORK=$(mktemp -d)
 ENV_DIR=$WORK/erp-dev
 FRAPPE=erp-dev-frappe-1
@@ -206,6 +207,74 @@ if grep -q 'blog.localhost' tamp.toml; then fail "the recipe still lists blog.lo
 if grep -q 'blog.localhost' "$CADDYFILE"; then fail "the Caddyfile still routes blog.localhost"; fi
 pongs shop.localhost || fail "shop.localhost stopped answering after the remove"
 
+# site_has_app checks that bench lists app on a site.
+site_has_app() {
+  docker exec "$FRAPPE" bench --site "$1" list-apps --format json | grep -q "\"$2\""
+}
+
+say "tamp app add clones with host git, records the package name and default branch, and installs on every site"
+bash "$SCRIPTS/minimal-app.sh" "$WORK/remotes/acme-erp.git"
+ACME_URL=file://$WORK/remotes/acme-erp.git
+"$TAMP" app add "$ACME_URL"
+grep -qx '  name = "acme"' tamp.toml || fail "the recipe lacks the app acme: $(cat tamp.toml)"
+grep -qx '  branch = "main"' tamp.toml || fail "the recipe lacks the default branch main: $(cat tamp.toml)"
+[ "$(git -C apps/acme remote)" = upstream ] || fail "the acme clone's remote is not upstream"
+[ ! -e apps/acme-erp ] || fail "the clone is named after the repository, not the package"
+for site in shop.localhost erp.localhost; do
+  site_has_app "$site" acme || fail "$site lacks acme"
+done
+
+say "tamp app list prints each app with its branch"
+out=$("$TAMP" app list)
+echo "$out"
+grep -Eq '^frappe +version-15 ' <<<"$out" || fail "tamp app list lacks frappe"
+grep -Eq "^acme +main +$ACME_URL\$" <<<"$out" || fail "tamp app list lacks acme at main"
+
+say "after the restart, socket.io stays up"
+pongs shop.localhost || fail "shop.localhost does not answer after app add"
+sleep 15
+first=$(docker exec "$FRAPPE" pgrep -f 'node apps/frappe/socketio.js') || fail "socket.io is not running"
+sleep 15
+[ "$(docker exec "$FRAPPE" pgrep -f 'node apps/frappe/socketio.js')" = "$first" ] || fail "socket.io restarted"
+
+say "start warns about branch drift and unlisted folders, and touches no clone"
+git -C apps/acme checkout --quiet -b drift
+mkdir apps/stray
+out=$("$TAMP" start 2>&1)
+echo "$out"
+grep -q "apps/acme is on drift, but the recipe names main" <<<"$out" || fail "no branch drift warning"
+grep -qF "apps/stray is not in the recipe: add it with \`tamp app add <url>\`, or delete the folder" <<<"$out" ||
+  fail "no unlisted folder warning"
+[ "$(git -C apps/acme branch --show-current)" = drift ] || fail "start checked out another branch"
+git -C apps/acme checkout --quiet main
+git -C apps/acme branch --quiet -D drift
+rmdir apps/stray
+
+say "tamp app remove without --yes exits 5"
+code=0
+"$TAMP" app remove acme || code=$?
+[ "$code" = 5 ] || fail "exit code $code, want 5"
+site_has_app shop.localhost acme || fail "acme is gone without --yes"
+
+say "tamp app remove --yes uninstalls from every site and the bench, keeps the clone, and prints its path"
+out=$("$TAMP" app remove acme --yes)
+echo "$out"
+grep -qF "$ENV_DIR/apps/acme" <<<"$out" || fail "app remove did not print the clone's path"
+[ -d apps/acme ] || fail "app remove deleted the clone"
+if grep -q acme tamp.toml; then fail "the recipe still lists acme"; fi
+for site in shop.localhost erp.localhost; do
+  if site_has_app "$site" acme; then fail "$site still has acme"; fi
+done
+if docker exec "$FRAPPE" env/bin/python -c 'import acme' 2>/dev/null; then fail "acme is still in the bench's Python"; fi
+
+say "tamp app add adopts the kept clone without cloning"
+out=$("$TAMP" app add "$ACME_URL" 2>&1)
+echo "$out"
+if grep -q 'Cloning' <<<"$out"; then fail "app add cloned again"; fi
+for site in shop.localhost erp.localhost; do
+  site_has_app "$site" acme || fail "$site lacks acme after adopting it"
+done
+
 say "start warns about a site the recipe does not list, and deletes nothing"
 cp tamp.toml "$WORK/tamp.toml.sites"
 printf 'frappe = "version-15"\n\n[[sites]]\n  host = "shop.localhost"\n' >tamp.toml
@@ -300,5 +369,14 @@ docker volume inspect tamp-cache >/dev/null || fail "tamp remove deleted tamp-ca
 [ -f tamp.toml ] && [ -d apps/frappe ] || fail "tamp remove touched the directory"
 [ "$(docker inspect --format '{{ .State.Running }}' tamp-router)" = true ] || fail "tamp remove stopped the router"
 if grep -q 'localhost' "$CADDYFILE"; then fail "the Caddyfile still routes erp-dev's sites"; fi
+
+say "after tamp remove --yes, tamp start builds a new bench whose sites have their assets and apps"
+"$TAMP" start
+pongs shop.localhost || fail "shop.localhost does not answer on the new bench"
+bundle=$(docker exec "$FRAPPE" sh -c 'ls apps/frappe/frappe/public/dist/js | grep "^frappe-web\.bundle\..*\.js$" | head -n 1')
+[ -n "$bundle" ] || fail "no frappe-web bundle in the clone"
+code=$(through_router -o /dev/null -w '%{http_code}' "http://shop.localhost/assets/frappe/dist/js/$bundle") || code=$?
+[ "$code" = 200 ] || fail "the new bench serves /assets/frappe/dist/js/$bundle with $code, want 200"
+site_has_app shop.localhost acme || fail "shop.localhost lacks acme on the new bench"
 
 say "e2e passed"

@@ -481,12 +481,17 @@ func TestComposeNamesTheProjectAsAStringWhateverTheEnvironmentIsCalled(t *testin
 	}
 }
 
+// isSiteAppsList reports whether cmd only lists a site's apps.
+func isSiteAppsList(cmd []string) bool {
+	return len(cmd) > 3 && slices.Equal(cmd, frappe.SiteApps(cmd[2]))
+}
+
 // benchExecs are the commands run in the frappe container, without the
-// read-only listing of its sites.
+// read-only listings of its sites and their apps.
 func benchExecs(execs []docker.Exec) []string {
 	var lines []string
 	for _, e := range execs {
-		if e.Container == frappeContainer && !slices.Equal(e.Cmd, frappe.ListSites()) {
+		if e.Container == frappeContainer && !slices.Equal(e.Cmd, frappe.ListSites()) && !isSiteAppsList(e.Cmd) {
 			lines = append(lines, strings.Join(e.Cmd, " "))
 		}
 	}

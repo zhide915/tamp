@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 
 	"github.com/zhide915/tamp/internal/exitcode"
 )
@@ -15,7 +16,7 @@ import (
 // New writes the recipe and the .gitignore of a new environment at path, then
 // builds it. It checks every input before it writes anything. A recipe at
 // path comes first: its fix, `tamp start`, applies whatever else is wrong.
-func (m *Manager) New(path, frappe string, hosts []string) error {
+func (m *Manager) New(path, frappe string, appSpecs, hosts []string) error {
 	dir, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -26,6 +27,19 @@ func (m *Manager) New(path, frappe string, hosts []string) error {
 	}
 	if err := checkFrappeBranch(frappe); err != nil {
 		return err
+	}
+	var apps []App
+	for _, s := range appSpecs {
+		url, branch, err := parseAppSpec(s)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(apps, func(a App) bool { return a.URL == url }) {
+			return exitcode.Usage(fmt.Sprintf("the app %s is given twice", url), "give each `--app` once")
+		}
+		// The build clones it and records its name, and its default branch
+		// when none is given.
+		apps = append(apps, App{URL: url, Branch: branch})
 	}
 	sites, err := siteList(hosts)
 	if err != nil {
@@ -55,7 +69,7 @@ func (m *Manager) New(path, frappe string, hosts []string) error {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot create %s: %v", dir, err),
 			"check that you can write to the parent directory")
 	}
-	recipe := Recipe{Frappe: frappe, Sites: sites}
+	recipe := Recipe{Frappe: frappe, Apps: apps, Sites: sites}
 	if err := writeRecipe(dir, recipe); err != nil {
 		return err
 	}

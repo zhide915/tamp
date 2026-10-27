@@ -41,12 +41,12 @@ const (
 )
 
 type composeData struct {
-	QuotedName                      string
-	BenchImage, MariaDBImage, Redis string
-	BenchVolume, CacheVolume        string
-	BenchDir, AppsDir, CacheDir     string
-	Procfile, DBRootPassword        string
-	Labels, RedisServices           []string
+	QuotedName                       string
+	BenchImage, MariaDBImage, Redis  string
+	BenchVolume, CacheVolume         string
+	BenchDir, AppsDir, CacheDir      string
+	Procfile, Paused, DBRootPassword string
+	Labels, RedisServices            []string
 }
 
 // renderCompose renders compose.yaml for an environment from its recipe.
@@ -63,6 +63,7 @@ func renderCompose(name, dir, image string, r Recipe) ([]byte, error) {
 		AppsDir:        frappe.AppsDir,
 		CacheDir:       frappe.CacheDir,
 		Procfile:       frappe.Procfile,
+		Paused:         frappe.Paused,
 		DBRootPassword: frappe.DBRootPassword,
 		RedisServices:  []string{redisCacheService, redisQueueService},
 		Labels:         []string{LabelEnv + ": " + quote(name), LabelPath + ": " + quote(dir)},
@@ -84,16 +85,17 @@ name: {{.QuotedName}}
 services:
   frappe:
     image: {{.BenchImage}}
-    # Idles until tamp writes the Procfile, then runs the bench's processes,
-    # and runs them again 5 s after honcho exits: honcho stops them all when
-    # one exits, and the container must stay up for tamp to reach the bench.
+    # Idles until tamp writes the Procfile, and while tamp pauses the bench.
+    # Otherwise runs the bench's processes, and runs them again 5 s after
+    # honcho exits: honcho stops them all when one exits, and the container
+    # must stay up for tamp to reach the bench.
     command:
       - bash
       - -c
       - |
         trap 'kill -TERM $$(jobs -p) 2>/dev/null; wait; exit 0' TERM INT
         while :; do
-          if [ -f {{.Procfile}} ]; then
+          if [ -f {{.Procfile}} ] && [ ! -e {{.Paused}} ]; then
             honcho start & wait $$!
             sleep 5 & wait $$!
           else

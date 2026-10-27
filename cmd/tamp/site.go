@@ -30,22 +30,11 @@ func newSiteCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return cmd
 }
 
-// oneHost takes exactly the site's hostname.
-func oneHost(cmd *cobra.Command, args []string) error {
-	switch {
-	case len(args) == 0:
-		return exitcode.Usage("missing the site's hostname", usageFix(cmd))
-	case len(args) > 1:
-		return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[1]), usageFix(cmd))
-	}
-	return nil
-}
-
 func newSiteAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "add <host>",
 		Short: "Add a *.localhost site to the recipe, create it with every app, and route it",
-		Args:  oneHost,
+		Args:  oneArg("the site's hostname"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().SiteAdd(g.env, args[0])
 		},
@@ -68,7 +57,7 @@ func newSiteRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Comman
 	cmd := &cobra.Command{
 		Use:   "remove <host> --yes",
 		Short: "Drop a site and its database, remove it from the recipe, and take it off the router",
-		Args:  oneHost,
+		Args:  oneArg("the site's hostname"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().SiteRemove(g.env, args[0], yes)
 		},

@@ -120,10 +120,11 @@ func (m *Manager) envContainers(ctx context.Context, name string) ([]docker.Cont
 }
 
 // command is a tamp command line that acts on t, for a fix: with -e when
-// -e named it.
+// -e named it, and with where it runs when `tamp new` named a directory, so
+// it works from where the user stands.
 func (t target) command(args string) string {
 	if t.flag != "" {
 		return fmt.Sprintf("`tamp %s -e %s`", args, t.flag)
 	}
-	return fmt.Sprintf("`tamp %s`", args)
+	return fmt.Sprintf("`tamp %s`", args) + t.in()
 }

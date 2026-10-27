@@ -22,8 +22,20 @@ const RecipeFile = "tamp.toml"
 type Recipe struct {
 	// Frappe is the Frappe branch, one of frappeBranches.
 	Frappe string `toml:"frappe"`
+	// Apps are installed into the bench and on every site, in this order.
+	Apps []App `toml:"apps,omitempty"`
 	// Sites are the sites the bench holds.
 	Sites []Site `toml:"sites,omitempty"`
+}
+
+// App is one app of the recipe, cloned into apps/<name>. An app given only
+// by its url gets its name, and its default branch unless it names one, when
+// the build clones it.
+type App struct {
+	// Name is the app's package name, which is also its folder.
+	Name   string `toml:"name,omitempty"`
+	URL    string `toml:"url"`
+	Branch string `toml:"branch,omitempty"`
 }
 
 // Site is one site of the recipe.
@@ -56,7 +68,8 @@ const siteHostFix = "name the site with lowercase letters, digits and `-`, endin
 func readRecipe(dir string) (Recipe, error) {
 	path := filepath.Join(dir, RecipeFile)
 	var r Recipe
-	if _, err := toml.DecodeFile(path, &r); err != nil {
+	md, err := toml.DecodeFile(path, &r)
+	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// find has already checked the working directory, so dir is one
 			// that a container's label names.
@@ -66,6 +79,12 @@ func readRecipe(dir string) (Recipe, error) {
 		}
 		return Recipe{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot read %s: %v", path, err),
 			"fix the TOML in "+path)
+	}
+	// Commands rewrite the recipe from Recipe, so a key it lacks would be lost.
+	if keys := md.Undecoded(); len(keys) > 0 {
+		return Recipe{}, exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("%s holds the unknown key %q", path, keys[0].String()),
+			"remove it from "+path)
 	}
 	if _, ok := matrix[r.Frappe]; !ok {
 		return Recipe{}, exitcode.New(exitcode.CodeFailed,
@@ -78,7 +97,37 @@ func readRecipe(dir string) (Recipe, error) {
 				fmt.Sprintf("%s lists the site %q, which is not a *.localhost hostname", path, s.Host), siteHostFix)
 		}
 	}
+	seen := map[string]bool{}
+	for _, a := range r.Apps {
+		switch {
+		case a.URL == "":
+			return Recipe{}, exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("%s lists an app without a url", path),
+				"set the app's url in "+path+", or remove the app from it")
+		case a.Name != "" && (!appName.MatchString(a.Name) || a.Name == "frappe"):
+			return Recipe{}, exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("%s lists the app %q, which is not an app name", path, a.Name),
+				"set the app's name to its package name, as in its pyproject.toml")
+		case a.Name != "" && seen[a.Name]:
+			return Recipe{}, exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("%s lists the app %s twice", path, a.Name), "remove one of them from "+path)
+		}
+		seen[a.Name] = true
+	}
 	return r, nil
+}
+
+// appName is a Python package name: bench uses it as the app's folder and as
+// the name it installs.
+var appName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// names are the recipe's app names, in order.
+func (r Recipe) names() []string {
+	var names []string
+	for _, a := range r.Apps {
+		names = append(names, a.Name)
+	}
+	return names
 }
 
 // FrappeBranchList is the supported Frappe branches, for help and errors.

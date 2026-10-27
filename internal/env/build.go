@@ -1,13 +1,11 @@
 package env
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
@@ -58,7 +56,7 @@ func (t target) resume(err error) error {
 	if !errors.As(err, &e) {
 		return err
 	}
-	start := "run " + t.command("start") + t.in()
+	start := "run " + t.command("start")
 	fix := start
 	if e.Fix != "" {
 		fix = e.Fix + ", then " + start
@@ -141,6 +139,15 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 	if err := cloneApp(ctx, dir, "frappe", FrappeURL, r.Frappe, out); err != nil {
 		return err
 	}
+	if err := m.cloneApps(ctx, t, r); err != nil {
+		return err
+	}
+	if err := m.warnClones(t, r); err != nil {
+		return err
+	}
+	if err := checkRequired(t, r); err != nil {
+		return err
+	}
 
 	if err := m.docker.EnsureVolume(ctx, docker.Volume{
 		Name:   benchVolume(name),
@@ -166,11 +173,14 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 	}
 
 	b := bench{m: m, ctx: ctx, container: frappeContainer(name)}
-	if err := b.configure(r.Frappe); err != nil {
+	if err := b.configure(dir, r); err != nil {
 		return err
 	}
 	for _, s := range r.Sites {
 		if err := b.ensureSite(t, s.Host); err != nil {
+			return err
+		}
+		if err := b.ensureSiteApps(s.Host, r); err != nil {
 			return err
 		}
 	}
@@ -193,12 +203,14 @@ type bench struct {
 }
 
 // configure runs bench init unless the Procfile, written last, shows it done,
-// then rewrites the settings tamp owns and the Procfile.
-func (b bench) configure(branch string) error {
+// rewrites the settings tamp owns, installs the apps, and rewrites the
+// Procfile. Processes that ran before an app was installed restart.
+func (b bench) configure(dir string, r Recipe) error {
 	_, err := b.read(frappe.Procfile)
+	running := err == nil
 	if errors.Is(err, docker.ErrNotExist) {
 		b.m.p.Step("running bench init")
-		err = b.run(frappe.Init(branch))
+		err = b.run(frappe.Init(r.Frappe))
 	}
 	if err != nil {
 		return err
@@ -217,7 +229,26 @@ func (b bench) configure(branch string) error {
 	if err := b.m.docker.WriteFile(b.ctx, b.container, frappe.CommonSiteConfig, settings); err != nil {
 		return err
 	}
-	return b.m.docker.WriteFile(b.ctx, b.container, frappe.Procfile, []byte(frappe.ProcfileText))
+	changed, paused, err := b.installApps(dir, r, running)
+	if err != nil {
+		return err
+	}
+	if err := b.m.docker.WriteFile(b.ctx, b.container, frappe.Procfile, []byte(frappe.ProcfileText)); err != nil {
+		return err
+	}
+	// A build that failed while paused leaves the pause behind.
+	if !paused {
+		if paused, err = b.exists(frappe.Paused); err != nil {
+			return err
+		}
+	}
+	switch {
+	case paused:
+		return b.run([]string{"rm", "-f", frappe.Paused})
+	case running && changed:
+		return b.run(frappe.RestartProcesses())
+	}
+	return nil
 }
 
 // ensureSite creates the site or finishes tamp's steps on it. A site that bench
@@ -239,7 +270,7 @@ func (b bench) ensureSite(t target, host string) error {
 		if _, err := b.read(frappe.SiteInstalled(host)); errors.Is(err, docker.ErrNotExist) {
 			return exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("the site %s was only partly created", host),
-				"run "+t.command("site remove "+host+" --yes")+t.in())
+				"run "+t.command("site remove "+host+" --yes"))
 		} else if err != nil {
 			return err
 		}
@@ -273,16 +304,16 @@ func (b bench) run(cmd []string) error {
 // warnUnlisted names each site the bench holds that the recipe does not
 // list. start deletes nothing, so the user decides.
 func (b bench) warnUnlisted(t target, r Recipe) error {
-	var out bytes.Buffer
-	if err := b.m.docker.Exec(b.ctx, docker.Exec{Container: b.container, Cmd: frappe.ListSites(), Stdout: &out}); err != nil {
+	hosts, err := b.sites()
+	if err != nil {
 		return err
 	}
-	for _, host := range strings.Fields(out.String()) {
+	for _, host := range hosts {
 		if slices.Contains(r.hosts(), host) {
 			continue
 		}
-		b.m.p.Warn(fmt.Sprintf("the bench holds the site %s, which the recipe does not list: drop it with %s%s",
-			host, t.command("site remove "+host+" --yes"), t.in()))
+		b.m.p.Warn(fmt.Sprintf("the bench holds the site %s, which the recipe does not list: drop it with %s",
+			host, t.command("site remove "+host+" --yes")))
 	}
 	return nil
 }

@@ -58,6 +58,7 @@ func (f *Fake) RemoveContainer(_ context.Context, name string) error {
 	}
 	delete(f.containers, name)
 	delete(f.files, name)
+	delete(f.binds, name)
 	return nil
 }
 
@@ -154,7 +155,7 @@ var (
 // container, named and labelled as compose would, on the project's network,
 // and each volume the file owns is created. An existing container keeps the
 // networks it was connected to.
-func (f *Fake) up(project, compose string) {
+func (f *Fake) up(project, dir, compose string) {
 	_, section, _ := strings.Cut(compose, "\nservices:\n")
 	section, volumesSection, _ := strings.Cut(section, "\nvolumes:\n")
 	volumes := f.composeVolumes(project, volumesSection)
@@ -184,6 +185,7 @@ func (f *Fake) up(project, compose string) {
 			// Compose reads $$ as a literal $ after YAML unquotes.
 			c.Labels[l[1]] = strings.ReplaceAll(strings.ReplaceAll(l[2], "''", "'"), "$$", "$")
 		}
+		f.setBinds(name, dir, block)
 		c.volumes = nil
 		for _, m := range mountLine.FindAllStringSubmatch(block, -1) {
 			if v, ok := volumes[m[1]]; ok {

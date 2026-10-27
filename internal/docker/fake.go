@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -63,6 +64,8 @@ type Fake struct {
 	volumes    map[string]Volume
 	// files is each container's filesystem, keyed by container then path.
 	files map[string]map[string]string
+	// binds are each container's host folders.
+	binds map[string][]bind
 }
 
 // Up is one recorded compose up, with the compose file as it was then.
@@ -149,7 +152,7 @@ func (f *Fake) ComposeUp(_ context.Context, p Project) error {
 	if err := f.UpFails[p.Name]; err != nil {
 		return err
 	}
-	f.up(p.Name, string(body))
+	f.up(p.Name, filepath.Dir(p.File), string(body))
 	return nil
 }
 
@@ -172,6 +175,7 @@ func (f *Fake) Exec(_ context.Context, e Exec) error {
 	// even a failed one leaves it.
 	if len(e.Cmd) > 2 && e.Cmd[0] == "bench" && e.Cmd[1] == "new-site" {
 		f.put(e.Container, frappe.SiteConfig(e.Cmd[2]), `{"db_name": "_site"}`)
+		f.put(e.Container, siteAppsFile(e.Cmd[2]), "frappe")
 	}
 	for fragment, out := range f.ExecOutput {
 		if strings.Contains(line, fragment) && e.Stderr != nil {
@@ -189,7 +193,29 @@ func (f *Fake) Exec(_ context.Context, e Exec) error {
 			return err
 		}
 	}
+	site := ""
+	if len(e.Cmd) > 3 && e.Cmd[0] == "bench" && e.Cmd[1] == "--site" {
+		site = e.Cmd[2]
+	}
 	switch {
+	case site != "" && e.Cmd[3] == "list-apps":
+		apps, err := json.Marshal(map[string][]string{site: f.SiteApps(e.Container, site)})
+		if err != nil {
+			return err
+		}
+		if e.Stdout != nil {
+			fmt.Fprintln(e.Stdout, string(apps))
+		}
+	case site != "" && e.Cmd[3] == "install-app":
+		apps := f.SiteApps(e.Container, site)
+		if !slices.Contains(apps, e.Cmd[4]) {
+			f.put(e.Container, siteAppsFile(site), strings.Join(append(apps, e.Cmd[4]), "\n"))
+		}
+	case site != "" && e.Cmd[3] == "uninstall-app":
+		apps := slices.DeleteFunc(f.SiteApps(e.Container, site), func(a string) bool { return a == e.Cmd[4] })
+		f.put(e.Container, siteAppsFile(site), strings.Join(apps, "\n"))
+	case len(e.Cmd) == 3 && e.Cmd[0] == "rm" && e.Cmd[1] == "-f":
+		f.remove(e.Container, e.Cmd[2])
 	case slices.Equal(e.Cmd, frappe.ListSites()):
 		if e.Stdout != nil {
 			for _, host := range f.sites(e.Container) {
@@ -210,6 +236,15 @@ func (f *Fake) Exec(_ context.Context, e Exec) error {
 		return f.setSiteConfig(e.Container, e.Cmd[2], e.Cmd[5], e.Cmd[6])
 	}
 	return nil
+}
+
+// siteAppsFile is where the fake keeps a site's installed apps, standing in
+// for the site's database. It lives in the site's folder, so drop-site drops it.
+func siteAppsFile(host string) string { return frappe.SitesDir + "/" + host + "/.fake-installed-apps" }
+
+// SiteApps are the apps installed on a site, in install order.
+func (f *Fake) SiteApps(container, host string) []string {
+	return strings.Fields(f.files[container][siteAppsFile(host)])
 }
 
 // sites are the hosts whose site config is in the container, sorted.
@@ -251,7 +286,7 @@ func (f *Fake) setSiteConfig(container, host, key, value string) error {
 
 func (f *Fake) ReadFile(_ context.Context, container, path string) ([]byte, error) {
 	f.Calls = append(f.Calls, "ReadFile")
-	body, ok := f.files[container][path]
+	body, ok := f.get(container, path)
 	if !ok {
 		return nil, fmt.Errorf("%s in %s: %w", path, container, ErrNotExist)
 	}
@@ -266,8 +301,7 @@ func (f *Fake) WriteFile(_ context.Context, container, path string, data []byte)
 
 // File returns a file in a container and whether it is there.
 func (f *Fake) File(container, path string) (string, bool) {
-	body, ok := f.files[container][path]
-	return body, ok
+	return f.get(container, path)
 }
 
 // SetFile places a file in a container, as a user's hand edit would.
@@ -283,6 +317,12 @@ func (f *Fake) ExecLines() []string {
 }
 
 func (f *Fake) put(container, path, body string) {
+	if host, ok := f.hostPath(container, path); ok {
+		if err := os.MkdirAll(filepath.Dir(host), 0o755); err == nil {
+			_ = os.WriteFile(host, []byte(body), 0o644)
+		}
+		return
+	}
 	if f.files == nil {
 		f.files = map[string]map[string]string{}
 	}

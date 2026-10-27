@@ -63,6 +63,7 @@ func newRootCommand(p *ui.Printer, dc docker.Client, openURL func(context.Contex
 	root.AddCommand(newStatusCommand(manager, &g))
 	root.AddCommand(newOpenCommand(manager, &g))
 	root.AddCommand(newSiteCommand(manager, &g))
+	root.AddCommand(newAppCommand(manager, &g))
 	root.AddCommand(newVersionCommand(p))
 	return root
 }
@@ -97,4 +98,17 @@ func noArgs(cmd *cobra.Command, args []string) error {
 
 func usageFix(cmd *cobra.Command) string {
 	return fmt.Sprintf("run `%s --help` for usage", cmd.CommandPath())
+}
+
+// oneArg takes exactly one argument, which what names.
+func oneArg(what string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		switch {
+		case len(args) == 0:
+			return exitcode.Usage("missing "+what, usageFix(cmd))
+		case len(args) > 1:
+			return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[1]), usageFix(cmd))
+		}
+		return nil
+	}
 }

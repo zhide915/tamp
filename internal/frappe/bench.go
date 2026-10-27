@@ -44,9 +44,11 @@ const (
 
 // Init builds the bench around the Frappe clone in apps/: the piped answers
 // keep the folder and install it, and a rollback prompt reads none and aborts.
+// Its asset build would cover every app in apps/, set up or not, so tamp
+// builds each app's assets itself.
 func Init(branch string) []string {
 	return []string{"bash", "-c", `printf 'n\ny\n' | bench init` +
-		` --ignore-exist --no-procfile --skip-redis-config-generation --no-backups` +
+		` --ignore-exist --no-procfile --skip-redis-config-generation --no-backups --skip-assets` +
 		` --frappe-path "$1" --frappe-branch "$2" --python "$3" "$4"`,
 		"tamp", AppsDir + "/frappe", branch, Python, BenchDir}
 }
