@@ -9,6 +9,7 @@ import (
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/env"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -18,9 +19,9 @@ type globals struct {
 	quiet bool
 }
 
-func newRootCommand(p *ui.Printer, dc docker.Client, openURL func(context.Context, string) error) *cobra.Command {
+func newRootCommand(p *ui.Printer, dc docker.Client, sc syncer.Client, openURL func(context.Context, string) error) *cobra.Command {
 	var g globals
-	manager := func() *env.Manager { return env.NewManager(p, dc, openURL) }
+	manager := func() *env.Manager { return env.NewManager(p, dc, sc, openURL) }
 
 	root := &cobra.Command{
 		Use:   "tamp",

@@ -864,3 +864,23 @@ func TestALocalPathHoldingPercentAndSpaceIsCloned(t *testing.T) {
 		t.Errorf("upstream = %q, want %q", got, repo)
 	}
 }
+
+func TestARelativePathWithoutALeadingDotIsALocalPath(t *testing.T) {
+	c := sandbox(t)
+	repo := filepath.Join(c.dir, "src", "acme-erp.git")
+	copyRemote(t, filepath.Join(remotes, "acme", "acme-erp.git"), repo)
+	spec := "src/acme-erp.git"
+	if runtime.GOOS == "windows" {
+		spec = `src\acme-erp.git`
+	}
+
+	c.run(t, "new", "erp-dev", "--frappe", "version-15", "--app", spec).assertCode(t, exitcode.CodeOK)
+
+	dir := filepath.Join(c.dir, "erp-dev")
+	if got := readFile(t, filepath.Join(dir, "tamp.toml")); !strings.Contains(got, "url = "+strconv.Quote(repo)) {
+		t.Errorf("tamp.toml = %q, want the url %q", got, repo)
+	}
+	if got := git(t, filepath.Join(dir, "apps", "acme"), "rev-parse", "--is-shallow-repository"); got != "true" {
+		t.Errorf("is-shallow-repository = %s, want a shallow clone", got)
+	}
+}

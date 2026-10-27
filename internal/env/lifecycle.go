@@ -20,6 +20,8 @@ func (m *Manager) Stop(envFlag string) error {
 	if err != nil {
 		return err
 	}
+	// Paused first, so Mutagen never sees the container go.
+	m.pauseSync(ctx, t)
 	containers, err := m.envContainers(ctx, t.name)
 	if err != nil {
 		return err
@@ -40,8 +42,8 @@ func (m *Manager) Stop(envFlag string) error {
 	return nil
 }
 
-// Remove deletes the environment's containers, network and volumes, and
-// keeps its directory. Without yes it removes nothing.
+// Remove deletes the environment's sync session, containers, network and
+// volumes, and keeps its directory. Without yes it removes nothing.
 func (m *Manager) Remove(envFlag string, yes bool) error {
 	ctx := context.Background()
 	t, err := m.locate(ctx, envFlag)
@@ -53,6 +55,7 @@ func (m *Manager) Remove(envFlag string, yes bool) error {
 			fmt.Sprintf("removing %s deletes its containers, network and volumes, with every site's database", t.name),
 			"run "+t.command("remove --yes")+" to confirm")
 	}
+	m.terminateSync(ctx, t)
 	containers, err := m.envContainers(ctx, t.name)
 	if err != nil {
 		return err
@@ -124,7 +127,7 @@ func (m *Manager) List() error {
 	return nil
 }
 
-// Status prints one environment's containers and site URLs.
+// Status prints one environment's containers, sync state and site URLs.
 func (m *Manager) Status(envFlag string) error {
 	ctx := context.Background()
 	t, err := m.locate(ctx, envFlag)
@@ -152,6 +155,7 @@ func (m *Manager) Status(envFlag string) error {
 		}
 		m.p.Print(fmt.Sprintf("  %-*s  %s", width, c.Name, running))
 	}
+	m.p.Print("sync: " + m.syncState(ctx, t))
 	m.p.Print("sites:")
 	urls := m.siteURLs(t.name, t.dir)
 	if len(urls) == 0 {

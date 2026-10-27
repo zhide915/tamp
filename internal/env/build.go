@@ -51,15 +51,18 @@ func (m *Manager) build(t target, r Recipe) error {
 
 // resume adds to err's fix the start that resumes the build: nothing rolls
 // back, so every build failure ends in `tamp start`.
-func (t target) resume(err error) error {
+func (t target) resume(err error) error { return t.again(err, "start") }
+
+// again adds to err's fix the command that runs again what failed.
+func (t target) again(err error, args string) error {
 	var e *exitcode.Error
 	if !errors.As(err, &e) {
 		return err
 	}
-	start := "run " + t.command("start")
-	fix := start
+	rerun := "run " + t.command(args)
+	fix := rerun
 	if e.Fix != "" {
-		fix = e.Fix + ", then " + start
+		fix = e.Fix + ", then " + rerun
 	}
 	return exitcode.New(e.Code, e.Msg, fix)
 }
@@ -123,6 +126,11 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 	dir, name := t.dir, t.name
 	out := m.p.Progress()
 
+	// First, so a Mutagen that cannot run stops the build before anything starts.
+	if err := m.installSync(ctx); err != nil {
+		return err
+	}
+
 	image := imageBuild(r.Frappe)
 	exists, err := m.docker.ImageExists(ctx, image.Tag)
 	if err != nil {
@@ -158,7 +166,7 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 	if err := m.docker.EnsureVolume(ctx, docker.Volume{Name: CacheVolume}); err != nil {
 		return err
 	}
-	compose, err := renderCompose(name, dir, image.Tag, r)
+	compose, err := renderCompose(name, dir, image.Tag, r, m.sync == nil)
 	if err != nil {
 		return err
 	}
@@ -169,6 +177,9 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 	if err := m.docker.ComposeUp(ctx, docker.Project{
 		Name: name, File: filepath.Join(dir, ComposeFile), Out: out,
 	}); err != nil {
+		return err
+	}
+	if err := m.ensureSync(ctx, t); err != nil {
 		return err
 	}
 

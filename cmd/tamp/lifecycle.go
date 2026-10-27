@@ -20,7 +20,7 @@ func newRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "remove --yes",
-		Short: "Delete the environment's containers, network and volumes, and keep its directory",
+		Short: "Delete the environment's sync session, containers, network and volumes, and keep its directory",
 		Args:  noArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return manager().Remove(g.env, yes)
@@ -44,7 +44,7 @@ func newListCommand(manager func() *env.Manager) *cobra.Command {
 func newStatusCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show the environment's containers and site URLs",
+		Short: "Show the environment's containers, sync state and site URLs",
 		Args:  noArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return manager().Status(g.env)

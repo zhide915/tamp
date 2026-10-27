@@ -42,8 +42,24 @@ func (m *Manager) cloneApp(ctx context.Context, dir, name, url, branch string) e
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot create %s: %v", filepath.Dir(target), err),
 			"check that you can write to the directory")
 	}
+	// Cloned into a dot folder first: the sync skips those, so it never holds
+	// a file open that git is still writing, which Windows refuses.
+	tmp, err := os.MkdirTemp(filepath.Dir(target), "."+name+"-")
+	if err != nil {
+		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot create a folder in %s: %v", filepath.Dir(target), err),
+			"check that you can write to the directory")
+	}
 	m.p.Step("cloning " + url)
-	return gitClone(ctx, url, branch, target, m.p.Progress())
+	if err := gitClone(ctx, url, branch, tmp, m.p.Progress()); err != nil {
+		// The temp clone is tamp's own; nothing else refers to it yet.
+		_ = os.RemoveAll(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot move the clone of %s to %s: %v", url, target, err),
+			"check that nothing holds files open in "+filepath.Dir(target))
+	}
+	return nil
 }
 
 // gitClone clones url into target, which may be an empty folder. Without a
@@ -70,9 +86,15 @@ func gitClone(ctx context.Context, url, branch, target string, out io.Writer) er
 	if err == nil && source != url {
 		// The remote keeps the path as given, which adoption compares with.
 		if said, err := exec.CommandContext(ctx, "git", "-C", target, "remote", "set-url", "upstream", url).CombinedOutput(); err != nil {
-			return exitcode.New(exitcode.CodeFailed,
+			// A clone left with its file:// upstream would be kept as it is.
+			if rmErr := os.RemoveAll(target); rmErr != nil {
+				return upstreamFailed{exitcode.New(exitcode.CodeFailed,
+					fmt.Sprintf("cannot set the upstream of %s to %s, nor remove the clone: %v", target, url, rmErr),
+					"delete "+target)}
+			}
+			return upstreamFailed{exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("cannot set the upstream of %s to %s: %s", target, url, strings.TrimSpace(string(said))),
-				"run the command again")
+				"check that git can write to "+filepath.Dir(target))}
 		}
 	}
 	if err != nil {
@@ -104,21 +126,16 @@ func fileURL(path string) string {
 }
 
 // localPath reports whether an app spec is a path on this machine: absolute,
-// or relative with a leading `.`, as in `../acme`.
+// or relative, as in `../acme` or `src/acme`. A URL holds `:`, and a name no separator.
 func localPath(spec string) bool {
 	if filepath.IsAbs(spec) || spec == "." || spec == ".." {
 		return true
 	}
-	prefixes := []string{"./", "../"}
+	separators := "/"
 	if filepath.Separator == '\\' {
-		prefixes = append(prefixes, `.\`, `..\`)
+		separators = `/\`
 	}
-	for _, p := range prefixes {
-		if strings.HasPrefix(spec, p) {
-			return true
-		}
-	}
-	return false
+	return !strings.Contains(spec, ":") && strings.ContainsAny(spec, separators)
 }
 
 // cloneFailed is a failed git clone, whose fix depends on where the url came
@@ -127,6 +144,13 @@ type cloneFailed struct{ err *exitcode.Error }
 
 func (c cloneFailed) Error() string { return c.err.Error() }
 func (c cloneFailed) Unwrap() error { return c.err }
+
+// upstreamFailed is a clone whose upstream git could not set: the command that
+// cloned clones again.
+type upstreamFailed struct{ err *exitcode.Error }
+
+func (u upstreamFailed) Error() string { return u.err.Error() }
+func (u upstreamFailed) Unwrap() error { return u.err }
 
 // currentBranch is the branch a clone has checked out, or "" when it has
 // none, as in a detached HEAD or a folder that is not a git repository.
@@ -287,3 +311,7 @@ func requiredAppSpec(entry string) string {
 	}
 	return entry
 }
+
+// tempClone is the folder name os.MkdirTemp gives a clone in progress, which
+// a killed run or a failed rename leaves behind.
+var tempClone = regexp.MustCompile(`^\.[A-Za-z0-9_.-]+-[0-9]+$`)

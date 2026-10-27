@@ -107,6 +107,14 @@ for service in frappe mariadb redis-cache redis-queue; do
   [ "$labels" = "erp-dev $ENV_DIR" ] || fail "erp-dev-$service-1 has labels '$labels'"
 done
 
+say "on Linux, apps/ is bind-mounted, and tamp neither downloads Mutagen nor syncs"
+docker inspect --format '{{ range .Mounts }}{{ .Type }}:{{ .Destination }} {{ end }}' "$FRAPPE" |
+  grep -qw 'bind:/home/frappe/frappe-bench/apps' || fail "apps/ is not bind-mounted"
+# Captured first: grep -q would close the pipe on tamp, which pipefail reports.
+out=$("$TAMP" status -e erp-dev)
+grep -qx 'sync: apps/ is bind-mounted' <<<"$out" || fail "tamp status does not show the bind mount: $out"
+[ ! -e "$HOME/.tamp/bin" ] || fail "tamp downloaded Mutagen on Linux"
+
 say "files the container writes into apps/ belong to the host user"
 [ "$(stat -c %u erp-dev/apps/frappe/frappe/public/dist)" = "$(id -u)" ] ||
   fail "apps/ holds files that are not the host user's"

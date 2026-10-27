@@ -41,7 +41,6 @@ func (m *Manager) Shell(envFlag string, cmd []string, dashed, force bool, stdin 
 		if err := refuse(t, cmd); err != nil {
 			return err
 		}
-		m.warnShell(t, cmd)
 	}
 	container := frappeContainer(t.name)
 	c, err := m.docker.Inspect(ctx, container)
@@ -51,6 +50,9 @@ func (m *Manager) Shell(envFlag string, cmd []string, dashed, force bool, stdin 
 	if !c.Running {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("the frappe container of %s is not running", t.name),
 			"start it with "+t.command("start"))
+	}
+	if !force {
+		m.warnShell(t, cmd)
 	}
 
 	if len(cmd) == 0 {
@@ -77,7 +79,7 @@ func refuse(t target, cmd []string) error {
 	case "start":
 		return exitcode.New(exitcode.CodeFailed,
 			"`bench start` would run a second copy of the processes the frappe container already runs",
-			"see their output with "+logsLine(t.flag)+anyway)
+			"see their output with "+t.command("logs -f")+anyway)
 	case "update":
 		return exitcode.New(exitcode.CodeFailed,
 			"`bench update` would pull every app inside the container, where git has none of the host's credentials",
@@ -127,13 +129,6 @@ func shellLine(envFlag string, force bool, command string) string {
 		line += " --force"
 	}
 	return "`" + line + " -- " + command + "`"
-}
-
-func logsLine(envFlag string) string {
-	if envFlag != "" {
-		return "`tamp logs -e " + envFlag + " -f`"
-	}
-	return "`tamp logs -f`"
 }
 
 // shellWords joins argv back into a command line, quoting the words a POSIX

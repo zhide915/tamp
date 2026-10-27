@@ -335,6 +335,9 @@ func (f *Fake) File(container, path string) (string, bool) {
 // SetFile places a file in a container, as a user's hand edit would.
 func (f *Fake) SetFile(container, path, body string) { f.put(container, path, body) }
 
+// RemoveFile deletes a file in a container, as a sync of a deletion would.
+func (f *Fake) RemoveFile(container, path string) { f.remove(container, path) }
+
 // ExecLines joins each recorded exec's command line, in order.
 func (f *Fake) ExecLines() []string {
 	lines := make([]string, len(f.Execs))

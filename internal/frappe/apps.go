@@ -18,7 +18,8 @@ const benchPython = BenchDir + "/env/bin/python"
 func AppInstalled(app string) string { return BenchDir + "/env/.tamp-app-" + app }
 
 // NodeInstalled is tamp's marker that an app's node packages are installed.
-// It lives in the clone's node_modules, so a fresh clone has none.
+// It lives in node_modules, so it vouches for the packages there, which the
+// sync keeps in the container when the host clones the app anew.
 func NodeInstalled(app string) string { return AppsDir + "/" + app + "/node_modules/.tamp-installed" }
 
 // AssetsBuilt is tamp's marker that the bench volume holds an app's built
@@ -86,11 +87,17 @@ func ParseSiteApps(out []byte, host string) ([]string, error) {
 // AssetsInClone is tamp's marker that an app's clone holds its built assets,
 // which bench build writes into the app's public/dist. In a repository it
 // goes inside .git, so git status never shows it.
-func AssetsInClone(app string, repo bool) string {
+func AssetsInClone(app string, repo bool) string { return inClone(app, "tamp-assets", repo) }
+
+// NodeInClone is tamp's marker that an app's clone had its node packages
+// installed, so a fresh clone gets them anew even where node_modules was kept.
+func NodeInClone(app string, repo bool) string { return inClone(app, "tamp-node", repo) }
+
+func inClone(app, marker string, repo bool) string {
 	if repo {
-		return AppsDir + "/" + app + "/.git/tamp-assets"
+		return AppsDir + "/" + app + "/.git/" + marker
 	}
-	return AppsDir + "/" + app + "/.tamp-assets"
+	return AppsDir + "/" + app + "/." + marker
 }
 
 // Paused is tamp's: while it exists, the frappe container starts no bench
@@ -99,7 +106,8 @@ const Paused = BenchDir + "/.tamp-paused"
 
 // StopProcesses stops honcho and waits up to 60 s for it and every node
 // process to exit, so nothing keeps files open in an app's node_modules.
-// Paused keeps the container from starting them again.
+// Paused keeps the container from starting them again. On a timeout it names
+// each process left, such as a node one started through `tamp shell`.
 func StopProcesses() []string {
 	return []string{"bash", "-c", `
 running() {
@@ -108,6 +116,13 @@ running() {
   done
   return 1
 }
+left() {
+  for p in /proc/[0-9]*; do
+    case "$(cat "$p/comm" 2>/dev/null)" in
+    honcho | node | esbuild) echo "  pid ${p#/proc/}: $(tr '\0' ' ' 2>/dev/null <"$p/cmdline")" >&2 ;;
+    esac
+  done
+}
 for p in /proc/[0-9]*; do
   if [ "$(cat "$p/comm" 2>/dev/null)" = honcho ]; then kill -TERM "${p#/proc/}"; fi
 done
@@ -115,6 +130,8 @@ for _ in $(seq 120); do
   running || exit 0
   sleep 0.5
 done
-echo "the bench's processes did not stop within 60 s" >&2
+echo "the bench's processes did not stop within 60 s; these still run, and may hold files in node_modules:" >&2
+left
+echo "end any that you started through tamp shell, such as bench watch" >&2
 exit 1`}
 }

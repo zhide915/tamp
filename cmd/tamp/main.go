@@ -8,12 +8,14 @@ import (
 	"errors"
 	"io"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/zhide915/tamp/internal/browser"
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 	"github.com/zhide915/tamp/internal/ui"
 )
 
@@ -26,17 +28,17 @@ var (
 
 func main() {
 	ui.EnableColorSupport()
-	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, docker.New(), browser.Open)))
+	os.Exit(int(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr, os.LookupEnv, docker.New(), syncer.ForPlatform(runtime.GOOS), browser.Open)))
 }
 
 // run is tamp without the process, so tests drive it in-process.
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer, lookupEnv func(string) (string, bool),
-	dc docker.Client, openURL func(context.Context, string) error) exitcode.Code {
+	dc docker.Client, sc syncer.Client, openURL func(context.Context, string) error) exitcode.Code {
 	p := ui.NewPrinter(stdout, stderr, lookupEnv)
 	if noColor(args) {
 		p.DisableColor()
 	}
-	root := newRootCommand(p, dc, openURL)
+	root := newRootCommand(p, dc, sc, openURL)
 	root.SetIn(stdin)
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {

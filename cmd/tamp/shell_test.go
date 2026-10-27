@@ -156,13 +156,14 @@ func TestABareShellOnATerminalOpensBashAsTheBenchUserInTheBenchDirectory(t *test
 	}
 }
 
-func TestShellOnAStoppedEnvironmentExits1AndNamesStart(t *testing.T) {
+func TestShellOnAStoppedEnvironmentExits1NamesStartAndWarnsOfNothingFirst(t *testing.T) {
 	c := sandbox(t)
 	c.newIn(t, "erp-dev")
 	c.run(t, "stop").assertCode(t, exitcode.CodeOK)
 	t.Chdir(c.dir)
 
-	r := c.run(t, "shell", "-e", "erp-dev", "--", "bench", "migrate")
+	// git draws a warning on a running environment.
+	r := c.run(t, "shell", "-e", "erp-dev", "--", "git", "status")
 
 	r.assertCode(t, exitcode.CodeFailed)
 	r.assertOneLineError(t, "`tamp start -e erp-dev`")

@@ -50,10 +50,12 @@ type composeData struct {
 	BenchDir, AppsDir, CacheDir      string
 	Procfile, Paused, DBRootPassword string
 	Labels, RedisServices            []string
+	// BindApps bind-mounts apps/; otherwise the sync fills it in the bench volume.
+	BindApps bool
 }
 
 // renderCompose renders compose.yaml for an environment from its recipe.
-func renderCompose(name, dir, image string, r Recipe) ([]byte, error) {
+func renderCompose(name, dir, image string, r Recipe, bindApps bool) ([]byte, error) {
 	var buf bytes.Buffer
 	err := composeTemplate.Execute(&buf, composeData{
 		QuotedName:     quote(name),
@@ -70,6 +72,7 @@ func renderCompose(name, dir, image string, r Recipe) ([]byte, error) {
 		DBRootPassword: frappe.DBRootPassword,
 		RedisServices:  []string{redisCacheService, redisQueueService},
 		Labels:         []string{LabelEnv + ": " + quote(name), LabelPath + ": " + quote(dir)},
+		BindApps:       bindApps,
 	})
 	return buf.Bytes(), err
 }
@@ -114,7 +117,9 @@ services:
 {{- end}}
     volumes:
       - bench:{{.BenchDir}}
+{{- if .BindApps}}
       - ./apps:{{.AppsDir}}
+{{- end}}
       - tamp-cache:{{.CacheDir}}
     depends_on:
       mariadb:

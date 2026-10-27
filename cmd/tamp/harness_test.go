@@ -13,6 +13,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/syncer"
 )
 
 // cli runs tamp in-process through the cobra root, against a temp home, a
@@ -20,6 +21,9 @@ import (
 type cli struct {
 	dir, home string
 	docker    *docker.Fake
+	// sync is the Mutagen fake, set for a Windows or macOS build; nil bind-mounts
+	// apps/, as on Linux.
+	sync *syncer.Fake
 	// opened records each URL handed to the browser, which no test opens.
 	opened []string
 	// terminal makes stdin, stdout and stderr claim to be a terminal, for
@@ -75,7 +79,7 @@ func (c *cli) run(t *testing.T, args ...string) result {
 		if c.plainErr {
 			stderr = &bytes.Buffer{}
 		}
-		code := run(args, &stdin, &stdout, stderr, os.LookupEnv, c.docker, c.openURL)
+		code := run(args, &stdin, &stdout, stderr, os.LookupEnv, c.docker, c.syncClient(), c.openURL)
 		return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 	}
 	var stdin io.Reader = &bytes.Buffer{}
@@ -83,7 +87,7 @@ func (c *cli) run(t *testing.T, args ...string) result {
 		stdin = &terminalBuffer{}
 	}
 	var stdout, stderr bytes.Buffer
-	code := run(args, stdin, &stdout, &stderr, os.LookupEnv, c.docker, c.openURL)
+	code := run(args, stdin, &stdout, &stderr, os.LookupEnv, c.docker, c.syncClient(), c.openURL)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 
@@ -224,6 +228,14 @@ func makeRemote(bare string, branches []string, files map[string]string) error {
 // path.
 func fileURL(path string) string {
 	return "file:///" + strings.TrimPrefix(filepath.ToSlash(path), "/")
+}
+
+// syncClient is nil, not a nil *syncer.Fake, when no test set sync.
+func (c *cli) syncClient() syncer.Client {
+	if c.sync == nil {
+		return nil
+	}
+	return c.sync
 }
 
 func (c *cli) openURL(_ context.Context, url string) error {

@@ -33,7 +33,8 @@ func (m *Manager) resolveApp(ctx context.Context, dir, url, branch, retry string
 			"check that you can read the directory")
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
+		// A dot folder is a temp clone, never a kept one.
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
 		if got, err := remoteURL(filepath.Join(apps, e.Name())); err != nil {
@@ -165,6 +166,10 @@ func (m *Manager) AppAdd(envFlag, spec string) error {
 	var failed cloneFailed
 	if errors.As(err, &failed) {
 		return exitcode.New(failed.err.Code, failed.err.Msg, failed.err.Fix+", then run "+t.command("app add "+spec))
+	}
+	var upstream upstreamFailed
+	if errors.As(err, &upstream) {
+		return t.again(upstream.err, "app add "+spec)
 	}
 	if err != nil {
 		return err
@@ -401,31 +406,36 @@ func (b bench) installApps(dir string, r Recipe, running bool) (changed, paused 
 
 // assetPlan is the node and asset work one app needs.
 type assetPlan struct {
-	name, inClone   string
-	packages, build bool
+	name string
+	// The markers that go with the clone, for its node packages and assets.
+	nodeInClone, assetsInClone string
+	packages, build            bool
 }
 
-// planAssets plans an app's node packages unless its clone holds them, and
-// its assets unless both the clone and the bench volume hold them: either can
-// be new while the other is kept.
+// planAssets plans an app's node packages unless both its clone and its
+// node_modules hold them, and its assets unless both the clone and the bench
+// volume hold them: either can be new while the other is kept.
 func (b bench) planAssets(dir, name string) (assetPlan, error) {
-	p := assetPlan{name: name, inClone: frappe.AssetsInClone(name, isDir(filepath.Join(dir, AppsDir, name, ".git")))}
+	repo := isDir(filepath.Join(dir, AppsDir, name, ".git"))
+	p := assetPlan{name: name, nodeInClone: frappe.NodeInClone(name, repo), assetsInClone: frappe.AssetsInClone(name, repo)}
 	_, err := os.Stat(filepath.Join(dir, AppsDir, name, "package.json"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return p, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot read %s: %v", filepath.Join(dir, AppsDir, name), err),
 			"check that you can read the directory")
 	}
 	if err == nil {
-		installed, err := b.exists(frappe.NodeInstalled(name))
-		if err != nil {
-			return p, err
+		for _, marker := range []string{frappe.NodeInstalled(name), p.nodeInClone} {
+			ok, err := b.exists(marker)
+			if err != nil {
+				return p, err
+			}
+			p.packages = p.packages || !ok
 		}
-		p.packages = !installed
 	}
 	// bench build writes into both the clone and the bench volume, and new
 	// packages may change what it builds.
 	p.build = p.packages
-	for _, marker := range []string{frappe.AssetsBuilt(name), p.inClone} {
+	for _, marker := range []string{frappe.AssetsBuilt(name), p.assetsInClone} {
 		ok, err := b.exists(marker)
 		if err != nil {
 			return p, err
@@ -441,8 +451,10 @@ func (b bench) setupAssets(p assetPlan) error {
 		if err := b.run(frappe.NodePackages(p.name)); err != nil {
 			return err
 		}
-		if err := b.m.docker.WriteFile(b.ctx, b.container, frappe.NodeInstalled(p.name), nil); err != nil {
-			return err
+		for _, marker := range []string{frappe.NodeInstalled(p.name), p.nodeInClone} {
+			if err := b.m.docker.WriteFile(b.ctx, b.container, marker, nil); err != nil {
+				return err
+			}
 		}
 	}
 	if !p.build {
@@ -452,7 +464,7 @@ func (b bench) setupAssets(p assetPlan) error {
 	if err := b.run(frappe.BuildAssets(p.name)); err != nil {
 		return err
 	}
-	for _, marker := range []string{frappe.AssetsBuilt(p.name), p.inClone} {
+	for _, marker := range []string{frappe.AssetsBuilt(p.name), p.assetsInClone} {
 		if err := b.m.docker.WriteFile(b.ctx, b.container, marker, nil); err != nil {
 			return err
 		}
@@ -568,6 +580,14 @@ func (m *Manager) warnClones(t target, r Recipe) error {
 			continue
 		}
 		folder := filepath.Join(apps, e.Name())
+		if tempClone.MatchString(e.Name()) {
+			m.p.Warn(fmt.Sprintf("%s is a clone tamp did not finish: delete the folder", folder))
+			continue
+		}
+		// A dot folder holds no app, and the sync skips it.
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
 		url, err := remoteURL(folder)
 		if err != nil {
 			m.p.Warn(err.Error())
