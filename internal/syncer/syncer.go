@@ -5,6 +5,7 @@ package syncer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -21,6 +22,9 @@ type Client interface {
 	// Session returns the named session, or nil when there is none. It
 	// never downloads Mutagen: without it there is no session.
 	Session(ctx context.Context, name string) (*Session, error)
+	// Peek is Session that never starts Mutagen's daemon, which would resume
+	// syncing: with no daemon running it returns ErrNoDaemon.
+	Peek(ctx context.Context, name string) (*Session, error)
 	// Replicate makes the container's folder match the host's, deleting what the
 	// host lacks except ignored files, so a new session brings back nothing
 	// the host deleted.
@@ -92,6 +96,10 @@ type RunError struct {
 
 func (e *RunError) Error() string { return fmt.Sprintf("Mutagen cannot run: %v", e.Err) }
 func (e *RunError) Unwrap() error { return e.Err }
+
+// ErrNoDaemon is Peek's answer when Mutagen's daemon is not running, so
+// nothing syncs.
+var ErrNoDaemon = errors.New("no Mutagen daemon is running")
 
 // ReplicaName is the session that Replicate runs for the session name, which a
 // killed run can leave behind. Its single `-` before "replica" keeps it apart

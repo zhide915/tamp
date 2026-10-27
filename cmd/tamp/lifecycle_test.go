@@ -37,7 +37,7 @@ func (c *cli) callsSince(n int) []string { return c.docker.Calls[n:] }
 func assertOnlyReads(t *testing.T, calls []string) {
 	t.Helper()
 	for _, call := range calls {
-		if !slices.Contains([]string{"Ping", "Containers", "AllContainers", "Inspect", "InspectVolume", "ReadFile"}, call) {
+		if !slices.Contains([]string{"Ping", "ComposeVersion", "Publishing", "Containers", "AllContainers", "Inspect", "InspectVolume", "ReadFile"}, call) {
 			t.Errorf("Docker calls = %v, want only reads", calls)
 			return
 		}

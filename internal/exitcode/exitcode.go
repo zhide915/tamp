@@ -7,6 +7,7 @@ package exitcode
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Code is a tamp process exit code.
@@ -53,7 +54,8 @@ func (e *Error) Error() string {
 	if e.Fix == "" {
 		return e.Msg
 	}
-	return e.Msg + ": " + e.Fix
+	// Windows ends its error text in a period, which would print as ".:".
+	return strings.TrimSuffix(e.Msg, ".") + ": " + e.Fix
 }
 
 // Exit is the non-zero exit of a command that `tamp shell` ran. tamp exits

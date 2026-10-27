@@ -19,6 +19,9 @@ import (
 type Client interface {
 	// Ping confirms that the Docker daemon answers.
 	Ping(ctx context.Context) error
+	// ComposeVersion is the version of the docker CLI's compose plugin,
+	// which needs no daemon.
+	ComposeVersion(ctx context.Context) (string, error)
 
 	// ImageExists reports whether an image with the tag is on this machine.
 	ImageExists(ctx context.Context, tag string) (bool, error)
@@ -49,6 +52,8 @@ type Client interface {
 
 	// Containers lists the running containers that carry the label.
 	Containers(ctx context.Context, label string) ([]Container, error)
+	// Publishing names the running containers that publish the host port.
+	Publishing(ctx context.Context, port int) ([]string, error)
 	// AllContainers lists the containers that carry the label, running or not.
 	AllContainers(ctx context.Context, label string) ([]Container, error)
 	// StopContainer stops a container.
@@ -190,9 +195,12 @@ func (d *Daemon) Ping(ctx context.Context) error {
 		return err
 	}
 	if _, err := api.ServerVersion(ctx, client.ServerVersionOptions{}); err != nil {
+		fix := "start Docker"
+		if addr.Source == SourceEnv {
+			fix = "start Docker, or correct or unset DOCKER_HOST"
+		}
 		return exitcode.New(exitcode.CodeDockerUnavailable,
-			fmt.Sprintf("Docker is not answering at %s: %v", addr, rootCause(err)),
-			"start Docker")
+			fmt.Sprintf("Docker is not answering at %s: %v", addr, rootCause(err)), fix)
 	}
 	return nil
 }

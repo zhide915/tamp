@@ -62,6 +62,9 @@ func (m *Mutagen) dir() (string, error) {
 	return filepath.Join(home, ".tamp"), nil
 }
 
+// dataDir is Mutagen's own, which its daemon creates on first start.
+func dataDir(dir string) string { return filepath.Join(dir, "mutagen") }
+
 // binDir holds one Mutagen version's binary and agents.
 func binDir(dir string) string { return filepath.Join(dir, "bin", "mutagen-"+Version) }
 
@@ -100,7 +103,7 @@ func present(path string) (bool, error) {
 
 // version checks that a binary runs and is the pinned version.
 func version(ctx context.Context, bin, dir string) error {
-	out, err := run(ctx, bin, dir, "report its version", "version")
+	out, err := run(ctx, bin, dir, nil, "report its version", "version")
 	var runErr *RunError
 	switch {
 	case errors.As(err, &runErr):
@@ -277,9 +280,9 @@ func writeFile(path string, r io.Reader, mode os.FileMode) error {
 // daemon and sessions never mix with a Mutagen the user runs. It runs in dir,
 // as the daemon it starts keeps that folder, which Windows then cannot move.
 // what names the command for an error, as in "cannot <what>".
-func run(ctx context.Context, bin, dir, what string, args ...string) ([]byte, error) {
+func run(ctx context.Context, bin, dir string, env []string, what string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Env = append(os.Environ(), "MUTAGEN_DATA_DIRECTORY="+filepath.Join(dir, "mutagen"))
+	cmd.Env = append(append(os.Environ(), "MUTAGEN_DATA_DIRECTORY="+dataDir(dir)), env...)
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -312,7 +315,7 @@ func (m *Mutagen) mutagen(ctx context.Context, what string, args ...string) ([]b
 	if err != nil {
 		return nil, err
 	}
-	return run(ctx, filepath.Join(binDir(dir), exe()), dir, what, args...)
+	return run(ctx, filepath.Join(binDir(dir), exe()), dir, nil, what, args...)
 }
 
 func (m *Mutagen) Session(ctx context.Context, name string) (*Session, error) {
@@ -324,6 +327,31 @@ func (m *Mutagen) Session(ctx context.Context, name string) (*Session, error) {
 		return nil, err
 	}
 	out, err := m.mutagen(ctx, "list the sync sessions", "sync", "list", "--template", "{{json .}}")
+	if err != nil {
+		return nil, err
+	}
+	return parseSession(out, name)
+}
+
+func (m *Mutagen) Peek(ctx context.Context, name string) (*Session, error) {
+	dir, err := m.dir()
+	if err != nil {
+		return nil, err
+	}
+	bin := filepath.Join(binDir(dir), exe())
+	if ok, err := present(bin); err != nil || !ok {
+		return nil, err
+	}
+	// Without its data folder, no daemon ever ran here, so no session exists.
+	if ok, err := present(dataDir(dir)); err != nil || !ok {
+		return nil, err
+	}
+	out, err := run(ctx, bin, dir, []string{"MUTAGEN_DISABLE_AUTOSTART=1"}, "list the sync sessions",
+		"sync", "list", "--template", "{{json .}}")
+	// Mutagen 0.18's wording when autostart is off and no daemon runs.
+	if err != nil && strings.Contains(err.Error(), "unable to connect to daemon") {
+		return nil, ErrNoDaemon
+	}
 	if err != nil {
 		return nil, err
 	}

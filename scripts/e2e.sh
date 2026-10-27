@@ -16,6 +16,7 @@ cleanup() {
   "$TAMP" remove -e erp-dev --yes --quiet || true
   # tamp never removes the router.
   docker rm --force tamp-router >/dev/null 2>&1 || true
+  docker rm --force tamp-e2e-port80 >/dev/null 2>&1 || true
   docker network rm tamp-router_default >/dev/null 2>&1 || true
   rm -rf "$WORK"
 }
@@ -334,6 +335,26 @@ timeout 5 "$TAMP" logs -f --tail 1 >/dev/null || code=$?
 code=0
 "$TAMP" logs web || code=$?
 [ "$code" = 2 ] || fail "exit code $code for an unknown service, want 2"
+
+say "tamp doctor passes a healthy environment, and fails port 80 held by something other than the router"
+out=$("$TAMP" doctor) || fail "tamp doctor exited $? on a healthy environment: $out"
+echo "$out"
+if grep -qE '^(!|✗) ' <<<"$out"; then fail "tamp doctor flagged a healthy environment"; fi
+docker stop tamp-router >/dev/null
+docker run --detach --name tamp-e2e-port80 --publish 127.0.0.1:80:80 caddy:2.10 >/dev/null
+code=0
+out=$("$TAMP" doctor) || code=$?
+docker rm --force tamp-e2e-port80 >/dev/null
+docker start tamp-router >/dev/null
+# The next stop reloads the router, whose admin API needs a moment after a start.
+for _ in $(seq 1 20); do
+  docker exec tamp-router wget -qO /dev/null http://localhost:2019/config/ 2>/dev/null && break
+  sleep 1
+done
+echo "$out"
+[ "$code" = 1 ] || fail "exit code $code for doctor with port 80 held, want 1"
+grep -qF '✗ port 80 is taken by something other than the router: stop the container that publishes port 80 with `docker stop tamp-e2e-port80`' <<<"$out" ||
+  fail "doctor does not fail port 80 with a fix that names the container"
 
 say "tamp stop stops the containers and takes the sites off the router"
 "$TAMP" stop

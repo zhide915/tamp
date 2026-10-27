@@ -485,3 +485,17 @@ func TestStartNamesAnUnfinishedTempCloneAndSkipsOtherDotFolders(t *testing.T) {
 		t.Errorf("stderr = %q, want no warning for other dot folders", r.stderr)
 	}
 }
+
+func TestStopOfContainersStoppedOutsideTampPausesTheSessionWithoutWaitingForTheSync(t *testing.T) {
+	c := sandbox(t)
+	s := c.mutagen()
+	c.newEnvironment(t, "--frappe", "version-15")
+	c.docker.Stop("erp-dev")
+	s.Calls = nil
+
+	c.run(t, "stop").assertCode(t, exitcode.CodeOK)
+
+	if want := []string{"Pause " + session}; !slices.Equal(c.syncCalls(), want) {
+		t.Errorf("Mutagen calls = %v, want %v", c.syncCalls(), want)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/zhide915/tamp/internal/docker"
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/router"
 	"github.com/zhide915/tamp/internal/syncer"
 )
 
@@ -54,6 +56,11 @@ func sandbox(t *testing.T) *cli {
 	}
 	t.Setenv("GIT_CONFIG_GLOBAL", gitconfig)
 	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+	// A port nothing listens on stands in for this machine's port 80.
+	saved := router.Loopback
+	t.Cleanup(func() { router.Loopback = saved })
+	router.Loopback = closedPort(t)
 	return &cli{dir: dir, home: home, docker: &docker.Fake{}}
 }
 
@@ -241,4 +248,18 @@ func (c *cli) syncClient() syncer.Client {
 func (c *cli) openURL(_ context.Context, url string) error {
 	c.opened = append(c.opened, url)
 	return nil
+}
+
+// closedPort is a loopback address that nothing listens on.
+func closedPort(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return addr
 }

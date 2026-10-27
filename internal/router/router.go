@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -204,18 +206,50 @@ func (r Router) up(ctx context.Context, compose []byte) error {
 		Name: Project, File: filepath.Join(r.Dir, composeFile), Out: r.Out, Publishes: true,
 	})
 	if errors.Is(err, docker.ErrPortTaken) {
+		fix, err := PortFix(ctx, r.Docker)
+		if err != nil {
+			return err
+		}
 		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("port %d is taken, so the router cannot start", Port),
-			fmt.Sprintf("stop what listens on port %d (find it with %s)", Port, findPortCommand()))
+			fmt.Sprintf("port %d is taken, so the router cannot start", Port), fix)
 	}
 	return err
 }
 
+// PortFix is the fix for port 80 held by something other than the router: it
+// names a container that publishes the port, since netstat shows only Docker.
+func PortFix(ctx context.Context, dc docker.Client) (string, error) {
+	holders, err := dc.Publishing(ctx, Port)
+	if err != nil {
+		return "", err
+	}
+	if len(holders) > 0 {
+		return fmt.Sprintf("stop the container that publishes port %d with `docker stop %s`", Port, strings.Join(holders, " ")), nil
+	}
+	return fmt.Sprintf("stop what listens on port %d (find it with %s)", Port, findPortCommand()), nil
+}
+
+// Loopback is where the router publishes Port. Tests point it at a port of
+// their own, so none depends on what holds this machine's port 80.
+var Loopback = net.JoinHostPort("127.0.0.1", strconv.Itoa(Port))
+
+// PortHeld reports whether something accepts connections on Loopback. It
+// connects and hangs up, and so binds nothing.
+func PortHeld(ctx context.Context) bool {
+	d := net.Dialer{Timeout: time.Second}
+	c, err := d.DialContext(ctx, "tcp", Loopback)
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	return true
+}
+
 func findPortCommand() string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf("`netstat -ano | findstr :%d`", Port)
+		return fmt.Sprintf("`netstat -ano | findstr LISTENING | findstr /C:\":%d \"`", Port)
 	}
-	return fmt.Sprintf("`sudo lsof -i :%d`", Port)
+	return fmt.Sprintf("`sudo lsof -nP -iTCP:%d -sTCP:LISTEN`", Port)
 }
 
 // A recreated router's admin API may not listen yet, so a reload right after

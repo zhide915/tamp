@@ -26,8 +26,8 @@ const BenchInitConfig = `{
 // Fake is the recording Client for tests. It also models a bench's files, so
 // tamp reads back what bench init, new-site and its own writes left.
 type Fake struct {
-	// PingErr is Ping's answer.
-	PingErr error
+	// PingErr is Ping's answer, and ComposeErr ComposeVersion's.
+	PingErr, ComposeErr error
 	// ExecFails fails each exec whose command line contains a key, with its
 	// error: how a test plants a failure partway through a build.
 	ExecFails map[string]error
@@ -47,6 +47,9 @@ type Fake struct {
 	// moment after its stop returns: a stopped container stays listed until
 	// its next compose up. Inspect still sees it stopped.
 	StaleList bool
+	// Publishers names, by host port, the running containers that publish it
+	// for Publishing.
+	Publishers map[int][]string
 
 	// Calls names each method tamp called, in order.
 	Calls []string
@@ -83,6 +86,14 @@ type Up struct {
 func (f *Fake) Ping(context.Context) error {
 	f.Calls = append(f.Calls, "Ping")
 	return f.PingErr
+}
+
+func (f *Fake) ComposeVersion(context.Context) (string, error) {
+	f.Calls = append(f.Calls, "ComposeVersion")
+	if f.ComposeErr != nil {
+		return "", f.ComposeErr
+	}
+	return "2.40.3", nil
 }
 
 func (f *Fake) ImageExists(_ context.Context, tag string) (bool, error) {

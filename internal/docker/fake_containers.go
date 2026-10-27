@@ -38,6 +38,11 @@ func (f *Fake) list(label string, all bool) []Container {
 	return out
 }
 
+func (f *Fake) Publishing(_ context.Context, port int) ([]string, error) {
+	f.Calls = append(f.Calls, "Publishing")
+	return f.Publishers[port], nil
+}
+
 func (f *Fake) StopContainer(_ context.Context, name string) error {
 	f.Calls = append(f.Calls, "StopContainer")
 	f.Stopped = append(f.Stopped, name)

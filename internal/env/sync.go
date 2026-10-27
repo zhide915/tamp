@@ -159,17 +159,20 @@ func syncTrouble(t target, err error) string {
 	return err.Error()
 }
 
-// pauseSync finishes the sync, so the host holds what the container wrote even
-// if its folder then moves, and pauses it. A failure is a warning only.
-func (m *Manager) pauseSync(ctx context.Context, t target) {
+// pauseSync finishes the sync with a running frappe container, as Mutagen waits
+// for a stopped one, so a moved folder holds what it wrote. Failures only warn.
+func (m *Manager) pauseSync(ctx context.Context, t target, frappeRunning bool) {
 	if m.sync == nil {
 		return
 	}
 	name := sessionName(t.name)
 	s, err := m.sync.Session(ctx, name)
 	if err == nil && s != nil && !s.Paused {
-		m.p.Step("finishing the sync of " + t.name)
-		if err = m.sync.Flush(ctx, name); err != nil {
+		if frappeRunning {
+			m.p.Step("finishing the sync of " + t.name)
+			err = m.sync.Flush(ctx, name)
+		}
+		if err != nil {
 			m.p.Warn(fmt.Sprintf("cannot finish the sync of %s, so files written in the container since its last sync stay there: %s",
 				t.name, syncTrouble(t, err)))
 		}
@@ -233,7 +236,7 @@ func (m *Manager) syncState(ctx context.Context, t target) string {
 	case s == nil:
 		return "none: create it with " + t.command("start")
 	}
-	state := strings.ReplaceAll(s.Status, "-", " ")
+	state := statusWords(s.Status)
 	switch {
 	case s.Paused:
 		state = "paused"
@@ -248,4 +251,23 @@ func (m *Manager) syncState(ctx context.Context, t target) string {
 		state += ", and cannot settle " + strings.Join(folders, ", ")
 	}
 	return state
+}
+
+// statusWords is Mutagen's status in tamp's words, where Mutagen's alpha is
+// the host and its beta the frappe container.
+func statusWords(status string) string {
+	words := map[string]string{
+		"connecting-alpha":           "connecting to the host folder",
+		"connecting-beta":            "connecting to the frappe container",
+		"staging-alpha":              "staging files on the host",
+		"staging-beta":               "staging files in the frappe container",
+		"waiting-for-rescan":         "waiting to scan again",
+		"halted-on-root-deletion":    "halted, as a synced folder was deleted",
+		"halted-on-root-emptied":     "halted, as a synced folder was emptied",
+		"halted-on-root-type-change": "halted, as a synced folder changed type",
+	}
+	if w, ok := words[status]; ok {
+		return w
+	}
+	return strings.ReplaceAll(status, "-", " ")
 }

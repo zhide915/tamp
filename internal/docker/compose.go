@@ -30,6 +30,30 @@ func upError(err error, publishes bool) error {
 	return err
 }
 
+func (d *Daemon) ComposeVersion(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "docker", "compose", "version", "--short").CombinedOutput()
+	switch {
+	case errors.Is(err, exec.ErrNotFound):
+		return "", exitcode.New(exitcode.CodeDockerUnavailable,
+			"the docker command is not on PATH",
+			"install Docker Desktop, or add the docker CLI with its compose plugin to PATH")
+	case err != nil:
+		return "", exitcode.New(exitcode.CodeFailed,
+			"docker compose does not run: "+said(out, err),
+			"install Docker Desktop, or the Docker Compose plugin")
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// said is the last line a failed command printed, or its error.
+func said(out []byte, err error) string {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if last := strings.TrimSpace(lines[len(lines)-1]); last != "" {
+		return last
+	}
+	return err.Error()
+}
+
 func (d *Daemon) BuildImage(ctx context.Context, b ImageBuild) error {
 	args := []string{"build", "--tag", b.Tag}
 	for _, k := range sortedKeys(b.Args) {

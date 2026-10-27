@@ -20,12 +20,14 @@ func (m *Manager) Stop(envFlag string) error {
 	if err != nil {
 		return err
 	}
-	// Paused first, so Mutagen never sees the container go.
-	m.pauseSync(ctx, t)
 	containers, err := m.envContainers(ctx, t.name)
 	if err != nil {
 		return err
 	}
+	// Paused first, so Mutagen never sees the container go.
+	m.pauseSync(ctx, t, slices.ContainsFunc(containers, func(c docker.Container) bool {
+		return c.Name == frappeContainer(t.name) && c.Running
+	}))
 	for _, c := range containers {
 		if !c.Running {
 			continue

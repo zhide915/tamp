@@ -56,6 +56,16 @@ func (p *Printer) OK(msg string) {
 	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiGreen, "✓")+" "+msg)
 }
 
+// Caution writes a "!" result line to stdout: a check that warns.
+func (p *Printer) Caution(msg string) {
+	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiYellow, "!")+" "+msg)
+}
+
+// Fail writes a "✗" result line to stdout: a check that fails.
+func (p *Printer) Fail(msg string) {
+	fmt.Fprintln(p.Out, paint(p.ColorOut, ansiRed, "✗")+" "+msg)
+}
+
 // Step writes a progress line to stderr; --quiet drops it.
 func (p *Printer) Step(msg string) {
 	if !p.Quiet {

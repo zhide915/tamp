@@ -19,6 +19,8 @@ type Fake struct {
 	// OnCall runs at each call, named as in Calls, before it acts: how a test
 	// sees what tamp had done by then.
 	OnCall func(call string)
+	// NoDaemon makes Peek find no Mutagen daemon running.
+	NoDaemon bool
 
 	// Calls names each method tamp called, with the session's name.
 	Calls []string
@@ -45,6 +47,10 @@ func (f *Fake) Install(context.Context) error {
 
 func (f *Fake) Session(_ context.Context, name string) (*Session, error) {
 	f.call("Session " + name)
+	return f.read(name)
+}
+
+func (f *Fake) read(name string) (*Session, error) {
 	if f.Err != nil {
 		return nil, f.Err
 	}
@@ -59,6 +65,15 @@ func (f *Fake) Session(_ context.Context, name string) (*Session, error) {
 		got.Status = "disconnected"
 	}
 	return &got, nil
+}
+
+// Peek reads a session as Session does, unless NoDaemon is set.
+func (f *Fake) Peek(_ context.Context, name string) (*Session, error) {
+	f.call("Peek " + name)
+	if f.NoDaemon && f.Err == nil {
+		return nil, ErrNoDaemon
+	}
+	return f.read(name)
 }
 
 // Replicate records the copy; the fake syncs no files.

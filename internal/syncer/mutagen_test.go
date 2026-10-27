@@ -27,6 +27,8 @@ const (
 	standIn     = "TAMP_TEST_MUTAGEN_STAND_IN"
 	standInLog  = "TAMP_TEST_MUTAGEN_LOG"
 	standInList = "TAMP_TEST_MUTAGEN_LIST"
+	// standInNoDaemon has no daemon running, which a call starts unless autostart is off.
+	standInNoDaemon = "TAMP_TEST_MUTAGEN_NO_DAEMON"
 )
 
 func TestMain(m *testing.M) {
@@ -50,6 +52,10 @@ func standInMutagen() int {
 	switch {
 	case len(args) == 1 && args[0] == "version":
 		fmt.Println(Version)
+	case len(args) >= 2 && args[0] == "sync" && args[1] == "list" &&
+		os.Getenv(standInNoDaemon) == "1" && os.Getenv("MUTAGEN_DISABLE_AUTOSTART") == "1":
+		fmt.Fprintln(os.Stderr, "Error: unable to connect to daemon: connection timed out (is the daemon running?)")
+		return 1
 	case len(args) >= 2 && args[0] == "sync" && args[1] == "list":
 		list := os.Getenv(standInList)
 		if list == "" {
@@ -359,4 +365,30 @@ func sameDir(a, b string) bool {
 	}
 	bi, err := os.Stat(b)
 	return err == nil && os.SameFile(ai, bi)
+}
+
+func TestPeekNeverStartsTheDaemonAndRunsNothingWhereNoDaemonEverRan(t *testing.T) {
+	m := &Mutagen{Dir: t.TempDir()}
+	calls := installStandIn(t, m, `[{"name":"tamp-erp--dev","status":"watching"}]`)
+
+	if s, err := m.Peek(context.Background(), "tamp-erp--dev"); err != nil || s != nil {
+		t.Errorf("Peek without a data folder = %+v, %v, want no session", s, err)
+	}
+	if err := os.MkdirAll(dataDir(m.Dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := m.Peek(context.Background(), "tamp-erp--dev"); err != nil || s == nil || s.Status != "watching" {
+		t.Errorf("Peek = %+v, %v, want the watching session", s, err)
+	}
+
+	t.Setenv(standInNoDaemon, "1")
+	if _, err := m.Peek(context.Background(), "tamp-erp--dev"); !errors.Is(err, ErrNoDaemon) {
+		t.Errorf("Peek with no daemon = %v, want ErrNoDaemon", err)
+	}
+	if s, err := m.Session(context.Background(), "tamp-erp--dev"); err != nil || s == nil {
+		t.Errorf("Session with no daemon = %+v, %v, want it to start one and read the session", s, err)
+	}
+	if got := calls(); len(got) != 3 {
+		t.Errorf("calls = %q, want three lists: none for the Peek without a data folder", got)
+	}
 }

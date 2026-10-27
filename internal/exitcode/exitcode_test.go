@@ -23,3 +23,11 @@ func TestEveryCodeKeepsItsDocumentedNumber(t *testing.T) {
 		}
 	}
 }
+
+func TestAMessageThatEndsInAPeriodIsJoinedToItsFixWithoutIt(t *testing.T) {
+	err := exitcode.New(exitcode.CodeFailed, "cannot read x: The system cannot find the file specified.", "check x")
+
+	if got, want := err.Error(), "cannot read x: The system cannot find the file specified: check x"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+}

@@ -28,6 +28,7 @@ Environment manager for Frappe Framework: a Go CLI that builds each Frappe bench
 
 - The house style is the in-process CLI harness: commands run through the cobra root against a temp home, a temp environment directory, and the Docker and Mutagen fakes. Test names are sentences that state the rule they pin. Pin contracts: exit codes, output lines, files on disk, and the requests tamp sent to the fakes.
 - Tests replace three boundaries: Docker and Mutagen with recording fakes, and the browser only so no test opens a window. Everything else runs for real. Host git clones from local bare repositories that stand in for remotes, through `file://` URLs because git ignores `--depth` on a plain local path, under a temp `GIT_CONFIG_GLOBAL` so no test opens a sign-in window.
+- The port 80 probe dials `router.Loopback`, which the sandbox points at a closed port and port tests at a listener of their own, so no test depends on this machine's port 80.
 - Test an internal function directly only when the CLI cannot reach its rule, such as the Caddyfile for two recipes that list the same hostname.
 - A test walks the command tree and fails for any command whose `--help` lacks two examples.
 - Real Docker runs in CI's Linux e2e and in the manual acceptance scripts for Windows and macOS, which also cover Mutagen.

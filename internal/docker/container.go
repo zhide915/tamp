@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -79,6 +80,27 @@ func refused(what string, err error) error {
 	}
 	return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot %s: %v", what, rootCause(err)),
 		"fix what Docker names, then run the command again")
+}
+
+func (d *Daemon) Publishing(ctx context.Context, port int) ([]string, error) {
+	_, api, err := d.connect()
+	if err != nil {
+		return nil, err
+	}
+	res, err := api.ContainerList(ctx, client.ContainerListOptions{
+		Filters: make(client.Filters).Add("publish", strconv.Itoa(port)),
+	})
+	if err != nil {
+		return nil, unavailable("list Docker containers", err)
+	}
+	var names []string
+	for _, item := range res.Items {
+		if len(item.Names) > 0 {
+			names = append(names, strings.TrimPrefix(item.Names[0], "/"))
+		}
+	}
+	slices.Sort(names)
+	return names, nil
 }
 
 func (d *Daemon) Containers(ctx context.Context, label string) ([]Container, error) {
