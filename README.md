@@ -11,15 +11,49 @@ You need:
 - Docker: Docker Desktop on Windows and macOS, or Docker Engine with the Compose plugin on Linux. Start it before you run tamp.
 - git on the host. tamp clones every app with it.
 - Port 80 free for tamp's router.
-- Go 1.26.4 or later, to install tamp.
 
-Install tamp:
+Each release on [GitHub Releases](https://github.com/zhide915/tamp/releases) has one binary for each platform: Windows on x64, Linux on x64, and macOS on Apple silicon.
+
+On Windows, in PowerShell, download tamp into a folder of its own, and add that folder to your `PATH`:
+
+```powershell
+$dir = "$env:LOCALAPPDATA\Programs\tamp"
+New-Item -ItemType Directory -Force $dir | Out-Null
+curl.exe -fLo "$dir\tamp.exe" https://github.com/zhide915/tamp/releases/latest/download/tamp_windows_amd64.exe
+$path = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($path -split ";") -notcontains $dir) { [Environment]::SetEnvironmentVariable("Path", "$path;$dir", "User") }
+```
+
+To update tamp, run the same commands again.
+
+Open a new terminal, so that it reads the new `PATH`.
+
+On macOS:
+
+```sh
+curl -fLo tamp https://github.com/zhide915/tamp/releases/latest/download/tamp_darwin_arm64
+chmod +x tamp
+sudo mkdir -p /usr/local/bin
+sudo mv tamp /usr/local/bin/tamp
+```
+
+On Linux:
+
+```sh
+curl -fLo tamp https://github.com/zhide915/tamp/releases/latest/download/tamp_linux_amd64
+chmod +x tamp
+sudo mv tamp /usr/local/bin/tamp
+```
+
+On another platform, such as an Intel Mac, install tamp with Go 1.26.4 or later:
 
 ```sh
 go install github.com/zhide915/tamp/cmd/tamp@latest
 ```
 
 `go install` puts `tamp` in the `bin` folder of your Go path, which `go env GOPATH` prints. Add that folder to your `PATH` if it is not there.
+
+`tamp version` prints the version, the commit, and the build date.
 
 Check the machine:
 

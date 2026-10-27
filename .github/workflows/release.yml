@@ -1,0 +1,90 @@
+name: Release
+
+# A v* tag publishes the binaries on GitHub Releases. A manual run builds and
+# checks them, and keeps them only as workflow artifacts.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, goos: windows, goarch: amd64, ext: .exe }
+          - { os: ubuntu-latest, goos: linux, goarch: amd64, ext: "" }
+          - { os: macos-latest, goos: darwin, goarch: arm64, ext: "" }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # git describe needs the tags.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        id: build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          OUT: dist/tamp_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.ext }}
+        run: |
+          version=
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=$GITHUB_REF_NAME; fi
+          scripts/build.sh "$OUT" ${version:+"$version"} >>"$GITHUB_OUTPUT"
+          echo "out=$OUT" >>"$GITHUB_OUTPUT"
+
+      - name: tamp version prints the stamp
+        env:
+          OUT: ${{ steps.build.outputs.out }}
+          WANT: |
+            tamp ${{ steps.build.outputs.version }}
+            commit: ${{ steps.build.outputs.commit }}
+            build date: ${{ steps.build.outputs.build_date }}
+        run: |
+          got=$("$OUT" version --no-color | tr -d '\r')
+          echo "$got"
+          [ "$got" = "${WANT%$'\n'}" ] || { echo "want:"; echo "$WANT"; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            [ "$(head -n 1 <<<"$got")" = "tamp $GITHUB_REF_NAME" ] || { echo "the version is not the tag"; exit 1; }
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tamp_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: ${{ steps.build.outputs.out }}
+          if-no-files-found: error
+
+  publish:
+    name: publish
+    needs: build
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          [ "$(find dist -type f | wc -l)" = 3 ] || { echo "want three binaries"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

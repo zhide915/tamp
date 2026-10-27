@@ -12,8 +12,15 @@ ENV_DIR=$WORK/erp-dev
 FRAPPE=erp-dev-frappe-1
 CADDYFILE=$HOME/.tamp/router/Caddyfile
 
+TIMINGS=
+
 cleanup() {
+  if [ -n "$TIMINGS" ]; then
+    printf '\n=== timings\n%s' "$TIMINGS"
+    if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '### Timings\n\n%s' "$TIMINGS" >>"$GITHUB_STEP_SUMMARY"; fi
+  fi
   "$TAMP" remove -e erp-dev --yes --quiet || true
+  "$TAMP" remove -e erp-two --yes --quiet || true
   # tamp never removes the router.
   docker rm --force tamp-router >/dev/null 2>&1 || true
   docker rm --force tamp-e2e-port80 >/dev/null 2>&1 || true
@@ -27,6 +34,16 @@ fail() {
   echo "e2e: $*" >&2
   exit 1
 }
+
+# target records a timing in seconds, and fails when it misses its target.
+target() {
+  local line="- $1: $3 s, target $2 s or less"
+  TIMINGS+="$line"$'\n'
+  echo "timing $line"
+  [ "$3" -le "$2" ] || fail "$1 took $3 s, over its target of $2 s"
+}
+
+bench_images() { docker images --quiet --filter 'reference=tamp-bench:*' | sort; }
 
 # through_router fetches a URL from the router on port 80, whatever
 # *.localhost resolves to on this machine. curl sends no Origin header.
@@ -89,16 +106,28 @@ code=0
 [ "$code" = 2 ] || fail "exit code $code, want 2"
 [ ! -e shop ] || fail "shop was written"
 
-say "tamp new builds the environment"
+say "tamp new builds the first environment on the machine in 15 minutes or less"
+[ -z "$(bench_images)" ] || fail "a tamp-bench image exists, so the first environment cannot be measured"
 start=$SECONDS
 "$TAMP" new erp-dev --frappe version-15 --site shop.localhost
-echo "tamp new took $((SECONDS - start))s"
+target "first environment on the machine (image built)" 900 $((SECONDS - start))
+[ -n "$(bench_images)" ] || fail "tamp new built no image"
 grep -qx 'frappe = "version-15"' erp-dev/tamp.toml || fail "unexpected recipe: $(cat erp-dev/tamp.toml)"
 grep -qx '  host = "shop.localhost"' erp-dev/tamp.toml || fail "the recipe lacks the site: $(cat erp-dev/tamp.toml)"
 grep -qx 'apps/' erp-dev/.gitignore || fail ".gitignore lacks apps/"
 grep -qx 'compose.yaml' erp-dev/.gitignore || fail ".gitignore lacks compose.yaml"
 [ "$(git -C erp-dev/apps/frappe remote)" = upstream ] || fail "the Frappe clone's remote is not upstream"
 [ "$(git -C erp-dev/apps/frappe rev-parse --is-shallow-repository)" = true ] || fail "the Frappe clone is not shallow"
+
+say "a new environment with the image cached takes 8 minutes or less"
+images=$(bench_images)
+start=$SECONDS
+"$TAMP" new erp-two --frappe version-15 --site two.localhost
+target "new environment, image cached" 480 $((SECONDS - start))
+[ "$(bench_images)" = "$images" ] || fail "the second tamp new built an image"
+pongs two.localhost || fail "two.localhost did not answer through the router"
+"$TAMP" remove -e erp-two --yes
+rm -rf erp-two
 
 say "the bench volume carries the Frappe branch, and the containers both labels"
 [ "$(docker volume inspect --format '{{ index .Labels "tamp.frappe" }}' erp-dev_bench)" = version-15 ] ||
@@ -175,6 +204,13 @@ echo "$out"
 if grep -q 'building the image\|Cloning\|running bench init\|creating the site' <<<"$out"; then
   fail "tamp start repeated work"
 fi
+
+say "tamp start on a stopped environment takes 1 minute or less"
+"$TAMP" stop
+start=$SECONDS
+"$TAMP" start
+target "start on an existing environment" 60 $((SECONDS - start))
+pongs shop.localhost || fail "shop.localhost did not answer after stop and start"
 
 say "after a second start, the reloaded router still serves the site and socket.io"
 pongs shop.localhost || fail "shop.localhost stopped answering after the reload"

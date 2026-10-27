@@ -33,6 +33,21 @@ Environment manager for Frappe Framework: a Go CLI that builds each Frappe bench
 - A test walks the command tree and fails for any command whose `--help` lacks two examples.
 - Real Docker runs in CI's Linux e2e and in the manual acceptance scripts for Windows and macOS, which also cover Mutagen.
 - Verify with `go build ./...`, `go vet ./...`, `go test ./...`, and `gofmt -l`. CI also runs golangci-lint on ubuntu, windows, and macos.
+- The e2e and both acceptance scripts measure the setup-time targets, and fail when one is missed: the first environment on a machine, with the image built, in 15 minutes or less; a new environment with the image cached in 8 minutes or less; `start` on a stopped environment in 1 minute or less. The e2e always measures all three. An acceptance script measures the first only when it builds the image, and with `-FirstEnvironment` or `--first-environment` fails when the image was cached.
+
+## Releasing
+
+A pushed `v*` tag runs the Release workflow: it builds tamp for Windows, Linux, and macOS through `scripts/build.sh`, which stamps the version, commit, and build date, checks each binary's `tamp version`, and publishes the three binaries on GitHub Releases. A manual run does the same build and check, and keeps the binaries as workflow artifacts only.
+
+Before you push a tag, check each item on the commit you tag:
+
+1. [ ] The E2E workflow is green.
+2. [ ] `scripts/acceptance-windows.ps1 -Agent` passes on Windows with Docker Desktop.
+3. [ ] `scripts/acceptance-macos.sh --agent` passes on macOS with Docker Desktop.
+
+After you push the tag:
+
+4. [ ] The Release workflow is green on the tagged commit, and the release holds three binaries.
 
 ## Agent skills
 
