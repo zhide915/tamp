@@ -356,6 +356,52 @@ echo "$out"
 grep -qF '✗ port 80 is taken by something other than the router: stop the container that publishes port 80 with `docker stop tamp-e2e-port80`' <<<"$out" ||
   fail "doctor does not fail port 80 with a fix that names the container"
 
+say "tamp context describes the running environment, with versions read from its containers, and changes nothing"
+before=$(docker ps --all --format '{{.Names}} {{.State}}' | sort; cat tamp.toml "$CADDYFILE")
+out=$(cd "$WORK" && "$TAMP" context -e erp-dev 2>"$WORK/context.err" </dev/null) || fail "tamp context exited $?"
+echo "$out"
+[ ! -s "$WORK/context.err" ] || fail "tamp context wrote to stderr: $(cat "$WORK/context.err")"
+[ "$(docker ps --all --format '{{.Names}} {{.State}}' | sort; cat tamp.toml "$CADDYFILE")" = "$before" ] ||
+  fail "tamp context changed a container, the recipe or the Caddyfile"
+grep -qx '# tamp environment erp-dev' <<<"$out" || fail "the block does not name the environment"
+grep -Eq '^- Frappe [0-9]+\.[0-9.]+, branch version-15, read from the frappe container$' <<<"$out" || fail "no Frappe version from the container"
+grep -Eq '^- Python 3\.11\.[0-9]+, read from the frappe container$' <<<"$out" || fail "no Python version from the container"
+grep -Eq '^- Node 18\.[0-9.]+, read from the frappe container$' <<<"$out" || fail "no Node version from the container"
+grep -Eq '^- MariaDB 10\.11\.[0-9]+, read from the mariadb container$' <<<"$out" || fail "no MariaDB version from the container"
+grep -qF "Edit app code on the host, in $ENV_DIR/apps:" <<<"$out" || fail "the block lacks the host apps/ path"
+grep -qx -- '- http://shop.localhost' <<<"$out" || fail "the block lacks shop.localhost"
+grep -qF '`Administrator`, with the password `password`' <<<"$out" || fail "the block lacks the admin login"
+grep -qF 'Never run `bench start`' <<<"$out" && grep -qF 'Never run `bench update`' <<<"$out" ||
+  fail "the block does not forbid bench start and bench update"
+
+say "every example tamp context prints runs as printed, without a terminal, from another directory"
+examples=$(awk '/^```/ { fenced = !fenced; next } fenced' <<<"$out")
+grep -q 'run-tests' <<<"$examples" && grep -q 'execute' <<<"$examples" && grep -q -- '--resolve shop.localhost:80:127.0.0.1' <<<"$examples" ||
+  fail "the examples lack run-tests, execute or curl --resolve: $examples"
+if grep -q console <<<"$examples"; then fail "an example runs console"; fi
+# Prose lines too, as an agent copies a command from a sentence as readily.
+if grep -q -- 'run-tests --app' <<<"$out"; then fail "a line runs a whole app's suite"; fi
+if grep -E 'run-tests|allow_tests|CI=1' <<<"$out" | grep -vq -- 'erp-dev-test.localhost'; then
+  fail "a line mentions tests without naming erp-dev-test.localhost: $(grep -E 'run-tests|allow_tests|CI=1' <<<"$out")"
+fi
+while IFS= read -r line; do
+  echo "\$ $line"
+  # The examples call tamp by name, as an agent would.
+  (cd "$WORK" && PATH=$(dirname "$TAMP"):$PATH bash -c "$line" </dev/null >"$WORK/example.out" 2>&1) ||
+    fail "the example \`$line\` exited $?: $(tail -5 "$WORK/example.out")"
+done <<<"$examples"
+
+say "the printed test line exits non-zero when a test fails"
+failing=$ENV_DIR/apps/acme/acme/acme/test_tamp_e2e.py
+printf 'import unittest\n\n\nclass TestFails(unittest.TestCase):\n\tdef test_fails(self):\n\t\tself.assertEqual(1, 2)\n' >"$failing"
+line=$(cd "$WORK" && "$TAMP" context -e erp-dev 2>/dev/null | grep -- ' run-tests ')
+echo "\$ $line"
+grep -q -- '--module acme.acme.test_tamp_e2e$' <<<"$line" || fail "the test line does not run the app's test module: $line"
+code=0
+(cd "$WORK" && PATH=$(dirname "$TAMP"):$PATH bash -c "$line" </dev/null >"$WORK/example.out" 2>&1) || code=$?
+rm "$failing"
+[ "$code" != 0 ] || fail "the test line exited 0 on a failing test: $(tail -5 "$WORK/example.out")"
+
 say "tamp stop stops the containers and takes the sites off the router"
 "$TAMP" stop
 for service in frappe mariadb redis-cache redis-queue; do
@@ -371,6 +417,15 @@ out=$("$TAMP" list)
 echo "$out"
 grep -Eq "^erp-dev +stopped +$ENV_DIR\$" <<<"$out" || fail "tamp list does not show erp-dev as stopped"
 grep -qx '  http://shop.localhost' <<<"$out" || fail "tamp list does not nest shop.localhost"
+
+say "tamp context on the stopped environment prints from the recipe, says it is stopped, and starts nothing"
+out=$("$TAMP" context -e erp-dev 2>"$WORK/context.err") || fail "tamp context exited $?"
+echo "$out"
+[ ! -s "$WORK/context.err" ] || fail "tamp context wrote to stderr: $(cat "$WORK/context.err")"
+grep -q '^The environment is stopped' <<<"$out" || fail "the block does not say the environment is stopped"
+grep -qx -- '- Python 3.11, from the recipe, as the frappe container is not running' <<<"$out" || fail "the Python version is not the recipe's"
+grep -qx -- '- http://shop.localhost' <<<"$out" || fail "the block lacks shop.localhost"
+[ "$(docker inspect --format '{{ .State.Running }}' "$FRAPPE")" = false ] || fail "tamp context started the frappe container"
 
 say "tamp status -e from another directory shows the containers and site URLs"
 out=$("$TAMP" status -e erp-dev)

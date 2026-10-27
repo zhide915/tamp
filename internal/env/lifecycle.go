@@ -184,21 +184,35 @@ func (m *Manager) siteURLs(name, dir string) []string {
 	return urls
 }
 
-// state sums up an environment's containers in a word or two.
-func state(containers []docker.Container) string {
-	running := 0
+// runState sums up an environment's containers.
+type runState int
+
+const (
+	stateNotBuilt runState = iota
+	stateRunning
+	stateStopped
+	statePartly
+)
+
+// String is the state in a word or two, as list and status print it.
+func (s runState) String() string {
+	return [...]string{"not built", "running", "stopped", "partly running"}[s]
+}
+
+func state(containers []docker.Container) runState {
+	up := 0
 	for _, c := range containers {
 		if c.Running {
-			running++
+			up++
 		}
 	}
 	switch {
 	case len(containers) == 0:
-		return "not built"
-	case running == len(containers):
-		return "running"
-	case running == 0:
-		return "stopped"
+		return stateNotBuilt
+	case up == len(containers):
+		return stateRunning
+	case up == 0:
+		return stateStopped
 	}
-	return "partly running"
+	return statePartly
 }

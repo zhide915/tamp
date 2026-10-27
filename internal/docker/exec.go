@@ -37,6 +37,9 @@ func (d *Daemon) exec(ctx context.Context, e Exec, stdin io.Reader) error {
 		return execError(e, err)
 	}
 	defer attached.Close()
+	// Reading the output blocks past ctx, so its end closes the stream. The
+	// command runs on in the container: Docker has no call that stops an exec.
+	defer context.AfterFunc(ctx, attached.Close)()
 
 	if stdin != nil {
 		go func() {

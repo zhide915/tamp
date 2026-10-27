@@ -52,7 +52,8 @@ type Client interface {
 
 	// Containers lists the running containers that carry the label.
 	Containers(ctx context.Context, label string) ([]Container, error)
-	// Publishing names the running containers that publish the host port.
+	// Publishing names the running containers that publish the host port on
+	// 127.0.0.1, or on every address, and so hold it where the router would.
 	Publishing(ctx context.Context, port int) ([]string, error)
 	// AllContainers lists the containers that carry the label, running or not.
 	AllContainers(ctx context.Context, label string) ([]Container, error)

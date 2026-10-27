@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -95,7 +96,9 @@ func (d *Daemon) Publishing(ctx context.Context, port int) ([]string, error) {
 	}
 	var names []string
 	for _, item := range res.Items {
-		if len(item.Names) > 0 {
+		if len(item.Names) > 0 && slices.ContainsFunc(item.Ports, func(p container.PortSummary) bool {
+			return int(p.PublicPort) == port && p.Type == "tcp" && clashesWithLoopback(p.IP)
+		}) {
 			names = append(names, strings.TrimPrefix(item.Names[0], "/"))
 		}
 	}
@@ -198,4 +201,10 @@ func aliases(networks map[string]*network.EndpointSettings) map[string][]string 
 		}
 	}
 	return out
+}
+
+// clashesWithLoopback reports whether a publish on ip holds 127.0.0.1, where
+// the router publishes: one on every address does, one on another does not.
+func clashesWithLoopback(ip netip.Addr) bool {
+	return !ip.IsValid() || ip.IsUnspecified() || ip.Unmap() == netip.AddrFrom4([4]byte{127, 0, 0, 1})
 }

@@ -358,3 +358,19 @@ func TestAPartlyRunningEnvironmentWithoutMutagensDaemonWarnsThatNothingSyncs(t *
 
 	r.assertLine(t, "! Mutagen's daemon is not running, so apps/ of erp-dev does not sync: run `tamp start`, which starts it")
 }
+
+func TestInADirectoryWhoseNameAnotherEnvironmentHoldsTheRouterWarningStartsThatEnvironmentByE(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, filepath.Join("a", "erp-dev"))
+	c.docker.Stop(router.Project)
+	second := filepath.Join(c.dir, "b", "erp-dev")
+	if err := os.MkdirAll(second, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRecipe(t, second, "frappe = \"version-15\"\n")
+	t.Chdir(second)
+
+	r := c.doctor(t)
+
+	r.assertLine(t, "! the router is not running, so no site of erp-dev answers: run `tamp start -e erp-dev`, which starts it")
+}

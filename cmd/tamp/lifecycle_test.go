@@ -151,7 +151,7 @@ func TestStatusWithEFromAnotherDirectoryPrintsThatEnvironmentsContainersAndSiteU
 	}
 }
 
-var environmentCommands = [][]string{{"start"}, {"stop"}, {"remove", "--yes"}, {"status"}, {"open"}}
+var environmentCommands = [][]string{{"start"}, {"stop"}, {"remove", "--yes"}, {"status"}, {"open"}, {"context"}}
 
 func TestNoEOutsideAnEnvironmentDirectoryExits2WithTheFixUseE(t *testing.T) {
 	for _, args := range environmentCommands {
@@ -387,7 +387,7 @@ func TestARunningRouterWhoseComposeFileChangedIsBroughtUpAgain(t *testing.T) {
 }
 
 func TestEveryCommandFromADirectoryRefusesASameNamedEnvironmentAtAnotherPathThatStillHasARecipe(t *testing.T) {
-	for _, args := range [][]string{{"stop"}, {"remove", "--yes"}, {"status"}, {"open"}} {
+	for _, args := range [][]string{{"stop"}, {"remove", "--yes"}, {"status"}, {"open"}, {"context"}} {
 		t.Run(args[0], func(t *testing.T) {
 			c := sandbox(t)
 			c.newIn(t, filepath.Join("a", "erp-dev"), "--site", "shop.localhost")

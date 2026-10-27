@@ -132,15 +132,6 @@ func checkGit(ctx context.Context, r *report) {
 	}
 }
 
-func (m *Manager) portTaken(ctx context.Context) error {
-	fix, err := router.PortFix(ctx, m.docker)
-	if err != nil {
-		return err
-	}
-	return exitcode.New(exitcode.CodeFailed,
-		fmt.Sprintf("port %d is taken by something other than the router", router.Port), fix)
-}
-
 // checkRouter connects to port 80 only while the router is not running, so
 // whatever answers there is something else.
 func (m *Manager) checkRouter(ctx context.Context, r *report, t target, found bool) {
@@ -154,7 +145,7 @@ func (m *Manager) checkRouter(ctx context.Context, r *report, t target, found bo
 		return
 	}
 	if router.PortHeld(ctx) {
-		r.fail(m.portTaken(ctx))
+		r.fail(router.PortTaken(ctx, m.docker, fmt.Sprintf("port %d is taken by something other than the router", router.Port)))
 	} else {
 		r.pass(fmt.Sprintf("port %d is free for the router", router.Port))
 	}
@@ -174,8 +165,12 @@ func (m *Manager) checkRouter(ctx context.Context, r *report, t target, found bo
 		return
 	}
 	starter := target{name: names[0], flag: names[0]}
-	for _, name := range names {
-		if found && name == t.name {
+	if found && slices.Contains(names, t.name) {
+		// From a directory whose name another environment holds, start fails.
+		// checkEnv reports that error in its turn.
+		if t.flag != "" {
+			starter = t
+		} else if _, err := m.owner(ctx, t); err == nil {
 			starter = t
 		}
 	}
@@ -204,13 +199,13 @@ func (m *Manager) checkEnv(ctx context.Context, r *report, t target) {
 	}
 	st := state(containers)
 	switch st {
-	case "not built":
+	case stateNotBuilt:
 		r.warn("the environment "+t.name+" is not built", start("builds it"))
 		return
-	case "partly running":
+	case statePartly:
 		r.warn("the environment "+t.name+" is partly running", start("starts the rest"))
 	default:
-		r.pass("the environment " + t.name + " is " + st)
+		r.pass("the environment " + t.name + " is " + st.String())
 	}
 	frappeRunning := false
 	for _, c := range containers {

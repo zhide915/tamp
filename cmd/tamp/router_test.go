@@ -356,3 +356,29 @@ func TestTheRouterSkipsAMovedEnvironmentWithAFixThatWorks(t *testing.T) {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
 }
+
+func TestStartsPortErrorNamesTheContainerThatPublishesPort80(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	c.docker.Stop("tamp-router")
+	c.docker.UpFails = map[string]error{"tamp-router": fmt.Errorf("docker compose failed: %w", docker.ErrPortTaken)}
+	c.docker.Publishers = map[int][]string{80: {"web-1"}}
+
+	r := c.run(t, "start", "--quiet")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertOneLineError(t, "port 80 is taken", "`docker stop web-1`", "then run `tamp start`")
+}
+
+func TestStartKeepsThePortMessageWhenDockerCannotListWhatPublishesPort80(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	c.docker.Stop("tamp-router")
+	c.docker.UpFails = map[string]error{"tamp-router": fmt.Errorf("docker compose failed: %w", docker.ErrPortTaken)}
+	c.docker.PublishingErr = exitcode.New(exitcode.CodeDockerUnavailable, "cannot list Docker containers: EOF", "start Docker")
+
+	r := c.run(t, "start", "--quiet")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertOneLineError(t, "port 80 is taken", "cannot list Docker containers: EOF", "stop what listens on port 80", "then run `tamp start`")
+}

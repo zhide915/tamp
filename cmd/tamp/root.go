@@ -68,6 +68,7 @@ func newRootCommand(p *ui.Printer, dc docker.Client, sc syncer.Client, openURL f
 	root.AddCommand(newShellCommand(manager, &g))
 	root.AddCommand(newLogsCommand(manager, &g))
 	root.AddCommand(newDoctorCommand(manager, &g))
+	root.AddCommand(newContextCommand(manager, &g))
 	root.AddCommand(newVersionCommand(p))
 	return root
 }

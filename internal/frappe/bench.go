@@ -78,6 +78,13 @@ func ListSites() []string {
 		"tamp", SitesDir}
 }
 
+// Versions prints the bench's Python version, then Frappe's, one per line.
+// It reads them in-process, so nothing is written, not even bench's log.
+func Versions() []string {
+	return []string{BenchDir + "/env/bin/python", "-c",
+		"import platform, frappe; print(platform.python_version()); print(frappe.__version__)"}
+}
+
 // DeveloperMode turns on developer mode in a site's own config.
 func DeveloperMode(host string) []string {
 	return []string{"bench", "--site", host, "set-config", "-p", "developer_mode", "1"}

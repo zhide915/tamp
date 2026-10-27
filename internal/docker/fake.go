@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/zhide915/tamp/internal/frappe"
 )
@@ -37,6 +38,12 @@ type Fake struct {
 	// ExecOutput writes its value to the stderr of each exec whose command
 	// line contains its key, as the command's own log.
 	ExecOutput map[string]string
+	// ExecStdout writes its value to the stdout of each exec whose command
+	// line contains its key, as the command's result.
+	ExecStdout map[string]string
+	// ExecHangs holds each exec whose command line contains one of them until its
+	// context ends, as a container that never answers would.
+	ExecHangs []string
 	// ShellCodes is the exit code of each shell whose command line contains
 	// a key; any other exits 0.
 	ShellCodes map[string]int
@@ -50,6 +57,8 @@ type Fake struct {
 	// Publishers names, by host port, the running containers that publish it
 	// for Publishing.
 	Publishers map[int][]string
+	// PublishingErr fails Publishing, as a Docker that cannot list would.
+	PublishingErr error
 
 	// Calls names each method tamp called, in order.
 	Calls []string
@@ -67,6 +76,9 @@ type Fake struct {
 	// Stopped, Removed, RemovedNetworks and RemovedVolumes name what each
 	// stop and removal asked for.
 	Stopped, Removed, RemovedNetworks, RemovedVolumes []string
+
+	// mu serialises Exec, which tamp calls concurrently.
+	mu sync.Mutex
 
 	images     map[string]bool
 	containers map[string]*fakeContainer
@@ -184,10 +196,17 @@ func (f *Fake) UpsOf(project string) []Up {
 	return ups
 }
 
-func (f *Fake) Exec(_ context.Context, e Exec) error {
+func (f *Fake) Exec(ctx context.Context, e Exec) error {
+	f.mu.Lock()
 	f.Calls = append(f.Calls, "Exec")
 	f.Execs = append(f.Execs, e)
 	line := strings.Join(e.Cmd, " ")
+	if slices.ContainsFunc(f.ExecHangs, func(s string) bool { return strings.Contains(line, s) }) {
+		f.mu.Unlock()
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	defer f.mu.Unlock()
 	// bench new-site writes the site config before it installs anything, so
 	// even a failed one leaves it.
 	if len(e.Cmd) > 2 && e.Cmd[0] == "bench" && e.Cmd[1] == "new-site" {
@@ -197,6 +216,11 @@ func (f *Fake) Exec(_ context.Context, e Exec) error {
 	for fragment, out := range f.ExecOutput {
 		if strings.Contains(line, fragment) && e.Stderr != nil {
 			fmt.Fprint(e.Stderr, out)
+		}
+	}
+	for fragment, out := range f.ExecStdout {
+		if strings.Contains(line, fragment) && e.Stdout != nil {
+			fmt.Fprint(e.Stdout, out)
 		}
 	}
 	for fragment, n := range f.ExecFailsFirst {

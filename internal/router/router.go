@@ -206,27 +206,30 @@ func (r Router) up(ctx context.Context, compose []byte) error {
 		Name: Project, File: filepath.Join(r.Dir, composeFile), Out: r.Out, Publishes: true,
 	})
 	if errors.Is(err, docker.ErrPortTaken) {
-		fix, err := PortFix(ctx, r.Docker)
-		if err != nil {
-			return err
-		}
-		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("port %d is taken, so the router cannot start", Port), fix)
+		return PortTaken(ctx, r.Docker, fmt.Sprintf("port %d is taken, so the router cannot start", Port))
 	}
 	return err
 }
 
-// PortFix is the fix for port 80 held by something other than the router: it
-// names a container that publishes the port, since netstat shows only Docker.
-func PortFix(ctx context.Context, dc docker.Client) (string, error) {
+// PortTaken is the error msg for port 80 held by something other than the
+// router. Its fix names a container that publishes the port, since netstat
+// shows only Docker.
+func PortTaken(ctx context.Context, dc docker.Client, msg string) error {
 	holders, err := dc.Publishing(ctx, Port)
-	if err != nil {
-		return "", err
+	listener := fmt.Sprintf("stop what listens on port %d (find it with %s)", Port, findPortCommand())
+	switch {
+	case err != nil:
+		// The listing's own fix is to start Docker, which answered a moment ago.
+		reason := err.Error()
+		if e := (*exitcode.Error)(nil); errors.As(err, &e) {
+			reason = e.Msg
+		}
+		return exitcode.New(exitcode.CodeFailed, msg+", and Docker cannot say which container publishes it: "+reason, listener)
+	case len(holders) > 0:
+		return exitcode.New(exitcode.CodeFailed, msg,
+			fmt.Sprintf("stop the container that publishes port %d with `docker stop %s`", Port, strings.Join(holders, " ")))
 	}
-	if len(holders) > 0 {
-		return fmt.Sprintf("stop the container that publishes port %d with `docker stop %s`", Port, strings.Join(holders, " ")), nil
-	}
-	return fmt.Sprintf("stop what listens on port %d (find it with %s)", Port, findPortCommand()), nil
+	return exitcode.New(exitcode.CodeFailed, msg, listener)
 }
 
 // Loopback is where the router publishes Port. Tests point it at a port of

@@ -40,6 +40,9 @@ func (f *Fake) list(label string, all bool) []Container {
 
 func (f *Fake) Publishing(_ context.Context, port int) ([]string, error) {
 	f.Calls = append(f.Calls, "Publishing")
+	if f.PublishingErr != nil {
+		return nil, f.PublishingErr
+	}
 	return f.Publishers[port], nil
 }
 
