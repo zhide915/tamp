@@ -13,7 +13,7 @@ func newNewCommand(manager func() *env.Manager) *cobra.Command {
 	var apps, sites []string
 	cmd := &cobra.Command{
 		Use:   "new <path> --frappe <branch> [--app <url|name>[#branch]]... [--site <host>]...",
-		Short: "Create an environment at a new or empty directory, and build it",
+		Short: "Create an environment in a new or empty directory, and build it",
 		Example: "  tamp new erp-dev --frappe version-15 --site shop.localhost\n" +
 			"  tamp new . --frappe version-15 --app payments#version-15 --site pay.localhost",
 		Args: func(cmd *cobra.Command, args []string) error {
@@ -30,8 +30,8 @@ func newNewCommand(manager func() *env.Manager) *cobra.Command {
 			return manager().New(args[0], frappe, apps, sites)
 		},
 	}
-	cmd.Flags().StringVar(&frappe, "frappe", "", "the Frappe branch: "+env.FrappeBranchList())
-	cmd.Flags().StringArrayVar(&apps, "app", nil, "an app to clone and install, as a URL or a frappe app name, with an optional #branch: repeat the flag for more")
-	cmd.Flags().StringArrayVar(&sites, "site", nil, "a *.localhost site to create: repeat the flag for more")
+	cmd.Flags().StringVar(&frappe, "frappe", "", "Frappe branch, one of: "+env.FrappeBranchList())
+	cmd.Flags().StringArrayVar(&apps, "app", nil, "app to clone and install: a URL, or an app's name in the frappe GitHub organization, with an optional #branch. Repeat the flag for more apps")
+	cmd.Flags().StringArrayVar(&sites, "site", nil, "*.localhost site to create with every app. Repeat the flag for more sites")
 	return cmd
 }

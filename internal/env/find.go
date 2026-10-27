@@ -20,6 +20,8 @@ type target struct {
 	// where is the path `tamp new` was given, when it is not the working
 	// directory.
 	where string
+	// done is the closing line of a build, when it is not "built environment".
+	done string
 }
 
 // find returns the environment that -e names, found by its containers'
@@ -33,7 +35,7 @@ func (m *Manager) find(ctx context.Context, flag string) (target, error) {
 		if len(containers) == 0 {
 			return target{}, exitcode.New(exitcode.CodeNotFound,
 				fmt.Sprintf("no environment named %s has containers", flag),
-				"run `tamp list` to see the environments, or run the command in the environment's directory")
+				"run `tamp list` to see the environments that have containers, or run the command in the environment's directory")
 		}
 		return target{name: flag, dir: containers[0].Labels[LabelPath], flag: flag}, nil
 	}
@@ -43,7 +45,7 @@ func (m *Manager) find(ctx context.Context, flag string) (target, error) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, RecipeFile)); errors.Is(err, fs.ErrNotExist) {
 		return target{}, exitcode.Usage(fmt.Sprintf("no recipe in %s", dir),
-			"use `-e <name>`, or run the command in an environment's directory")
+			"name the environment with `-e <name>`, or run the command in its directory")
 	} else if err != nil {
 		return target{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot read %s: %v", dir, err),
 			"check that you can read the directory")
@@ -60,7 +62,7 @@ func (m *Manager) locate(ctx context.Context, flag string) (target, error) {
 	}
 	moved, err := m.owner(ctx, t)
 	if moved != "" {
-		m.p.Warn(fmt.Sprintf("%s moved from %s to %s: `tamp start` recreates its containers for the new directory", t.name, moved, t.dir))
+		m.p.Warn(fmt.Sprintf("%s moved from %s to %s: run `tamp start`, which recreates its containers for the new directory", t.name, moved, t.dir))
 	}
 	return t, err
 }
@@ -83,11 +85,11 @@ func (m *Manager) owner(ctx context.Context, t target) (moved string, err error)
 		switch {
 		case err == nil:
 			return "", exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("the environment %s already exists at %s", t.name, path),
-				"rename the directory")
+				fmt.Sprintf("an environment named %s already exists at %s", t.name, path),
+				"rename this directory, as each environment needs a name of its own")
 		case !errors.Is(err, fs.ErrNotExist):
 			return "", exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("cannot tell whether the environment %s at %s still exists: %v", t.name, path, err),
+				fmt.Sprintf("cannot tell whether the environment %s still exists at %s: %v", t.name, path, err),
 				"check that you can read "+path)
 		}
 		moved = path

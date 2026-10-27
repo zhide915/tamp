@@ -48,11 +48,14 @@ const (
 // Init builds the bench around the Frappe clone in apps/: the piped answers
 // keep the folder and install it, and a rollback prompt reads none and aborts.
 // Its asset build would cover every app in apps/, set up or not, so tamp
-// builds each app's assets itself.
+// builds each app's assets itself. The sed drops the two prompts that the
+// piped answers settle, which would otherwise print as open questions.
 func Init(branch string) []string {
-	return []string{"bash", "-c", `printf 'n\ny\n' | bench init` +
+	return []string{"bash", "-c", `set -o pipefail; printf 'n\ny\n' | bench init` +
 		` --ignore-exist --no-procfile --skip-redis-config-generation --no-backups --skip-assets` +
-		` --frappe-path "$1" --frappe-branch "$2" --python "$3" "$4"`,
+		` --frappe-path "$1" --frappe-branch "$2" --python "$3" "$4" 2>&1 | sed -u` +
+		` -e "s/A directory for the application '[^']*' already exists\. Do you want to continue and overwrite it? \[y\/N\]: //"` +
+		` -e "s/Do you want to reinstall the existing application? \[y\/N\]: //"`,
 		"tamp", AppsDir + "/frappe", branch, Python, BenchDir}
 }
 

@@ -53,7 +53,8 @@ func (f *Fake) StopContainer(_ context.Context, name string) error {
 	if !ok {
 		return fmt.Errorf("%s: %w", name, ErrNoContainer)
 	}
-	c.Running = false
+	// Docker stops a paused container too, which leaves it unpaused.
+	c.Running, c.Paused = false, false
 	c.stale = f.StaleList
 	return nil
 }
@@ -157,6 +158,8 @@ var (
 	mountLine     = regexp.MustCompile(`(?m)^      - ([a-z0-9][a-z0-9_-]*):/`)
 	volumeHeader  = regexp.MustCompile(`(?m)^  ([a-z0-9-]+):(.*)$`)
 	volumeName    = regexp.MustCompile(`(?m)^    name: (\S+)$`)
+	// defaultNetwork is the name a compose file gives its default network.
+	defaultNetwork = regexp.MustCompile(`(?m)^  default:\n    name: (\S+)$`)
 )
 
 // up models compose up: each service in the file becomes a running
@@ -165,8 +168,13 @@ var (
 // networks it was connected to.
 func (f *Fake) up(project, dir, compose string) {
 	_, section, _ := strings.Cut(compose, "\nservices:\n")
+	section, networksSection, _ := strings.Cut(section, "\nnetworks:\n")
 	section, volumesSection, _ := strings.Cut(section, "\nvolumes:\n")
 	volumes := f.composeVolumes(project, volumesSection)
+	network := project + "_default"
+	if n := defaultNetwork.FindStringSubmatch(networksSection); n != nil {
+		network = n[1]
+	}
 	starts := serviceHeader.FindAllStringSubmatchIndex(section, -1)
 	for i, m := range starts {
 		end := len(section)
@@ -184,7 +192,7 @@ func (f *Fake) up(project, dir, compose string) {
 		c, ok := f.containers[name]
 		if !ok {
 			c = &fakeContainer{project: project, Container: Container{Name: name,
-				Networks: map[string][]string{project + "_default": nil}}}
+				Networks: map[string][]string{network: nil}}}
 			f.containers[name] = c
 		}
 		c.Running, c.stale = true, false

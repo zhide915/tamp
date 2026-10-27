@@ -29,14 +29,14 @@ func (m *Manager) Open(envFlag, host string) error {
 	case host != "":
 		if !slices.Contains(hosts, host) {
 			return exitcode.New(exitcode.CodeNotFound,
-				fmt.Sprintf("%s has no site %s", name, host), siteChoice(hosts))
+				fmt.Sprintf("%s has no site %s", name, host), t.siteChoice(hosts))
 		}
 	case len(hosts) == 0:
-		return exitcode.New(exitcode.CodeFailed, name+" has no sites",
-			"add one with `tamp site add <host>`")
+		return exitcode.New(exitcode.CodeFailed, name+" has no site",
+			"add one with "+t.command("site add <host>"))
 	case len(hosts) > 1:
 		return exitcode.Usage(fmt.Sprintf("%s has several sites: %s", name, strings.Join(hosts, ", ")),
-			"run `tamp open <host>` with one of them")
+			"run "+t.command("open <host>")+" with one of them")
 	default:
 		host = hosts[0]
 	}
@@ -48,9 +48,9 @@ func (m *Manager) Open(envFlag, host string) error {
 	return nil
 }
 
-func siteChoice(hosts []string) string {
+func (t target) siteChoice(hosts []string) string {
 	if len(hosts) == 0 {
-		return "add it with `tamp site add <host>`"
+		return "add it with " + t.command("site add <host>")
 	}
-	return "run `tamp open` with one of: " + strings.Join(hosts, ", ")
+	return "run " + t.command("open <host>") + " with one of: " + strings.Join(hosts, ", ")
 }

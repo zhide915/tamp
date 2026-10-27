@@ -12,13 +12,13 @@
 #   scripts/acceptance-macos.sh --agent
 #
 # Options:
-#   --tamp PATH          the binary under test, such as a release download;
-#                        built from this checkout when omitted
-#   --first-environment  fail unless the first tamp new builds the bench image,
-#                        which measures the first-environment target; remove the
-#                        version-15 tamp-bench image first, with `docker rmi`
-#   --agent              run the agent test with the Claude Code CLI, `claude`,
-#                        which needs jq
+#   --tamp PATH          The binary under test, such as a release download.
+#                        Built from this checkout when omitted.
+#   --first-environment  Fail unless the first tamp new builds the bench image,
+#                        which measures the first-environment target. Remove the
+#                        version-15 tamp-bench image first, with `docker rmi`.
+#   --agent              Run the agent test with the Claude Code CLI, `claude`,
+#                        which needs jq.
 set -euo pipefail
 
 TAMP_BIN=
@@ -51,7 +51,7 @@ fail() {
 say "the machine has Docker, no tamp-router, and no running tamp environment"
 docker info --format '{{.ServerVersion}}' || fail "docker info failed: start Docker Desktop, and run the script again"
 [ -z "$(docker ps --all --quiet --filter 'name=^tamp-router$')" ] ||
-  fail "a tamp-router container exists, which the script would share: remove it with \`docker rm --force tamp-router\`, and run the script again; your next \`tamp start\` creates it again"
+  fail "a tamp-router container exists, which the script would share: remove it with \`docker rm --force tamp-router\`, and run the script again. Your next \`tamp start\` creates it again"
 [ -z "$(docker ps --quiet --filter label=tamp.env)" ] ||
   fail "a tamp environment is running, which the router would serve too: find it with \`docker ps --filter label=tamp.env\`, stop it with \`tamp stop -e <name>\`, and run the script again"
 for name in tamp-accept tamp-accept2; do
@@ -59,7 +59,7 @@ for name in tamp-accept tamp-accept2; do
     fail "the environment $name exists, which the cleanup would remove: remove it with \`tamp remove -e $name --yes\`, and run the script again"
 done
 # tamp remove finds an environment by its containers, so it cannot remove volumes a failed tamp new left alone.
-left_volumes=$(docker volume ls --quiet --filter 'name=^tamp-accept2?_(db|bench)$' | tr '\n' ' ' | sed 's/ $//')
+left_volumes=$(docker volume ls --quiet --filter 'name=^tamp-accept2?-(db|bench)$' | tr '\n' ' ' | sed 's/ $//')
 [ -z "$left_volumes" ] ||
   fail "the volumes $left_volumes, which this run would adopt and its cleanup remove, are left from a failed tamp new: remove them with \`docker volume rm $left_volumes\`, and run the script again"
 if [ -n "$AGENT" ]; then
@@ -173,7 +173,7 @@ elif [ -n "$FIRST" ]; then
   fail 'tamp new found the bench image cached, so --first-environment measured nothing: remove the image with `docker rmi`, and run again'
 else
   target "new environment, image cached" 480 "$took"
-  TIMINGS+="- first environment on the machine (image built): not measured, as the image was cached; run with --first-environment"$'\n'
+  TIMINGS+="- first environment on the machine (image built): not measured, because the image was cached. Run with --first-environment"$'\n'
 fi
 
 if [ -n "$built" ]; then
@@ -235,7 +235,7 @@ wait_until 60 watching || fail "the sync session is not watching after start"
 
 if [ -n "$AGENT" ]; then
   say 'the agent test: an agent given only "run tamp context" makes a change, tests it, and checks it'
-  prompt='Run `tamp context`. Then make this change in the app acme: add a whitelisted method acme.api.greet that returns the text Hello from tamp, add a test for it and run that test, then check the change in the browser.'
+  prompt='Run `tamp context`. Then make this change in the app acme: add a whitelisted method acme.api.greet that returns the text Hello from tamp. Add a test for it, and run the test. Then check the change in the browser.'
   # The agent's scratch files, such as a browser profile, go where the cleanup deletes them.
   mkdir "$WORK/agent-temp"
   REAL_TMP=${TMPDIR:-/tmp}

@@ -36,7 +36,7 @@ func (d *Daemon) ComposeVersion(ctx context.Context) (string, error) {
 	case errors.Is(err, exec.ErrNotFound):
 		return "", exitcode.New(exitcode.CodeDockerUnavailable,
 			"the docker command is not on PATH",
-			"install Docker Desktop, or add the docker CLI with its compose plugin to PATH")
+			"install Docker Desktop, or add the docker command and its compose plugin to PATH")
 	case err != nil:
 		return "", exitcode.New(exitcode.CodeFailed,
 			"docker compose does not run: "+said(out, err),
@@ -87,7 +87,7 @@ func (d *Daemon) cli(ctx context.Context, dir string, stdin io.Reader, out io.Wr
 		if errors.Is(err, exec.ErrNotFound) {
 			return exitcode.New(exitcode.CodeDockerUnavailable,
 				"the docker command is not on PATH",
-				"install Docker Desktop, or add the docker CLI with its compose plugin to PATH")
+				"install Docker Desktop, or add the docker command and its compose plugin to PATH")
 		}
 		return &cliError{
 			err: exitcode.New(exitcode.CodeFailed, fmt.Sprintf("docker %s failed: %v", args[0], err),

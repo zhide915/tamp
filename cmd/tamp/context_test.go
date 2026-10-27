@@ -214,7 +214,7 @@ func TestContextSaysNeverToRunBenchStartOrBenchUpdate(t *testing.T) {
 	r := c.run(t, "context")
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertContains(t, "- Never run `bench start`", "- Never run `bench update`")
+	r.assertContains(t, "Never run `bench start`", "Never run `bench update`")
 }
 
 func TestOnAStoppedEnvironmentContextPrintsFromTheRecipeSaysItIsStoppedAndReadsNoContainer(t *testing.T) {
@@ -232,8 +232,8 @@ func TestOnAStoppedEnvironmentContextPrintsFromTheRecipeSaysItIsStoppedAndReadsN
 		t.Errorf("stderr = %q, want empty", r.stderr)
 	}
 	r.assertContains(t, "The environment is stopped", "`tamp start -e erp-dev`",
-		"the `tamp shell` and `curl` lines need the environment running",
-		"- Frappe branch version-15, from the recipe, as the frappe container is not running\n",
+		"The `tamp shell` and `curl` lines need the environment running",
+		"- Frappe branch version-15, from the recipe, because the frappe container is not running\n",
 		"- Python 3.11, from the recipe", "- Node 18, from the recipe", "- MariaDB 10.11, from the recipe",
 		"- http://shop.localhost\n")
 	r.assertLacks(t, "within seconds")
@@ -252,7 +252,7 @@ func TestOnAPartlyRunningEnvironmentContextNamesTheStoppedContainers(t *testing.
 	r := c.run(t, "context")
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertContains(t, "The environment is partly running: erp-dev-mariadb-1 is stopped. Start the rest with `tamp start -e erp-dev`, as its sites may fail until it runs.")
+	r.assertContains(t, "The environment is partly running: erp-dev-mariadb-1 is stopped. Its sites can fail until all of it runs, so start the rest with `tamp start -e erp-dev`.")
 	r.assertLacks(t, "sites do not answer")
 }
 
@@ -263,7 +263,7 @@ func TestOnAnEnvironmentNeverBuiltContextPrintsFromTheRecipeAndSaysHowToBuildIt(
 	r := c.run(t, "context")
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertContains(t, "The environment is not built", "`tamp start`, run in "+c.dir,
+	r.assertContains(t, "The environment is not built", "`tamp start` in "+c.dir,
 		"- Python 3.14, from the recipe", "- MariaDB 11.8, from the recipe")
 	r.assertLacks(t, "works from any directory")
 }
@@ -300,8 +300,8 @@ func TestAVersionTheBenchCannotReportComesFromTheRecipeAndSaysWhy(t *testing.T) 
 	r := c.run(t, "context")
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertContains(t, "- Frappe branch version-15, from the recipe, as the bench cannot report it yet\n",
-		"- Python 3.11, from the recipe, as the bench cannot report it yet\n",
+	r.assertContains(t, "- Frappe branch version-15, from the recipe, because the bench cannot report it yet\n",
+		"- Python 3.11, from the recipe, because the bench cannot report it yet\n",
 		"- Node 18.20.8, read from the frappe container\n")
 }
 
@@ -317,7 +317,7 @@ func TestAContainerThatNeverAnswersAVersionReadTimesOutToTheRecipe(t *testing.T)
 	r := c.run(t, "context")
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertContains(t, "- MariaDB 10.11, from the recipe, as the mariadb container did not answer within 50ms\n",
+	r.assertContains(t, "- MariaDB 10.11, from the recipe, because the mariadb container did not answer within 50ms\n",
 		"- Node 18.20.8, read from the frappe container\n")
 }
 
@@ -412,7 +412,7 @@ func TestWhenTheTestSiteIsTheOnlySiteContextAsksForASiteForTheWork(t *testing.T)
 
 	r := c.run(t, "context")
 
-	r.assertContains(t, "the recipe's only site is erp-dev-test.localhost, kept for tests: add one with `tamp site add -e erp-dev <host>`")
+	r.assertContains(t, "the only site of the recipe, erp-dev-test.localhost, is for tests: add one with `tamp site add -e erp-dev <host>`")
 	r.assertLacks(t, "The site commands need a site: add one")
 }
 
@@ -470,7 +470,7 @@ func TestTheLoggedInCurlNamesACookieFileThatIsNotMeantToExistAndShowsQueryArgume
 	r := c.run(t, "context")
 
 	r.assertContains(t, "-b no-such-cookie-file ",
-		"'http://shop.localhost/api/method/frappe.client.get_count?doctype=User'", "Quote any URL that holds a query string")
+		"'http://shop.localhost/api/method/frappe.client.get_count?doctype=User'", "Quote each URL that holds one")
 }
 
 func TestWithTheRecipesAppsNotClonedTheTestsSectionSaysToStartAndNeverToAddThem(t *testing.T) {
@@ -512,4 +512,199 @@ func TestATeammatesFreshCloneOfARecipeWithANamedAppSaysToStartNotThatTheAppHasNo
 	r.assertContains(t, "- acme: "+filepath.Join(mate, "apps", "acme")+", not cloned yet\n",
 		"The recipe's apps are not cloned yet", "which clones them")
 	r.assertLacks(t, "acme has no test module yet", "bench build --app acme", "`acme.<module>")
+}
+
+func TestContextOfAPausedEnvironmentOpensWithTheUnpauseFix(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+
+	r := c.run(t, "context")
+
+	r.assertCode(t, exitcode.CodeOK)
+	_, rest, _ := strings.Cut(r.stdout, "\n\n")
+	first, _, _ := strings.Cut(rest, "\n")
+	if !strings.Contains(first, "erp-dev-frappe-1 is paused") || !strings.Contains(first, "`docker unpause erp-dev-frappe-1`") {
+		t.Errorf("the line under the heading = %q, want the paused container and its unpause fix", first)
+	}
+	r.assertLacks(t, "The environment is running.")
+}
+
+func TestTheQueryArgumentExampleLogsInFirstInTheSameCurl(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+
+	r := c.run(t, "context")
+
+	for _, line := range examples(r.stdout) {
+		if strings.Contains(line, "get_count") {
+			if !strings.Contains(line, "/api/method/login --next ") {
+				t.Errorf("the get_count example %q does not log in first", line)
+			}
+			return
+		}
+	}
+	t.Errorf("no example calls get_count:\n%s", r.stdout)
+}
+
+func TestContextOfAPausedEnvironmentSaysTheVersionsComeFromTheRecipeBecauseItIsPaused(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+
+	r := c.run(t, "context")
+
+	r.assertContains(t, "- Python 3.11, from the recipe, because the frappe container is paused\n")
+}
+
+func TestTheTestLineSkipsBeforeTestsOnlyWhenAHookCallsAnAppTheRecipeLacks(t *testing.T) {
+	for _, tc := range []struct {
+		hook string
+		skip bool
+	}{
+		{`before_tests = "erpnext.setup.utils.before_tests"`, true},
+		{`before_tests = ["acme.setup.before_tests", "erpnext.setup.utils.before_tests"]`, true},
+		{"before_tests = [\n\t\"acme.setup.before_tests\",\n\t\"erpnext.setup.utils.before_tests\",\n]", true},
+		{`before_tests = "acme.setup.before_tests"`, false},
+		{`before_tests = "frappe.utils.install.before_tests"`, false},
+		{``, false},
+	} {
+		t.Run(tc.hook, func(t *testing.T) {
+			c := sandbox(t)
+			dir := c.newIn(t, "erp-dev", "--app", acmeURL, "--site", "shop.localhost")
+			hooks := filepath.Join(dir, "apps", "acme", "acme", "hooks.py")
+			if err := os.WriteFile(hooks, []byte("app_name = \"acme\"\n"+tc.hook+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			r := c.run(t, "context")
+
+			var line string
+			for _, l := range examples(r.stdout) {
+				if strings.Contains(l, "run-tests") {
+					line = l
+				}
+			}
+			if got := strings.Contains(line, " run-tests --skip-before-tests --module "); got != tc.skip {
+				t.Errorf("test line = %q, want --skip-before-tests %v", line, tc.skip)
+			}
+			if tc.skip {
+				r.assertContains(t, "acme's `before_tests` hook calls `erpnext.setup.utils.before_tests` of erpnext, an app that the recipe does not list")
+			}
+		})
+	}
+}
+
+// testLine is the run-tests example of a context block.
+func testLine(stdout string) string {
+	for _, l := range examples(stdout) {
+		if strings.Contains(l, "run-tests") {
+			return l
+		}
+	}
+	return ""
+}
+
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for name, body := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestOnVersion16AndDevelopTheTestLineSkipsBeforeTestsOnlyForTheHooksOfTheModulesApp(t *testing.T) {
+	const missing = "app_name = \"acme\"\nbefore_tests = \"erpnext.setup.utils.before_tests\"\n"
+	const test = "import unittest\n\n\nclass TestX(unittest.TestCase):\n\tdef test_x(self):\n\t\tpass\n"
+	for _, branch := range []string{"version-16", "develop"} {
+		for _, tc := range []struct {
+			name   string
+			files  map[string]string
+			module string
+			skip   bool
+		}{
+			{"a Frappe module runs only Frappe's hooks", map[string]string{"hooks.py": missing}, "frappe.tests.test_formatter", false},
+			{"an acme module runs acme's hooks", map[string]string{"hooks.py": missing, "core/test_x.py": test}, "acme.core.test_x", true},
+			{"acme's own hook passes", map[string]string{"hooks.py": "before_tests = \"acme.setup.before_tests\"\n", "core/test_x.py": test}, "acme.core.test_x", false},
+		} {
+			t.Run(branch+": "+tc.name, func(t *testing.T) {
+				c := sandbox(t)
+				c.run(t, "new", "erp-dev", "--frappe", branch, "--app", acmeURL, "--site", "shop.localhost").assertCode(t, exitcode.CodeOK)
+				dir := filepath.Join(c.dir, "erp-dev")
+				t.Chdir(dir)
+				writeFiles(t, filepath.Join(dir, "apps", "acme", "acme"), tc.files)
+
+				r := c.run(t, "context")
+
+				line := testLine(r.stdout)
+				if !strings.HasSuffix(line, " --module "+tc.module) {
+					t.Errorf("test line = %q, want --module %s", line, tc.module)
+				}
+				if got := strings.Contains(line, " --skip-before-tests "); got != tc.skip {
+					t.Errorf("test line = %q, want --skip-before-tests %v", line, tc.skip)
+				}
+				if tc.skip {
+					r.assertContains(t, "skips every `before_tests` hook, Frappe's included")
+				}
+			})
+		}
+	}
+}
+
+func TestTheExampleModuleIsTheFirstThatDefinesATest(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--app", acmeURL, "--site", "shop.localhost")
+	pkg := filepath.Join(dir, "apps", "acme", "acme")
+	writeFiles(t, pkg, map[string]string{
+		"a_mod/test_empty.py": "import unittest\n\n\nclass TestEmpty(unittest.TestCase):\n\tpass\n",
+		"b_mod/test_real.py":  "import unittest\n\n\nclass TestReal(unittest.TestCase):\n\tdef test_one(self):\n\t\tpass\n",
+	})
+
+	r := c.run(t, "context")
+
+	if line := testLine(r.stdout); !strings.HasSuffix(line, " --module acme.b_mod.test_real") {
+		t.Errorf("test line = %q, want the module that defines a test", line)
+	}
+	r.assertLacks(t, "runs 0 tests")
+
+	if err := os.Remove(filepath.Join(pkg, "b_mod", "test_real.py")); err != nil {
+		t.Fatal(err)
+	}
+	r = c.run(t, "context")
+
+	if line := testLine(r.stdout); !strings.HasSuffix(line, " --module acme.a_mod.test_empty") {
+		t.Errorf("test line = %q, want the only test module", line)
+	}
+	r.assertContains(t, "None of acme's test modules that load in this bench defines a test yet, so the example runs 0 tests until you add one.")
+}
+
+func TestTheExampleModuleSkipsATestModuleThatImportsAnAppTheBenchLacks(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--app", acmeURL, "--site", "shop.localhost")
+	pkg := filepath.Join(dir, "apps", "acme", "acme")
+	writeFiles(t, pkg, map[string]string{
+		"a_mod/test_erp.py":  "import unittest\n\nfrom erpnext.accounts import x\n\n\nclass TestErp(unittest.TestCase):\n\tdef test_one(self):\n\t\tpass\n",
+		"b_mod/test_real.py": "import json, unittest\n\nimport frappe\nfrom acme.b_mod import y\n\n\nclass TestReal(unittest.TestCase):\n\tdef test_one(self):\n\t\tpass\n",
+	})
+
+	r := c.run(t, "context")
+
+	if line := testLine(r.stdout); !strings.HasSuffix(line, " --module acme.b_mod.test_real") {
+		t.Errorf("test line = %q, want the module that loads in the bench", line)
+	}
+
+	if err := os.Remove(filepath.Join(pkg, "b_mod", "test_real.py")); err != nil {
+		t.Fatal(err)
+	}
+	r = c.run(t, "context")
+
+	if line := testLine(r.stdout); !strings.HasSuffix(line, " --module frappe.tests.test_formatter") {
+		t.Errorf("test line = %q, want Frappe's", line)
+	}
+	r.assertContains(t, "Each test module of acme imports a package beyond Frappe, the recipe's apps, and the standard library")
 }

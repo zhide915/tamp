@@ -22,7 +22,7 @@ func newRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
 		Use:   "remove --yes",
-		Short: "Delete the environment's sync session, containers, network and volumes, and keep its directory",
+		Short: "Delete the environment's containers, network, volumes, and sync session, and keep its directory",
 		Example: "  tamp remove --yes\n" +
 			"  tamp remove -e erp-dev --yes",
 		Args: noArgs,
@@ -30,14 +30,14 @@ func newRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 			return manager().Remove(g.env, yes)
 		},
 	}
-	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deleting the containers, network and volumes, with every site's database")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deleting the containers, network, and volumes, with every site's database")
 	return cmd
 }
 
 func newListCommand(manager func() *env.Manager) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List every environment that has containers, with its sites",
+		Short: "List each environment that has containers, with its sites",
 		Example: "  tamp list\n" +
 			"  tamp list --no-color",
 		Args: noArgs,
@@ -50,7 +50,7 @@ func newListCommand(manager func() *env.Manager) *cobra.Command {
 func newStatusCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show the environment's containers, sync state and site URLs",
+		Short: "Show the environment's containers, sync state, and site URLs",
 		Example: "  tamp status\n" +
 			"  tamp status -e erp-dev",
 		Args: noArgs,

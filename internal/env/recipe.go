@@ -61,7 +61,7 @@ var matrix = map[string]toolchain{
 // machine with no hosts file. DNS caps each label at 63 characters.
 var localhostName = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+localhost$`)
 
-const siteHostFix = "name the site with lowercase letters, digits and `-`, at most 63 characters between dots, ending in `.localhost`, such as `shop.localhost`"
+const siteHostFix = "name the site with lowercase letters, digits, and `-`, at most 63 characters between dots, and end it in `.localhost`, such as `shop.localhost`"
 
 // readRecipe reads the recipe in dir. A recipe that names an unsupported
 // branch or a bad hostname is a conflict with the file, not the command line.
@@ -74,7 +74,7 @@ func readRecipe(dir string) (Recipe, error) {
 			// find has already checked the working directory, so dir is one
 			// that a container's label names.
 			return Recipe{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("no recipe in %s", dir),
-				fmt.Sprintf("run `tamp start` in the directory the environment moved to, or remove it with `tamp remove -e %s --yes`",
+				fmt.Sprintf("run `tamp start` in the directory that the environment moved to, or delete the environment with `tamp remove -e %s --yes`",
 					filepath.Base(dir)))
 		}
 		return Recipe{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot read %s: %v", path, err),
@@ -89,7 +89,7 @@ func readRecipe(dir string) (Recipe, error) {
 	if _, ok := matrix[r.Frappe]; !ok {
 		return Recipe{}, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s names the unsupported Frappe branch %q", path, r.Frappe),
-			"set frappe to one of: "+FrappeBranchList())
+			"set `frappe` to one of: "+FrappeBranchList())
 	}
 	for _, s := range r.Sites {
 		if !localhostName.MatchString(s.Host) {
@@ -102,12 +102,12 @@ func readRecipe(dir string) (Recipe, error) {
 		switch {
 		case a.URL == "":
 			return Recipe{}, exitcode.New(exitcode.CodeFailed,
-				fmt.Sprintf("%s lists an app without a url", path),
-				"set the app's url in "+path+", or remove the app from it")
+				fmt.Sprintf("%s lists an app with no url", path),
+				"set the app's url in "+path+", or remove the app")
 		case a.Name != "" && (!appName.MatchString(a.Name) || a.Name == "frappe"):
 			return Recipe{}, exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("%s lists the app %q, which is not an app name", path, a.Name),
-				"set the app's name to its package name, as in its pyproject.toml")
+				"set the app's name to its package name, as its pyproject.toml or setup.py names it")
 		case a.Name != "" && seen[a.Name]:
 			return Recipe{}, exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("%s lists the app %s twice", path, a.Name), "remove one of them from "+path)

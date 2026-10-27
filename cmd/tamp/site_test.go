@@ -329,7 +329,7 @@ func TestStartWarnsAboutASiteTheRecipeDoesNotListAndDeletesNothing(t *testing.T)
 
 	r.assertCode(t, exitcode.CodeOK)
 	want := "warning: the bench holds the site shop.localhost, which the recipe does not list: " +
-		"drop it with `tamp site remove shop.localhost --yes`\n"
+		"add it with `tamp site add shop.localhost`, or drop it with `tamp site remove shop.localhost --yes`\n"
 	if r.stderr != want {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
@@ -485,4 +485,21 @@ func TestSiteAddWithALabelOver63CharactersExits2WithTheLimitInTheFix(t *testing.
 	r.assertCode(t, exitcode.CodeUsage)
 	r.assertOneLineError(t, host, "63 characters")
 	c.run(t, "site", "add", strings.Repeat("a", 63)+".localhost").assertCode(t, exitcode.CodeOK)
+}
+
+func TestSiteAddAndAppAddEndWithALineThatNamesWhatTheyAdded(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+
+	site := c.run(t, "site", "add", "blog.localhost")
+	app := c.run(t, "app", "add", acmeURL)
+
+	site.assertCode(t, exitcode.CodeOK)
+	app.assertCode(t, exitcode.CodeOK)
+	if got := lastLine(site.stdout); got != "✓ created the site blog.localhost in erp-dev, with every app, and routed it" {
+		t.Errorf("site add ends with %q", got)
+	}
+	if got := lastLine(app.stdout); got != "✓ installed the app acme on every site in erp-dev" {
+		t.Errorf("app add ends with %q", got)
+	}
 }

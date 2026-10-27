@@ -92,9 +92,9 @@ func (d Detector) Detect() (Address, error) {
 
 	return Address{}, exitcode.New(
 		exitcode.CodeDockerUnavailable,
-		"no Docker engine found (looked at DOCKER_HOST, the active docker context, and "+
-			strings.Join(d.Candidates, ", ")+")",
-		"start Docker Desktop, or point DOCKER_HOST at your engine's socket",
+		"tamp found no Docker engine at DOCKER_HOST, at the active docker context, or at "+
+			strings.Join(d.Candidates, ", "),
+		"start Docker Desktop, or set DOCKER_HOST to your engine's socket",
 	)
 }
 
@@ -159,7 +159,7 @@ func (d Detector) contextEndpoint(name string) (string, error) {
 		return "", exitcode.New(
 			exitcode.CodeDockerUnavailable,
 			fmt.Sprintf("the active docker context %q is not defined on this machine", name),
-			"run 'docker context ls' and select an existing one with 'docker context use'",
+			"list the contexts with `docker context ls`, and choose one with `docker context use <name>`",
 		)
 	}
 	if err != nil {
@@ -184,7 +184,7 @@ func (d Detector) contextEndpoint(name string) (string, error) {
 
 func (d Detector) configError(msg string) error {
 	return exitcode.New(exitcode.CodeDockerUnavailable, msg,
-		"fix it with 'docker context use <name>', or set DOCKER_HOST to bypass docker's config")
+		"choose a context with `docker context use <name>`, or set DOCKER_HOST, which makes tamp skip the docker config")
 }
 
 func dockerConfigDir(lookupEnv func(string) (string, bool)) string {

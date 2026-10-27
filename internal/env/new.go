@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"github.com/zhide915/tamp/internal/exitcode"
+	"github.com/zhide915/tamp/internal/router"
 )
 
 // New writes the recipe and the .gitignore of a new environment at path, then
@@ -23,7 +24,7 @@ func (m *Manager) New(path, frappe string, appSpecs, hosts []string) error {
 	}
 	if _, err := os.Stat(filepath.Join(dir, RecipeFile)); err == nil {
 		return exitcode.Usage(fmt.Sprintf("%s already holds a recipe", dir),
-			"run `tamp start` in that directory")
+			"run `tamp start` in "+dir)
 	}
 	if err := checkFrappeBranch(frappe); err != nil {
 		return err
@@ -35,7 +36,7 @@ func (m *Manager) New(path, frappe string, appSpecs, hosts []string) error {
 			return err
 		}
 		if slices.ContainsFunc(apps, func(a App) bool { return a.URL == url }) {
-			return exitcode.Usage(fmt.Sprintf("the app %s is given twice", url), "give each `--app` once")
+			return exitcode.Usage(fmt.Sprintf("`--app` names the app %s twice", url), "name each app once")
 		}
 		// The build clones it and records its name, and its default branch
 		// when none is given.
@@ -45,7 +46,7 @@ func (m *Manager) New(path, frappe string, appSpecs, hosts []string) error {
 	if err != nil {
 		return err
 	}
-	if err := checkName(filepath.Base(dir)); err != nil {
+	if err := checkName(filepath.Base(dir), true); err != nil {
 		return err
 	}
 	if err := checkNewDirectory(dir); err != nil {
@@ -76,7 +77,7 @@ func (m *Manager) New(path, frappe string, appSpecs, hosts []string) error {
 	if err := writeFile(dir, ".gitignore", []byte("apps/\ncompose.yaml\n")); err != nil {
 		return err
 	}
-	m.p.OK(fmt.Sprintf("wrote the recipe of environment %s: %s", filepath.Base(dir), filepath.Join(dir, RecipeFile)))
+	m.p.OK(fmt.Sprintf("wrote the recipe of %s to %s", filepath.Base(dir), filepath.Join(dir, RecipeFile)))
 	return m.build(t, recipe)
 }
 
@@ -88,7 +89,7 @@ func siteList(hosts []string) ([]Site, error) {
 			return nil, exitcode.Usage(fmt.Sprintf("%q is not a *.localhost hostname", host), siteHostFix)
 		}
 		if seen[host] {
-			return nil, exitcode.Usage(fmt.Sprintf("the site %s is given twice", host), "give each `--site` once")
+			return nil, exitcode.Usage(fmt.Sprintf("`--site` names the site %s twice", host), "name each site once")
 		}
 		seen[host] = true
 		sites = append(sites, Site{Host: host})
@@ -98,28 +99,38 @@ func siteList(hosts []string) ([]Site, error) {
 
 func checkFrappeBranch(frappe string) error {
 	if frappe == "" {
-		return exitcode.Usage("missing the --frappe flag",
-			"add `--frappe <branch>` with one of: "+FrappeBranchList())
+		return exitcode.Usage("missing `--frappe`",
+			"add `--frappe <branch>`, with one of: "+FrappeBranchList())
 	}
 	for _, b := range frappeBranches {
 		if frappe == b {
 			return nil
 		}
 	}
-	return exitcode.Usage(fmt.Sprintf("unsupported Frappe branch %q", frappe),
-		"use `--frappe` with one of: "+FrappeBranchList())
+	return exitcode.Usage(fmt.Sprintf("tamp does not support the Frappe branch %q", frappe),
+		"give `--frappe` one of: "+FrappeBranchList())
 }
 
 // composeName is Docker Compose's rule for a project name, which an
 // environment's name must follow.
 var composeName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
-func checkName(name string) error {
+// checkName checks an environment's name. fromNew says that the user typed
+// it, as the path of `tamp new`, rather than that a directory holds it.
+func checkName(name string, fromNew bool) error {
+	rename, chars := "give the directory another name", "rename the directory with"
+	if fromNew {
+		rename, chars = "run `tamp new` with another name", "run `tamp new` with a name of"
+	}
+	if name == router.Project {
+		// The router's own compose project and network take this name.
+		return exitcode.Usage(fmt.Sprintf("%q is the name of tamp's router, so no environment can take it", name), rename)
+	}
 	if composeName.MatchString(name) {
 		return nil
 	}
 	return exitcode.Usage(fmt.Sprintf("%q is not a valid environment name", name),
-		"name the directory with lowercase letters, digits, `-` and `_`, starting with a letter or digit")
+		chars+" only lowercase letters, digits, `-`, and `_`, starting with a letter or a digit")
 }
 
 func checkNewDirectory(dir string) error {
@@ -128,7 +139,7 @@ func checkNewDirectory(dir string) error {
 		return nil
 	}
 	notEmpty := exitcode.Usage(fmt.Sprintf("%s is not a new or empty directory", dir),
-		"give `tamp new` a new or empty directory")
+		"give `tamp new` the path of a new or empty directory")
 	if err != nil {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot read %s: %v", dir, err),
 			"check that you can read the directory")

@@ -94,6 +94,33 @@ func TestStartWithDockerUnreachableExits4(t *testing.T) {
 	}
 }
 
+func TestVolumesAndNetworksFollowComposesNaming(t *testing.T) {
+	c := sandbox(t)
+
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+
+	f := c.docker
+	names := f.VolumeNames()
+	all, err := f.AllContainers(t.Context(), "tamp.env")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all = append(all, docker.Container{Name: "tamp-router"})
+	for _, listed := range all {
+		c, err := f.Inspect(t.Context(), listed.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, c.Name)
+		names = append(names, slices.Collect(maps.Keys(c.Networks))...)
+	}
+	for _, want := range []string{"erp-dev_db", "erp-dev_bench", "erp-dev_default", "tamp-router_default"} {
+		if !slices.Contains(names, want) {
+			t.Errorf("Docker holds no %s among %v", want, names)
+		}
+	}
+}
+
 func TestNewBuildsTheImageTheContainersTheBenchAndTheSite(t *testing.T) {
 	c := sandbox(t)
 
@@ -555,7 +582,7 @@ func TestASiteThatNeverAnswersFailsStartWithExit1AndTheLogsFix(t *testing.T) {
 	r := c.run(t, "start", "--quiet")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, "the site shop.localhost did not answer within 2 minutes: see why with `tamp logs frappe`, then run `tamp start`")
+	r.assertOneLineError(t, "the site shop.localhost did not answer in 2 minutes: find out why with `tamp logs frappe`, then run `tamp start`")
 }
 
 func TestACrashLoopWhileWaitingFailsStartWithTheCrashAndTheLogsFix(t *testing.T) {
@@ -567,7 +594,7 @@ func TestACrashLoopWhileWaitingFailsStartWithTheCrashAndTheLogsFix(t *testing.T)
 	r := c.run(t, "start", "-e", "erp-dev", "--quiet")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, crashMsg+": see why with `tamp logs frappe -e erp-dev`, then run `tamp start -e erp-dev`")
+	r.assertOneLineError(t, crashMsg+": find out why with `tamp logs frappe -e erp-dev`, then run `tamp start -e erp-dev`")
 }
 
 func TestACrashLoopAfterTheSitesAnswerIsAWarningAndStartExits0(t *testing.T) {
@@ -577,7 +604,7 @@ func TestACrashLoopAfterTheSitesAnswerIsAWarningAndStartExits0(t *testing.T) {
 	r := c.run(t, "new", "erp-dev", "--frappe", "version-15", "--site", "shop.localhost")
 
 	r.assertCode(t, exitcode.CodeOK)
-	if want := "warning: " + crashMsg + ": see why with `tamp logs frappe` in erp-dev\n"; !strings.Contains(r.stderr, want) {
+	if want := "warning: " + crashMsg + ": find out why with `tamp logs frappe` in erp-dev\n"; !strings.Contains(r.stderr, want) {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
 }

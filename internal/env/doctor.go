@@ -72,7 +72,7 @@ func (m *Manager) Doctor(envFlag string) error {
 	} else if installed {
 		r.pass("Mutagen " + syncer.Version)
 	} else {
-		r.warn("Mutagen "+syncer.Version+" is not installed, or does not run", startFix("downloads it"))
+		r.warn("Mutagen "+syncer.Version+" is not installed, or it does not run", startFix("downloads it"))
 	}
 
 	if dockerErr != nil {
@@ -81,7 +81,7 @@ func (m *Manager) Doctor(envFlag string) error {
 		if envFlag != "" {
 			again = "`tamp doctor -e " + envFlag + "`"
 		}
-		r.warn("port 80, the router and the environment are not checked, as Docker does not answer",
+		r.warn("tamp did not check port 80, the router, or the environment, because Docker does not answer",
 			"start Docker, then run "+again+" again")
 	} else {
 		m.checkRouter(ctx, r, t, found)
@@ -93,12 +93,12 @@ func (m *Manager) Doctor(envFlag string) error {
 	case found:
 		m.checkEnv(ctx, r, t)
 	default:
-		r.pass("no environment checked, as this directory holds no recipe: run `tamp doctor -e <name>` with a name from `tamp list`")
+		r.pass("no environment checked, because this directory holds no recipe: to check one, run `tamp doctor -e <name>` with a name from `tamp list`")
 	}
 
 	if r.failed > 0 {
-		return exitcode.New(r.first, fmt.Sprintf("%d of tamp doctor's checks failed", r.failed),
-			"follow the fix on each failed check above")
+		return exitcode.New(r.first, fmt.Sprintf("%d of the checks failed", r.failed),
+			"follow each failed check's fix above")
 	}
 	return nil
 }
@@ -125,7 +125,7 @@ func checkGit(ctx context.Context, r *report) {
 	out, err := exec.CommandContext(ctx, "git", "--version").Output()
 	switch {
 	case errors.Is(err, exec.ErrNotFound):
-		r.fail(exitcode.New(exitcode.CodeFailed, "git is not on PATH, and tamp clones apps with it",
+		r.fail(exitcode.New(exitcode.CodeFailed, "git is not on PATH, and tamp clones each app with it",
 			"install git from https://git-scm.com/downloads"))
 	case err != nil:
 		r.fail(exitcode.New(exitcode.CodeFailed, fmt.Sprintf("git does not run: %v", err),
@@ -148,7 +148,7 @@ func (m *Manager) checkRouter(ctx context.Context, r *report, t target, found bo
 		return
 	}
 	if router.PortHeld(ctx) {
-		r.fail(router.PortTaken(ctx, m.docker, fmt.Sprintf("port %d is taken by something other than the router", router.Port)))
+		r.fail(router.PortTaken(ctx, m.docker, fmt.Sprintf("something other than the router holds port %d", router.Port)))
 	} else {
 		r.pass(fmt.Sprintf("port %d is free for the router", router.Port))
 	}
@@ -164,7 +164,7 @@ func (m *Manager) checkRouter(ctx context.Context, r *report, t target, found bo
 		}
 	}
 	if len(names) == 0 {
-		r.pass("the router is not running, and no environment needs it")
+		r.pass("the router is not running, and no running environment needs it")
 		return
 	}
 	starter := target{name: names[0], flag: names[0]}
@@ -232,46 +232,55 @@ func (m *Manager) checkEnv(ctx context.Context, r *report, t target) {
 	default:
 		r.pass("the environment " + t.name + " is " + st.String())
 	}
-	frappeRunning := false
+	frappeRunning, frappePaused := false, false
 	for _, c := range containers {
 		if c.Name != frappeContainer(t.name) {
 			continue
 		}
-		frappeRunning = c.Running
+		frappeRunning, frappePaused = c.Running, c.Paused
+		if c.Paused {
+			// A paused bench's fix, `tamp start`, waits for the unpause above.
+			continue
+		}
 		_, err := m.docker.ReadFile(ctx, c.Name, frappe.Paused)
 		switch {
 		case err == nil:
-			r.warn("the bench of "+t.name+" keeps its processes down, as a build stopped partway", start("finishes it"))
+			r.warn("the bench of "+t.name+" holds its processes down, because a build stopped partway", start("finishes the build"))
 		case !errors.Is(err, docker.ErrNotExist):
 			r.fail(err)
 		}
 	}
 	if m.sync != nil {
-		m.checkSync(ctx, r, t, frappeRunning)
+		m.checkSync(ctx, r, t, frappeRunning, frappePaused)
 	}
 }
 
 // checkSync judges the session by the frappe container, which it syncs with.
-func (m *Manager) checkSync(ctx context.Context, r *report, t target, frappeRunning bool) {
+func (m *Manager) checkSync(ctx context.Context, r *report, t target, frappeRunning, frappePaused bool) {
 	start := func(what string) string { return "run " + t.command("start") + ", which " + what }
 	spec := syncSpec(t)
 	of := "the sync session of " + t.name
+	// Nothing syncs with a frozen container, and `tamp start` refuses one.
+	if frappePaused {
+		r.warn(of+" cannot sync, because "+spec.Container+" is paused", unpauseFix([]string{spec.Container}))
+		return
+	}
 	s, err := m.sync.Peek(ctx, spec.Name)
 	if err == nil && s == nil {
 		var copying *syncer.Session
 		if copying, err = m.sync.Peek(ctx, syncer.ReplicaName(spec.Name)); err == nil && copying != nil {
-			r.warn("the first copy of apps/ into the container of "+t.name+" never finished", start("makes the sync session"))
+			r.warn("the first copy of apps/ into the container of "+t.name+" did not finish", start("makes the sync session"))
 			return
 		}
 	}
 	var run *syncer.RunError
 	switch {
 	case errors.Is(err, syncer.ErrNoDaemon) && frappeRunning:
-		r.warn("Mutagen's daemon is not running, so apps/ of "+t.name+" does not sync", start("starts it"))
+		r.warn("the Mutagen daemon is not running, so the apps/ of "+t.name+" does not sync", start("starts it"))
 	case errors.Is(err, syncer.ErrNoDaemon):
-		r.pass("nothing syncs, as neither the frappe container of " + t.name + " nor Mutagen's daemon is running")
+		r.pass("nothing syncs, because neither the frappe container of " + t.name + " nor the Mutagen daemon is running")
 	case errors.As(err, &run):
-		r.warn(of+" cannot be read, as Mutagen does not run", start("downloads it again"))
+		r.warn("tamp cannot read "+of+", because Mutagen does not run", start("downloads Mutagen again"))
 	case err != nil:
 		r.fail(err)
 	case s == nil:
@@ -283,7 +292,7 @@ func (m *Manager) checkSync(ctx context.Context, r *report, t target, frappeRunn
 	case s.Paused && frappeRunning:
 		r.warn(of+" is paused", start("resumes it"))
 	case s.Paused:
-		r.pass(of + " is paused, as its frappe container is stopped")
+		r.pass(of + " is paused, because its frappe container is stopped")
 	case s.Status == "disconnected" || strings.HasPrefix(s.Status, "connecting"):
 		r.warn(of+" is "+statusWords(s.Status), start("connects it again"))
 	case len(s.Conflicts) > 0:

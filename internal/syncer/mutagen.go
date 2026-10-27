@@ -170,7 +170,7 @@ func (m *Mutagen) Install(ctx context.Context) error {
 	}
 	if err := version(ctx, filepath.Join(out, exe()), dir); err != nil {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("the Mutagen downloaded from %s does not run: %v", url, err),
-			"check that security software lets programs in "+filepath.Dir(bin)+" run")
+			"check that your security software lets programs in "+filepath.Dir(bin)+" run")
 	}
 	// A copy that does not run, or one left half removed.
 	if err := os.RemoveAll(bin); err != nil {
@@ -190,7 +190,7 @@ var downloads = &http.Client{Timeout: 15 * time.Minute}
 func download(ctx context.Context, url, path, sum string) error {
 	failed := func(err error) error {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot download Mutagen from %s: %v", url, err),
-			"check this machine's connection to github.com")
+			"check that this machine can reach github.com")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -220,7 +220,7 @@ func download(ctx context.Context, url, path, sum string) error {
 	if got := hex.EncodeToString(h.Sum(nil)); got != sum {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("the Mutagen download from %s has the SHA-256 %s, but tamp pins %s", url, got, sum),
-			"check that no proxy or security software alters downloads from github.com")
+			"check that no proxy or security software changes downloads from github.com")
 	}
 	return nil
 }

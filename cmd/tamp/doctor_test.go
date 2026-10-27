@@ -96,11 +96,11 @@ func TestWithDockerUnreachableTheDockerCheckFailsWithAFixAndDoctorExits4(t *test
 
 	r.assertCode(t, exitcode.CodeDockerUnavailable)
 	r.assertLine(t, "✗ Docker is not answering at npipe:////./pipe/docker_engine: start Docker")
-	r.assertLine(t, "! port 80, the router and the environment are not checked, as Docker does not answer: start Docker, then run `tamp doctor` again")
+	r.assertLine(t, "! tamp did not check port 80, the router, or the environment, because Docker does not answer: start Docker, then run `tamp doctor` again")
 
 	t.Chdir(c.dir)
-	c.doctor(t, "-e", "erp-dev").assertLine(t, "! port 80, the router and the environment are not checked, as Docker does not answer: start Docker, then run `tamp doctor -e erp-dev` again")
-	if !strings.Contains(r.stderr, "error: 1 of tamp doctor's checks failed") {
+	c.doctor(t, "-e", "erp-dev").assertLine(t, "! tamp did not check port 80, the router, or the environment, because Docker does not answer: start Docker, then run `tamp doctor -e erp-dev` again")
+	if !strings.Contains(r.stderr, "error: 1 of the checks failed") {
 		t.Errorf("stderr = %q, want the count of failed checks", r.stderr)
 	}
 }
@@ -112,7 +112,7 @@ func TestMissingHostGitFailsWithAFix(t *testing.T) {
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertLine(t, "✗ git is not on PATH, and tamp clones apps with it: install git from https://git-scm.com/downloads")
+	r.assertLine(t, "✗ git is not on PATH, and tamp clones each app with it: install git from https://git-scm.com/downloads")
 }
 
 func TestTheExitCodeIsThatOfTheFirstFailingCheck(t *testing.T) {
@@ -122,7 +122,7 @@ func TestTheExitCodeIsThatOfTheFirstFailingCheck(t *testing.T) {
 	r := c.doctor(t, "-e", "nope")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	if !strings.Contains(r.stderr, "error: 2 of tamp doctor's checks failed") {
+	if !strings.Contains(r.stderr, "error: 2 of the checks failed") {
 		t.Errorf("stderr = %q, want git and the environment to fail", r.stderr)
 	}
 }
@@ -146,7 +146,7 @@ func TestPort80HeldBySomethingOtherThanTheRouterFailsWithAFix(t *testing.T) {
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeFailed)
-	if !strings.Contains(r.stdout, "\n✗ port 80 is taken by something other than the router: stop what listens on port 80 (find it with `") {
+	if !strings.Contains(r.stdout, "\n✗ something other than the router holds port 80: find what listens on port 80 with `") {
 		t.Errorf("stdout = %q, want port 80 to fail with a fix", r.stdout)
 	}
 }
@@ -185,7 +185,7 @@ func TestAnUnhealthySyncSessionWarnsWithTheFixTampStart(t *testing.T) {
 		{"halted", func(s *syncer.Fake, dir string) {
 			s.SetSession(syncer.Session{Name: session, Host: filepath.Join(dir, "apps"), Container: frappeContainer,
 				Path: frappe.AppsDir, Status: "halted-on-root-deletion"})
-		}, "! the sync session of erp-dev is halted, as a synced folder was deleted: run `tamp start`, which makes it anew"},
+		}, "! the sync session of erp-dev is halted, because a synced folder was deleted: run `tamp start`, which makes it anew"},
 		{"paused while running", func(s *syncer.Fake, _ string) {
 			_ = s.Pause(context.Background(), session)
 		}, "! the sync session of erp-dev is paused: run `tamp start`, which resumes it"},
@@ -204,10 +204,10 @@ func TestAnUnhealthySyncSessionWarnsWithTheFixTampStart(t *testing.T) {
 			_ = s.Terminate(context.Background(), session)
 			s.SetSession(syncer.Session{Name: syncer.ReplicaName(session), Host: filepath.Join(dir, "apps"),
 				Container: frappeContainer, Path: frappe.AppsDir, Status: "watching"})
-		}, "! the first copy of apps/ into the container of erp-dev never finished: run `tamp start`, which makes the sync session"},
+		}, "! the first copy of apps/ into the container of erp-dev did not finish: run `tamp start`, which makes the sync session"},
 		{"no daemon", func(s *syncer.Fake, _ string) {
 			s.NoDaemon = true
-		}, "! Mutagen's daemon is not running, so apps/ of erp-dev does not sync: run `tamp start`, which starts it"},
+		}, "! the Mutagen daemon is not running, so the apps/ of erp-dev does not sync: run `tamp start`, which starts it"},
 		{"conflicts", func(s *syncer.Fake, dir string) {
 			s.SetSession(syncer.Session{Name: session, Host: filepath.Join(dir, "apps"), Container: frappeContainer,
 				Path: frappe.AppsDir, Status: "watching", Conflicts: []syncer.Conflict{{Path: "hrms"}}})
@@ -241,7 +241,7 @@ func TestAPausedSessionOfAStoppedEnvironmentPasses(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertLine(t, "✓ the environment erp-dev is stopped")
-	r.assertLine(t, "✓ the sync session of erp-dev is paused, as its frappe container is stopped")
+	r.assertLine(t, "✓ the sync session of erp-dev is paused, because its frappe container is stopped")
 }
 
 func TestABenchLeftPausedWarnsWithTheFixTampStart(t *testing.T) {
@@ -252,7 +252,7 @@ func TestABenchLeftPausedWarnsWithTheFixTampStart(t *testing.T) {
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertLine(t, "! the bench of erp-dev keeps its processes down, as a build stopped partway: run `tamp start`, which finishes it")
+	r.assertLine(t, "! the bench of erp-dev holds its processes down, because a build stopped partway: run `tamp start`, which finishes the build")
 }
 
 func TestAMissingMutagenWarnsAndDoctorDownloadsNothing(t *testing.T) {
@@ -262,10 +262,10 @@ func TestAMissingMutagenWarnsAndDoctorDownloadsNothing(t *testing.T) {
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertLine(t, "! Mutagen "+syncer.Version+" is not installed, or does not run: run `tamp start` in an environment's directory, which downloads it")
+	r.assertLine(t, "! Mutagen "+syncer.Version+" is not installed, or it does not run: run `tamp start` in an environment's directory, which downloads it")
 
 	c.docker.PingErr = exitcode.New(exitcode.CodeDockerUnavailable, "Docker is not answering", "start Docker")
-	c.doctor(t, "-e", "erp-dev").assertLine(t, "! Mutagen "+syncer.Version+" is not installed, or does not run: run `tamp start -e erp-dev`, which downloads it")
+	c.doctor(t, "-e", "erp-dev").assertLine(t, "! Mutagen "+syncer.Version+" is not installed, or it does not run: run `tamp start -e erp-dev`, which downloads it")
 }
 
 func TestOnLinuxDoctorNeedsNoMutagen(t *testing.T) {
@@ -313,7 +313,7 @@ func TestInADirectoryWhoseNameAnotherBuiltEnvironmentHoldsDoctorFailsWithTheRena
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertLine(t, "✗ the environment erp-dev already exists at "+filepath.Join(c.dir, "a", "erp-dev")+": rename the directory")
+	r.assertLine(t, "✗ an environment named erp-dev already exists at "+filepath.Join(c.dir, "a", "erp-dev")+": rename this directory, as each environment needs a name of its own")
 	if strings.Contains(r.stdout, "sync session") || strings.Contains(r.stdout, "environment erp-dev is") {
 		t.Errorf("stdout = %q, want nothing of the other environment's containers or sync", r.stdout)
 	}
@@ -325,7 +325,7 @@ func TestOutsideAnEnvironmentDoctorSaysNoEnvironmentWasChecked(t *testing.T) {
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeOK)
-	r.assertLine(t, "✓ no environment checked, as this directory holds no recipe: run `tamp doctor -e <name>` with a name from `tamp list`")
+	r.assertLine(t, "✓ no environment checked, because this directory holds no recipe: to check one, run `tamp doctor -e <name>` with a name from `tamp list`")
 }
 
 func TestAPortHeldByAContainerNamesItInTheFix(t *testing.T) {
@@ -336,7 +336,7 @@ func TestAPortHeldByAContainerNamesItInTheFix(t *testing.T) {
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertLine(t, "✗ port 80 is taken by something other than the router: stop the container that publishes port 80 with `docker stop web-1`")
+	r.assertLine(t, "✗ something other than the router holds port 80: stop the container that publishes port 80 with `docker stop web-1`")
 }
 
 func TestTheEnvironmentCheckKeepsItsPlaceAfterTheRouter(t *testing.T) {
@@ -362,7 +362,7 @@ func TestAPartlyRunningEnvironmentWithoutMutagensDaemonWarnsThatNothingSyncs(t *
 
 	r := c.doctor(t)
 
-	r.assertLine(t, "! Mutagen's daemon is not running, so apps/ of erp-dev does not sync: run `tamp start`, which starts it")
+	r.assertLine(t, "! the Mutagen daemon is not running, so the apps/ of erp-dev does not sync: run `tamp start`, which starts it")
 }
 
 func TestInADirectoryWhoseNameAnotherEnvironmentHoldsTheRouterWarningStartsThatEnvironmentByE(t *testing.T) {
@@ -403,7 +403,7 @@ func TestACrashLoopingBenchFailsDoctorWithTheLogsFix(t *testing.T) {
 	r := c.doctor(t)
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertLine(t, "✗ "+crashMsg+": see why with `tamp logs frappe`")
+	r.assertLine(t, "✗ "+crashMsg+": find out why with `tamp logs frappe`")
 	if strings.Contains(r.stdout, "erp-dev is running") {
 		t.Errorf("stdout = %q, want the environment not passed as running", r.stdout)
 	}
@@ -418,4 +418,19 @@ func TestAPausedContainerWarnsWithTheUnpauseFix(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertLine(t, "! erp-dev-frappe-1 is paused, so the environment's sites do not answer: unpause it with `docker unpause erp-dev-frappe-1`")
+}
+
+func TestDoctorGivesASyncSessionToAPausedFrappeContainerTheUnpauseFixNotStart(t *testing.T) {
+	c := sandbox(t)
+	c.mutagen()
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+
+	r := c.doctor(t)
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertLine(t, "! the sync session of erp-dev cannot sync, because erp-dev-frappe-1 is paused: unpause it with `docker unpause erp-dev-frappe-1`")
+	if strings.Contains(r.stdout, "tamp start") {
+		t.Errorf("stdout = %q, want no `tamp start` fix while a container is paused", r.stdout)
+	}
 }

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs the built binary end to end against real Docker, on ubuntu in the E2E
-# workflow. Each slice of the rebuild extends it.
+# workflow.
 set -euo pipefail
 
 TAMP=${1:?usage: e2e.sh /path/to/tamp}
@@ -143,6 +143,10 @@ for service in frappe mariadb redis-cache redis-queue; do
   labels=$(docker inspect --format '{{ index .Config.Labels "tamp.env" }} {{ index .Config.Labels "tamp.path" }}' "erp-dev-$service-1")
   [ "$labels" = "erp-dev $ENV_DIR" ] || fail "erp-dev-$service-1 has labels '$labels'"
 done
+
+say "volumes and networks follow compose's naming"
+docker volume inspect erp-dev_db erp-dev_bench tamp-cache >/dev/null || fail "a volume is missing: $(docker volume ls --format '{{.Name}}')"
+docker network inspect erp-dev_default tamp-router_default >/dev/null || fail "a network is missing: $(docker network ls --format '{{.Name}}')"
 
 say "on Linux, apps/ is bind-mounted, and tamp neither downloads Mutagen nor syncs"
 docker inspect --format '{{ range .Mounts }}{{ .Type }}:{{ .Destination }} {{ end }}' "$FRAPPE" |
@@ -411,7 +415,7 @@ for _ in $(seq 1 20); do
 done
 echo "$out"
 [ "$code" = 1 ] || fail "exit code $code for doctor with port 80 held, want 1"
-grep -qF '✗ port 80 is taken by something other than the router: stop the container that publishes port 80 with `docker stop tamp-e2e-port80`' <<<"$out" ||
+grep -qF '✗ something other than the router holds port 80: stop the container that publishes port 80 with `docker stop tamp-e2e-port80`' <<<"$out" ||
   fail "doctor does not fail port 80 with a fix that names the container"
 
 say "tamp context describes the running environment, with versions read from its containers, and changes nothing"
@@ -478,16 +482,16 @@ done
 echo "$out"
 [ -n "$looping" ] || fail "tamp status does not read the crash loop"
 grep -qF 'warning: the bench processes of erp-dev keep crashing: honcho exited' <<<"$out" &&
-  grep -qF 'see why with `tamp logs frappe`' <<<"$out" || fail "tamp status does not warn with the logs fix"
+  grep -qF 'find out why with `tamp logs frappe`' <<<"$out" || fail "tamp status does not warn with the logs fix"
 out=$(cd "$WORK" && "$TAMP" list 2>&1)
 echo "$out"
 grep -Eq '^erp-dev +crash looping ' <<<"$out" || fail "tamp list does not show the crash loop"
-grep -qF 'see why with `tamp logs frappe -e erp-dev`' <<<"$out" || fail "tamp list does not warn with the logs fix"
+grep -qF 'find out why with `tamp logs frappe -e erp-dev`' <<<"$out" || fail "tamp list does not warn with the logs fix"
 code=0
 out=$("$TAMP" doctor) || code=$?
 echo "$out"
 [ "$code" = 1 ] || fail "exit code $code for doctor on a crash loop, want 1"
-grep -q '^✗ the bench processes of erp-dev keep crashing: honcho exited [0-9]* times in the last 2 minutes: see why with `tamp logs frappe`$' <<<"$out" ||
+grep -q '^✗ the bench processes of erp-dev keep crashing: honcho exited [0-9]* times in the last 2 minutes: find out why with `tamp logs frappe`$' <<<"$out" ||
   fail "doctor does not fail the crash loop with the logs fix"
 code=0
 start=$SECONDS
@@ -523,7 +527,7 @@ out=$("$TAMP" context -e erp-dev 2>"$WORK/context.err") || fail "tamp context ex
 echo "$out"
 [ ! -s "$WORK/context.err" ] || fail "tamp context wrote to stderr: $(cat "$WORK/context.err")"
 grep -q '^The environment is stopped' <<<"$out" || fail "the block does not say the environment is stopped"
-grep -qx -- '- Python 3.11, from the recipe, as the frappe container is not running' <<<"$out" || fail "the Python version is not the recipe's"
+grep -qx -- '- Python 3.11, from the recipe, because the frappe container is not running' <<<"$out" || fail "the Python version is not the recipe's"
 grep -qx -- '- http://shop.localhost' <<<"$out" || fail "the block lacks shop.localhost"
 [ "$(docker inspect --format '{{ .State.Running }}' "$FRAPPE")" = false ] || fail "tamp context started the frappe container"
 
@@ -533,7 +537,7 @@ echo "$out"
 grep -Eq '^  erp-dev-frappe-1 +stopped$' <<<"$out" || fail "tamp status does not show the stopped frappe container"
 grep -qx '  http://erp.localhost' <<<"$out" || fail "tamp status does not show erp.localhost"
 
-say "no -e outside an environment directory exits 2; an unknown -e exits 3"
+say "no -e outside an environment directory exits 2, and an unknown -e exits 3"
 code=0
 "$TAMP" status || code=$?
 [ "$code" = 2 ] || fail "exit code $code, want 2"
@@ -558,7 +562,7 @@ code=0
 out=$(cd "$WORK/second/erp-dev" && "$TAMP" start 2>&1) || code=$?
 echo "$out"
 [ "$code" = 1 ] || fail "exit code $code, want 1"
-grep -q 'rename the directory' <<<"$out" || fail "the error does not say to rename the directory"
+grep -q 'rename this directory' <<<"$out" || fail "the error does not say to rename the directory"
 
 say "a recipe for another Frappe version makes start exit 1 and build nothing"
 cp tamp.toml "$WORK/tamp.toml.saved"
@@ -567,7 +571,7 @@ code=0
 out=$("$TAMP" start 2>&1) || code=$?
 echo "$out"
 [ "$code" = 1 ] || fail "exit code $code, want 1"
-grep -qF 'run `tamp stop`, fetch and check out version-16 with `git -C apps/frappe remote set-branches --add upstream version-16`, `git -C apps/frappe fetch --depth 1 upstream version-16` and `git -C apps/frappe checkout version-16`, then run `tamp remove --yes` and `tamp start`' <<<"$out" ||
+grep -qF 'run `tamp stop`, then fetch and check out version-16 with `git -C apps/frappe remote set-branches --add upstream version-16`, `git -C apps/frappe fetch --depth 1 upstream version-16`, and `git -C apps/frappe checkout version-16`, then run `tamp remove --yes` and `tamp start`' <<<"$out" ||
   fail "the error lacks the version fix"
 if grep -q 'building the image' <<<"$out"; then fail "start built an image"; fi
 cp "$WORK/tamp.toml.saved" tamp.toml
@@ -578,7 +582,7 @@ code=0
 [ "$code" = 5 ] || fail "exit code $code, want 5"
 docker inspect "$FRAPPE" >/dev/null || fail "tamp remove without --yes removed the frappe container"
 
-say "tamp remove --yes deletes the containers, network and volumes, and keeps the directory"
+say "tamp remove --yes deletes the containers, network, and volumes, and keeps the directory"
 "$TAMP" remove --yes
 [ -z "$(docker ps --all --quiet --filter label=tamp.env=erp-dev)" ] || fail "erp-dev's containers remain"
 if docker network inspect erp-dev_default >/dev/null 2>&1; then fail "erp-dev_default remains"; fi

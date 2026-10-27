@@ -108,4 +108,4 @@ func ReplicaName(name string) string { return name + "-replica" }
 
 // mutagenFix is the fix for a Mutagen command that ran and failed: Mutagen
 // reaches the container through the docker command.
-const mutagenFix = "fix what Mutagen says, and check that `docker ps` works in this shell"
+const mutagenFix = "fix what Mutagen names, and check that `docker ps` works in this shell"

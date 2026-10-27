@@ -132,7 +132,7 @@ func TestInstallRefusesAnArchiveWhoseChecksumDiffersAndInstallsNothing(t *testin
 
 	err := m.Install(context.Background())
 
-	assertFailed(t, err, "has the SHA-256 "+sum(body)+", but tamp pins "+m.SHA256, "alters downloads")
+	assertFailed(t, err, "has the SHA-256 "+sum(body)+", but tamp pins "+m.SHA256, "changes downloads")
 	assertNotInstalled(t, m)
 }
 

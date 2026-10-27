@@ -148,7 +148,7 @@ func TestStartRecreatesAHaltedSession(t *testing.T) {
 			if terminate < 0 || replicate < terminate || create < replicate || calls[len(calls)-1] != "Flush "+session {
 				t.Errorf("Mutagen calls = %v, want the session terminated, the container copied from the host, a session created, and flushed", calls)
 			}
-			if !strings.Contains(r.stderr, "warning: Mutagen halted the sync session of erp-dev (halted-on-root-deletion), so files written only in the container since then are replaced by the host's\n") {
+			if !strings.Contains(r.stderr, "warning: Mutagen halted the sync session of erp-dev (halted-on-root-deletion), so the host's files replace what only the container wrote since then\n") {
 				t.Errorf("stderr = %q, want a warning that names what the new session replaces", r.stderr)
 			}
 			if !strings.Contains(r.stderr, "recreating the sync session of erp-dev") {
@@ -234,12 +234,12 @@ func TestAMutagenThatCannotBeInstalledStopsTheBuildWithAFixBeforeAnyContainerSta
 	c := sandbox(t)
 	s := c.mutagen()
 	s.InstallErr = exitcode.New(exitcode.CodeFailed, "the Mutagen download has the SHA-256 abc, but tamp pins def",
-		"check that no proxy or security software alters downloads from github.com")
+		"check that no proxy or security software changes downloads from github.com")
 
 	r := c.run(t, "new", "erp-dev", "--frappe", "version-15")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	if !strings.Contains(r.stderr, "error: the Mutagen download has the SHA-256 abc, but tamp pins def: check that no proxy or security software alters downloads from github.com, then run `tamp start` in erp-dev") {
+	if !strings.Contains(r.stderr, "error: the Mutagen download has the SHA-256 abc, but tamp pins def: check that no proxy or security software changes downloads from github.com, then run `tamp start` in erp-dev") {
 		t.Errorf("stderr = %q, want the checksum error with its fix and the start that resumes", r.stderr)
 	}
 	if slices.Contains(c.docker.Calls, "ComposeUp") {
@@ -295,8 +295,8 @@ func TestStatusShowsTheSyncState(t *testing.T) {
 	}
 	t.Chdir(filepath.Join(c.dir, "erp-dev"))
 	c.run(t, "remove", "--yes").assertCode(t, exitcode.CodeOK)
-	if got := syncLine(); got != "sync: none: create it with `tamp start`" {
-		t.Errorf("removed: %q, want `sync: none: create it with `tamp start``", got)
+	if got := syncLine(); got != "sync: none: run `tamp start`, which makes it" {
+		t.Errorf("removed: %q, want `sync: none: run `tamp start`, which makes it`", got)
 	}
 }
 
@@ -311,7 +311,7 @@ func TestStartNamesEachConflictTheSyncCannotSettleWithAFixThatWorksUnderE(t *tes
 	r := c.run(t, "start", "-e", "erp-dev")
 
 	r.assertCode(t, exitcode.CodeOK)
-	if !strings.Contains(r.stderr, "warning: the sync cannot delete apps/acme in the container, which holds files the sync skips: delete them with `tamp shell -e erp-dev -- rm -rf apps/acme`\n") {
+	if !strings.Contains(r.stderr, "warning: the sync cannot delete apps/acme in the container, because it holds files that the sync skips: delete them with `tamp shell -e erp-dev -- rm -rf apps/acme`\n") {
 		t.Errorf("stderr = %q, want the conflict named with a fix under -e", r.stderr)
 	}
 	status := c.run(t, "status", "-e", "erp-dev")
@@ -346,7 +346,7 @@ func TestStopRemoveAndStatusStillWorkWhenMutagenCannotRun(t *testing.T) {
 	s := c.mutagen()
 	dir := c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
 	s.Err = &syncer.RunError{Bin: "mutagen", Err: errors.New("the file is corrupt")}
-	const trouble = "Mutagen cannot run: the file is corrupt: `tamp start` downloads it again"
+	const trouble = "Mutagen cannot run: the file is corrupt: run `tamp start`, which downloads it again"
 
 	status := c.run(t, "status")
 	status.assertCode(t, exitcode.CodeOK)
@@ -365,7 +365,7 @@ func TestStopRemoveAndStatusStillWorkWhenMutagenCannotRun(t *testing.T) {
 
 	remove := c.run(t, "remove", "--yes")
 	remove.assertCode(t, exitcode.CodeOK)
-	if !strings.Contains(remove.stderr, "warning: cannot terminate the sync session of erp-dev: Mutagen cannot run: the file is corrupt: check that security software lets programs in . run, then run `tamp remove --yes` in "+dir+"\n") {
+	if !strings.Contains(remove.stderr, "warning: cannot terminate the sync session of erp-dev: Mutagen cannot run: the file is corrupt: check that your security software lets programs in . run, then run `tamp remove --yes` in "+dir+"\n") {
 		t.Errorf("stderr = %q, want a warning that names the fix", remove.stderr)
 	}
 	if !slices.Equal(c.docker.Removed, containersOf("erp-dev")) {
@@ -407,7 +407,7 @@ func TestRemoveAlsoTerminatesACopyThatAKilledStartLeftAndStatusNamesIt(t *testin
 	s.SetSession(syncer.Session{Name: replica, Host: filepath.Join(dir, "apps"), Container: frappeContainer, Path: frappe.AppsDir, Paused: true})
 
 	status := c.run(t, "status")
-	if !strings.Contains(status.stdout, "\nsync: none, as its first copy into the container never finished: `tamp start` makes it\n") {
+	if !strings.Contains(status.stdout, "\nsync: none, because its first copy into the container did not finish: run `tamp start`, which makes it\n") {
 		t.Errorf("status = %q, want the unfinished copy named", status.stdout)
 	}
 	s.Calls = nil
@@ -478,7 +478,7 @@ func TestStartNamesAnUnfinishedTempCloneAndSkipsOtherDotFolders(t *testing.T) {
 	r := c.run(t, "start")
 
 	r.assertCode(t, exitcode.CodeOK)
-	if !strings.Contains(r.stderr, "warning: "+filepath.Join(dir, "apps", ".frappe-123456")+" is a clone tamp did not finish: delete the folder\n") {
+	if !strings.Contains(r.stderr, "warning: "+filepath.Join(dir, "apps", ".frappe-123456")+" is a clone that tamp did not finish: delete the folder\n") {
 		t.Errorf("stderr = %q, want the unfinished clone named", r.stderr)
 	}
 	if strings.Contains(r.stderr, ".vscode") || strings.Contains(r.stderr, "app add") {

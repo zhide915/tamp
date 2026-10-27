@@ -109,7 +109,7 @@ http://%s {
 }
 
 // NotFoundBody is the router's answer to a hostname no running environment serves.
-const NotFoundBody = "No running tamp environment serves this hostname. Run `tamp list` to see the sites."
+const NotFoundBody = "No running tamp environment serves this hostname. To see the sites, run `tamp list`."
 
 // Router is the machine's router, reached through Docker.
 type Router struct {
@@ -222,7 +222,7 @@ func (r Router) up(ctx context.Context, compose []byte) error {
 // shows only Docker.
 func PortTaken(ctx context.Context, dc docker.Client, msg string) error {
 	holders, err := dc.Publishing(ctx, Port)
-	listener := fmt.Sprintf("stop what listens on port %d (find it with %s)", Port, findPortCommand())
+	listener := fmt.Sprintf("find what listens on port %d with %s, and stop it", Port, findPortCommand())
 	switch {
 	case err != nil:
 		// The listing's own fix is to start Docker, which answered a moment ago.
@@ -230,7 +230,7 @@ func PortTaken(ctx context.Context, dc docker.Client, msg string) error {
 		if e := (*exitcode.Error)(nil); errors.As(err, &e) {
 			reason = e.Msg
 		}
-		return exitcode.New(exitcode.CodeFailed, msg+", and Docker cannot say which container publishes it: "+reason, listener)
+		return exitcode.New(exitcode.CodeFailed, msg+", and Docker cannot tell which container publishes it: "+reason, listener)
 	case len(holders) > 0:
 		return exitcode.New(exitcode.CodeFailed, msg,
 			fmt.Sprintf("stop the container that publishes port %d with `docker stop %s`", Port, strings.Join(holders, " ")))

@@ -27,12 +27,20 @@ func (m *Manager) Stop(envFlag string) error {
 	if err != nil {
 		return err
 	}
-	// Paused first, so Mutagen never sees the container go.
-	m.pauseSync(ctx, t, slices.ContainsFunc(containers, func(c docker.Container) bool {
-		return c.Name == frappeContainer(t.name) && c.Running
-	}))
+	frappeIs := func(state func(docker.Container) bool) bool {
+		return slices.ContainsFunc(containers, func(c docker.Container) bool {
+			return c.Name == frappeContainer(t.name) && state(c)
+		})
+	}
+	// The sync pauses first, so Mutagen never sees the container go. Mutagen
+	// hangs on a container that `docker pause` froze, so that one stops first.
+	frozen := frappeIs(func(c docker.Container) bool { return c.Paused })
+	if !frozen {
+		m.pauseSync(ctx, t, frappeIs(func(c docker.Container) bool { return c.Running }))
+	}
 	for _, c := range containers {
-		if !c.Running {
+		// Docker stops a container that `docker pause` froze, too.
+		if !c.Running && !c.Paused {
 			continue
 		}
 		m.p.Step("stopping " + c.Name)
@@ -40,10 +48,13 @@ func (m *Manager) Stop(envFlag string) error {
 			return err
 		}
 	}
+	if frozen {
+		m.pauseSync(ctx, t, false)
+	}
 	if err := m.reroute(ctx, t.name); err != nil {
 		return err
 	}
-	m.p.OK("environment " + t.name + " is stopped")
+	m.p.OK("stopped environment " + t.name)
 	return nil
 }
 
@@ -55,16 +66,26 @@ func (m *Manager) Remove(envFlag string, yes bool) error {
 	if err != nil {
 		return err
 	}
-	if !yes {
-		return exitcode.New(exitcode.CodeNeedsYes,
-			fmt.Sprintf("removing %s deletes its containers, network and volumes, with every site's database", t.name),
-			"run "+t.command("remove --yes")+" to confirm")
-	}
-	m.terminateSync(ctx, t)
 	containers, err := m.envContainers(ctx, t.name)
 	if err != nil {
 		return err
 	}
+	if !yes {
+		return exitcode.New(exitcode.CodeNeedsYes,
+			fmt.Sprintf("removing %s deletes its containers, network, and volumes, with every site's database", t.name),
+			"run "+t.command("remove --yes")+" to confirm")
+	}
+	// Mutagen hangs on a container that `docker pause` froze.
+	if m.sync != nil {
+		for _, c := range containers {
+			if c.Name == frappeContainer(t.name) {
+				if err := checkNotPaused(c, "end the sync session of "+t.name); err != nil {
+					return t.again(err, "remove --yes")
+				}
+			}
+		}
+	}
+	m.terminateSync(ctx, t)
 	r, err := m.router()
 	if err != nil {
 		return err
@@ -91,7 +112,7 @@ func (m *Manager) Remove(envFlag string, yes bool) error {
 	if err := m.reroute(ctx, t.name); err != nil {
 		return err
 	}
-	m.p.OK(fmt.Sprintf("removed environment %s, and kept its directory %s", t.name, t.dir))
+	m.p.OK(fmt.Sprintf("removed environment %s, and kept its directory, %s", t.name, t.dir))
 	return nil
 }
 
@@ -255,7 +276,7 @@ func (m *Manager) crashLoop(ctx context.Context, t target) (*exitcode.Error, err
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("the bench processes of %s keep crashing: honcho exited %d times in the last %d minutes",
 			t.name, n, frappe.CrashWindow/60),
-		"see why with "+t.command("logs frappe")), nil
+		"find out why with "+t.command("logs frappe")), nil
 }
 
 // state counts the environment's services, so a container deleted by hand
@@ -307,10 +328,32 @@ func paused(containers []docker.Container) []string {
 // `tamp start` cannot, as Docker refuses to start a paused container.
 func pausedFix(containers []docker.Container) (msg, fix string) {
 	names := paused(containers)
-	verb, them := "is", "it"
-	if len(names) > 1 {
-		verb, them = "are", "them"
+	return isAre(names) + " paused, so the environment's sites do not answer", unpauseFix(names)
+}
+
+// isAre is "a is" or "a, b are".
+func isAre(names []string) string {
+	if len(names) == 1 {
+		return names[0] + " is"
 	}
-	return fmt.Sprintf("%s %s paused, so the environment's sites do not answer", strings.Join(names, ", "), verb),
-		fmt.Sprintf("unpause %s with `docker unpause %s`", them, strings.Join(names, " "))
+	return strings.Join(names, ", ") + " are"
+}
+
+// unpauseFix is the fix for paused containers.
+func unpauseFix(names []string) string {
+	them := "it"
+	if len(names) > 1 {
+		them = "them"
+	}
+	return fmt.Sprintf("unpause %s with `docker unpause %s`", them, strings.Join(names, " "))
+}
+
+// checkNotPaused refuses to run a command in a paused container, which
+// Docker inspects as running.
+func checkNotPaused(c docker.Container, doing string) error {
+	if !c.Paused {
+		return nil
+	}
+	return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("%s is paused, so tamp cannot %s", c.Name, doing),
+		unpauseFix([]string{c.Name}))
 }

@@ -35,7 +35,7 @@ func (m *Manager) build(t target, r Recipe) error {
 	if err := m.docker.Ping(ctx); err != nil {
 		return t.resume(err)
 	}
-	if err := checkName(t.name); err != nil {
+	if err := checkName(t.name, false); err != nil {
 		var e *exitcode.Error
 		errors.As(err, &e)
 		// A directory that exists is state, not the command line.
@@ -44,10 +44,27 @@ func (m *Manager) build(t target, r Recipe) error {
 	if err := m.claim(ctx, t); err != nil {
 		return t.resume(err)
 	}
+	if err := m.checkUnpaused(ctx, t); err != nil {
+		return t.resume(err)
+	}
 	if err := m.checkVersion(ctx, t, r); err != nil {
 		return err
 	}
 	return t.resume(m.steps(ctx, t, r))
+}
+
+// checkUnpaused refuses to build an environment with a paused container:
+// Docker neither starts one nor runs a command in it.
+func (m *Manager) checkUnpaused(ctx context.Context, t target) error {
+	containers, err := m.envContainers(ctx, t.name)
+	if err != nil {
+		return err
+	}
+	if names := paused(containers); len(names) > 0 {
+		return exitcode.New(exitcode.CodeFailed,
+			fmt.Sprintf("%s paused, so tamp cannot build %s", isAre(names), t.name), unpauseFix(names))
+	}
+	return nil
 }
 
 // resume adds to err's fix the start that resumes the build: nothing rolls
@@ -97,7 +114,7 @@ func (t target) in() string {
 func (m *Manager) claim(ctx context.Context, t target) error {
 	moved, err := m.owner(ctx, t)
 	if moved != "" {
-		m.p.Warn(fmt.Sprintf("%s moved from %s to %s: tamp recreates its containers and keeps its volumes", t.name, moved, t.dir))
+		m.p.Warn(fmt.Sprintf("%s moved from %s to %s: tamp recreates its containers for the new directory, and keeps its volumes", t.name, moved, t.dir))
 	}
 	return err
 }
@@ -116,7 +133,7 @@ func (m *Manager) checkVersion(ctx context.Context, t target, r Recipe) error {
 		// tamp's clone holds one branch at depth 1, so the other is fetched
 		// first. On Windows a watching sync holds git's new pack files open,
 		// and the fetch fails, so the stop pauses the sync first.
-		checkout := fmt.Sprintf("run `tamp stop`, fetch and check out %[1]s with `git -C apps/frappe remote set-branches --add upstream %[1]s`, `git -C apps/frappe fetch --depth 1 upstream %[1]s` and `git -C apps/frappe checkout %[1]s`", r.Frappe)
+		checkout := fmt.Sprintf("run `tamp stop`, then fetch and check out %[1]s with `git -C apps/frappe remote set-branches --add upstream %[1]s`, `git -C apps/frappe fetch --depth 1 upstream %[1]s`, and `git -C apps/frappe checkout %[1]s`", r.Frappe)
 		fix := checkout + ", then run `tamp remove --yes` and `tamp start`"
 		// After the remove, -e finds nothing: only the directory names the
 		// environment.
@@ -124,7 +141,7 @@ func (m *Manager) checkVersion(ctx context.Context, t target, r Recipe) error {
 			fix = "in " + dir + ", " + fix
 		}
 		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("the bench of %s was built for Frappe %s, but the recipe names %s", t.name, built, r.Frappe), fix)
+			fmt.Sprintf("the bench of %s is built for Frappe %s, but the recipe names %s", t.name, built, r.Frappe), fix)
 	}
 	return nil
 }
@@ -224,7 +241,11 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 	if err := b.warnUnlisted(t, r); err != nil {
 		return err
 	}
-	m.p.OK("environment " + name + " is built")
+	done := t.done
+	if done == "" {
+		done = "built environment " + name
+	}
+	m.p.OK(done)
 	return nil
 }
 
@@ -269,8 +290,8 @@ func (m *Manager) waitForSites(ctx context.Context, t target, r Recipe) error {
 			return crash
 		}
 		return exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("the site %s did not answer within %d minutes", s.Host, int(siteWait.Minutes())),
-			"see why with "+t.command("logs frappe"))
+			fmt.Sprintf("the site %s did not answer in %d minutes", s.Host, int(siteWait.Minutes())),
+			"find out why with "+t.command("logs frappe"))
 	}
 	crash, err := m.crashLoop(ctx, t)
 	if crash != nil {
@@ -308,7 +329,7 @@ func (b bench) configure(dir string, r Recipe) error {
 		frappe.Settings(dbService, redisCacheService, redisQueueService))
 	if err != nil {
 		return exitcode.New(exitcode.CodeFailed, err.Error(),
-			"fix the JSON in "+frappe.CommonSiteConfig+" with `docker exec -it "+b.container+" bash`")
+			"open a shell with `docker exec -it "+b.container+" bash`, and correct the JSON in "+frappe.CommonSiteConfig)
 	}
 	if err := b.m.docker.WriteFile(b.ctx, b.container, frappe.CommonSiteConfig, settings); err != nil {
 		return err
@@ -370,7 +391,7 @@ func (b bench) ensureSite(t target, host string) error {
 	if err != nil {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s is not valid JSON: %v", frappe.SiteConfig(host), err),
-			"fix the JSON with `docker exec -it "+b.container+" bash`")
+			"open a shell with `docker exec -it "+b.container+" bash`, and correct the JSON")
 	}
 	if on {
 		return nil
@@ -398,8 +419,8 @@ func (b bench) warnUnlisted(t target, r Recipe) error {
 		if slices.Contains(r.hosts(), host) {
 			continue
 		}
-		b.m.p.Warn(fmt.Sprintf("the bench holds the site %s, which the recipe does not list: drop it with %s",
-			host, t.command("site remove "+host+" --yes")))
+		b.m.p.Warn(fmt.Sprintf("the bench holds the site %s, which the recipe does not list: add it with %s, or drop it with %s",
+			host, t.command("site add "+host), t.command("site remove "+host+" --yes")))
 	}
 	return nil
 }

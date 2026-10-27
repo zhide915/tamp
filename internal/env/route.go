@@ -20,8 +20,9 @@ func (m *Manager) route(ctx context.Context) error {
 	return r.Apply(ctx, envs)
 }
 
-// reroute rebuilds the router's config after the environment gone stopped or
-// went, and reloads a running router without starting a stopped one.
+// reroute rebuilds the router's config without the environment gone, which
+// stopped or was removed, and reloads a running router without starting a
+// stopped one.
 func (m *Manager) reroute(ctx context.Context, gone string) error {
 	r, envs, err := m.routes(ctx, gone)
 	if err != nil {
@@ -68,7 +69,7 @@ func (m *Manager) routes(ctx context.Context, except string) (router.Router, []r
 	}
 	envs, dups := router.Resolve(envs)
 	for _, d := range dups {
-		m.p.Warn(fmt.Sprintf("%s and %s both list %s, so the router sends it to %s", d.Winner, d.Loser, d.Host, d.Winner))
+		m.p.Warn(fmt.Sprintf("both %s and %s list %s, and the router sends it to %s, whose name sorts first", d.Winner, d.Loser, d.Host, d.Winner))
 	}
 
 	r, err := m.router()

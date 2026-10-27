@@ -39,6 +39,9 @@ func (m *Manager) SiteAdd(envFlag, host string) error {
 	if _, err := m.owner(ctx, t); err != nil {
 		return err
 	}
+	if err := m.checkUnpaused(ctx, t); err != nil {
+		return t.again(err, "site add "+host)
+	}
 	if err := m.checkHostFree(ctx, t.name, host); err != nil {
 		return err
 	}
@@ -46,6 +49,7 @@ func (m *Manager) SiteAdd(envFlag, host string) error {
 	if err := writeRecipe(t.dir, r); err != nil {
 		return err
 	}
+	t.done = fmt.Sprintf("created the site %s in %s, with every app, and routed it", host, t.name)
 	return m.build(t, r)
 }
 
@@ -71,7 +75,7 @@ func (m *Manager) checkHostFree(ctx context.Context, name, host string) error {
 		if slices.Contains(r.hosts(), host) {
 			return exitcode.New(exitcode.CodeFailed,
 				fmt.Sprintf("the environment %s already lists the site %s", other, host),
-				"name the site another way, or remove it from "+other+" with `tamp site remove "+host+" --yes -e "+other+"`")
+				"give the site another name, or remove it from "+other+" with `tamp site remove "+host+" --yes -e "+other+"`")
 		}
 	}
 	return nil
@@ -88,7 +92,7 @@ func (m *Manager) SiteList(envFlag string) error {
 		return err
 	}
 	if len(r.Sites) == 0 {
-		m.p.Step(t.name + " has no sites: add one with " + t.command("site add <host>"))
+		m.p.Step(t.name + " has no site: add one with " + t.command("site add <host>"))
 		return nil
 	}
 	width := 0
@@ -127,6 +131,8 @@ func (m *Manager) SiteRemove(envFlag, host string, yes bool) error {
 	case errors.Is(err, docker.ErrNoContainer):
 	case err != nil:
 		return err
+	case c.Paused:
+		return checkNotPaused(c, "tell whether its bench holds the site "+host)
 	case !c.Running:
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s is stopped, so tamp cannot tell whether its bench holds the site %s", t.name, host),
@@ -140,7 +146,7 @@ func (m *Manager) SiteRemove(envFlag, host string, yes bool) error {
 	}
 	// A site made by hand may have any name, so only the bench can vouch for one.
 	if !built && !localhostName.MatchString(host) {
-		return exitcode.Usage(fmt.Sprintf("%q is not a *.localhost hostname, nor a site the bench holds", host), siteHostFix)
+		return exitcode.Usage(fmt.Sprintf("%q is not a *.localhost hostname, nor a site that the bench holds", host), siteHostFix)
 	}
 	if !listed && !built {
 		return exitcode.New(exitcode.CodeNotFound, fmt.Sprintf("%s has no site %s", t.name, host),

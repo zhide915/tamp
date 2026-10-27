@@ -25,7 +25,7 @@ func TestAPingThroughADeadDockerHostNamesDockerHostInItsFix(t *testing.T) {
 	err = New().Ping(context.Background())
 
 	var e *exitcode.Error
-	if !errors.As(err, &e) || e.Code != exitcode.CodeDockerUnavailable || !strings.Contains(e.Fix, "unset DOCKER_HOST") {
+	if !errors.As(err, &e) || e.Code != exitcode.CodeDockerUnavailable || !strings.Contains(e.Fix, "correct DOCKER_HOST, or unset it") {
 		t.Errorf("Ping = %#v, want exit 4 with a fix that names DOCKER_HOST", err)
 	}
 }

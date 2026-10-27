@@ -359,7 +359,7 @@ func TestAppAddOfAnUnreachableRepositoryExits1AndLeavesNoFolder(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeFailed)
 	if line := lastLine(r.stderr); !strings.Contains(line, "cannot clone https://github.com/frappe/nosuchapp") ||
-		!strings.HasSuffix(line, "fix what git says above, then run `tamp app add nosuchapp`") {
+		!strings.HasSuffix(line, "fix what the git output above names, then run `tamp app add nosuchapp`") {
 		t.Errorf("last stderr line = %q, want the failed clone and the fix to run app add again", line)
 	}
 	if got := appsFolders(t, dir); !slices.Equal(got, []string{"frappe"}) {
@@ -378,7 +378,7 @@ func TestAFailedAppCloneInNewLeavesTheRecipeAndStartResumesOnceTheURLIsFixed(t *
 	r.assertCode(t, exitcode.CodeFailed)
 	dir := filepath.Join(c.dir, "erp-dev")
 	recipe := filepath.Join(dir, "tamp.toml")
-	wantFix := "fix what git says above, or correct the app's url in " + recipe + ", then run `tamp start` in erp-dev"
+	wantFix := "fix what the git output above names, or correct the app's url in " + recipe + ", then run `tamp start` in erp-dev"
 	if line := lastLine(r.stderr); !strings.Contains(line, "cannot clone https://github.com/frappe/nosuchapp") || !strings.HasSuffix(line, wantFix) {
 		t.Errorf("last stderr line = %q, want the failed clone and the fix %q", line, wantFix)
 	}
@@ -415,7 +415,7 @@ func TestAddingFrappeAsAnAppExits2AndClonesNothing(t *testing.T) {
 			r := c.run(t, "app", "add", spec)
 
 			r.assertCode(t, exitcode.CodeUsage)
-			r.assertOneLineError(t, "Frappe is not an app to add", "`frappe` key")
+			r.assertOneLineError(t, "every bench has Frappe, so it is not an app to add", "`frappe` key")
 			if got := c.callsSince(calls); len(got) > 0 {
 				t.Errorf("Docker calls = %v, want none", got)
 			}
@@ -433,7 +433,7 @@ func TestARequiredAppNamedByARepositoryThatHoldsAnotherPackageNamesTheHooksToFix
 
 	r.assertCode(t, exitcode.CodeFailed)
 	hooks := filepath.Join(c.dir, "erp-dev", "apps", "acme_hr", "acme_hr", "hooks.py")
-	if line := lastLine(r.stderr); !strings.Contains(line, `name it "acme" in required_apps in `+hooks) {
+	if line := lastLine(r.stderr); !strings.Contains(line, `name it "acme" in the required_apps of `+hooks) {
 		t.Errorf("last stderr line = %q, want the fix to name acme in %s", line, hooks)
 	}
 }

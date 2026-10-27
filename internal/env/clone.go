@@ -57,7 +57,7 @@ func (m *Manager) cloneApp(ctx context.Context, dir, name, url, branch string) e
 	}
 	if err := os.Rename(tmp, target); err != nil {
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot move the clone of %s to %s: %v", url, target, err),
-			"check that nothing holds files open in "+filepath.Dir(target))
+			"close each program that holds files open in "+filepath.Dir(target)+", such as an editor or a terminal")
 	}
 	return nil
 }
@@ -100,7 +100,7 @@ func gitClone(ctx context.Context, url, branch, target string, out io.Writer) er
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return exitcode.New(exitcode.CodeFailed, "git is not on PATH",
-				"install git")
+				"install git from https://git-scm.com/downloads")
 		}
 		at := ""
 		if branch != "" {
@@ -108,7 +108,7 @@ func gitClone(ctx context.Context, url, branch, target string, out io.Writer) er
 		}
 		return cloneFailed{exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot clone %s%s: %v", url, at, err),
-			"fix what git says above")}
+			"fix what the git output above names")}
 	}
 	return nil
 }
@@ -176,7 +176,7 @@ func gitRead(clone string, args ...string) (string, error) {
 			said = string(bytes.TrimSpace(exit.Stderr))
 		}
 		return "", exitcode.New(exitcode.CodeFailed, fmt.Sprintf("git cannot read %s: %s", clone, said),
-			"check the repository with `git -C "+clone+" status`")
+			"find out what is wrong with `git -C "+clone+" status`")
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -232,8 +232,8 @@ func parseAppSpec(spec string) (url, branch string, err error) {
 		url = frappeOrg + url
 	}
 	if repoName(url) == "frappe" {
-		return "", "", exitcode.Usage("Frappe is not an app to add: every bench has it",
-			"leave Frappe out: the recipe's `frappe` key names its branch")
+		return "", "", exitcode.Usage("every bench has Frappe, so it is not an app to add",
+			"leave Frappe out, and set its branch with the `frappe` key of the recipe")
 	}
 	return url, branch, nil
 }

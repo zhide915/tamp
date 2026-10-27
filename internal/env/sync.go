@@ -58,7 +58,7 @@ func (m *Manager) ensureSync(ctx context.Context, t target) error {
 		var run *syncer.RunError
 		if errors.As(err, &run) {
 			return exitcode.New(exitcode.CodeFailed, run.Error(),
-				"check that security software lets programs in "+filepath.Dir(run.Bin)+" run")
+				"check that your security software lets programs in "+filepath.Dir(run.Bin)+" run")
 		}
 		return err
 	}
@@ -94,7 +94,7 @@ func (m *Manager) syncNow(ctx context.Context, t target) error {
 		if s == nil || !s.Halted() {
 			return err
 		}
-		m.p.Warn(fmt.Sprintf("Mutagen halted the sync session of %s (%s), so files written only in the container since then are replaced by the host's",
+		m.p.Warn(fmt.Sprintf("Mutagen halted the sync session of %s (%s), so the host's files replace what only the container wrote since then",
 			t.name, s.Status))
 		if err := m.recreateSync(ctx, t.name, spec, "Mutagen halted it"); err != nil {
 			return err
@@ -107,7 +107,7 @@ func (m *Manager) syncNow(ctx context.Context, t target) error {
 }
 
 func (m *Manager) recreateSync(ctx context.Context, name string, spec syncer.Spec, why string) error {
-	m.p.Step(fmt.Sprintf("recreating the sync session of %s, as %s", name, why))
+	m.p.Step(fmt.Sprintf("recreating the sync session of %s, because %s", name, why))
 	if err := m.sync.Terminate(ctx, spec.Name); err != nil {
 		return err
 	}
@@ -135,11 +135,11 @@ func (m *Manager) warnConflicts(ctx context.Context, t target, name string) erro
 		folder := conflictFolder(c)
 		host := filepath.Join(t.dir, filepath.FromSlash(folder))
 		if c.HostDeleted {
-			m.p.Warn(fmt.Sprintf("the sync cannot delete %s in the container, which holds files the sync skips: delete them with %s%s",
+			m.p.Warn(fmt.Sprintf("the sync cannot delete %s in the container, because it holds files that the sync skips: delete them with %s%s",
 				folder, shellLine(t.flag, false, shellWords([]string{"rm", "-rf", folder})), t.in()))
 			continue
 		}
-		m.p.Warn(fmt.Sprintf("the sync cannot settle %s, where one side holds files the sync skips: delete %s on the host, or %s in the container with %s%s",
+		m.p.Warn(fmt.Sprintf("the sync cannot settle %s, because one side holds files that the sync skips: delete %s on the host, or delete %s in the container with %s%s",
 			folder, host, folder, shellLine(t.flag, false, shellWords([]string{"rm", "-rf", folder})), t.in()))
 	}
 	return nil
@@ -154,7 +154,7 @@ func conflictFolder(c syncer.Conflict) string {
 func syncTrouble(t target, err error) string {
 	var run *syncer.RunError
 	if errors.As(err, &run) {
-		return run.Error() + ": " + t.command("start") + " downloads it again"
+		return run.Error() + ": run " + t.command("start") + ", which downloads it again"
 	}
 	return err.Error()
 }
@@ -173,7 +173,7 @@ func (m *Manager) pauseSync(ctx context.Context, t target, frappeRunning bool) {
 			err = m.sync.Flush(ctx, name)
 		}
 		if err != nil {
-			m.p.Warn(fmt.Sprintf("cannot finish the sync of %s, so files written in the container since its last sync stay there: %s",
+			m.p.Warn(fmt.Sprintf("cannot finish the sync of %s, so what the container wrote since the last sync stays there: %s",
 				t.name, syncTrouble(t, err)))
 		}
 		m.p.Step("pausing the sync session of " + t.name)
@@ -212,7 +212,7 @@ func (m *Manager) terminateSync(ctx context.Context, t target) {
 	var run *syncer.RunError
 	trouble := err.Error()
 	if errors.As(err, &run) {
-		trouble = run.Error() + ": check that security software lets programs in " + filepath.Dir(run.Bin) + " run"
+		trouble = run.Error() + ": check that your security software lets programs in " + filepath.Dir(run.Bin) + " run"
 	}
 	m.p.Warn(fmt.Sprintf("cannot terminate the sync session of %s: %s, then run `tamp remove --yes` in %s", t.name, trouble, t.dir))
 }
@@ -227,21 +227,21 @@ func (m *Manager) syncState(ctx context.Context, t target) string {
 	if err == nil && s == nil {
 		var copying *syncer.Session
 		if copying, err = m.sync.Session(ctx, syncer.ReplicaName(name)); err == nil && copying != nil {
-			return "none, as its first copy into the container never finished: " + t.command("start") + " makes it"
+			return "none, because its first copy into the container did not finish: run " + t.command("start") + ", which makes it"
 		}
 	}
 	switch {
 	case err != nil:
 		return "unknown: " + syncTrouble(t, err)
 	case s == nil:
-		return "none: create it with " + t.command("start")
+		return "none: run " + t.command("start") + ", which makes it"
 	}
 	state := statusWords(s.Status)
 	switch {
 	case s.Paused:
 		state = "paused"
 	case s.Halted():
-		state += ": " + t.command("start") + " recreates it"
+		state += ": run " + t.command("start") + ", which makes it anew"
 	}
 	var folders []string
 	for _, c := range s.Conflicts {
@@ -262,9 +262,9 @@ func statusWords(status string) string {
 		"staging-alpha":              "staging files on the host",
 		"staging-beta":               "staging files in the frappe container",
 		"waiting-for-rescan":         "waiting to scan again",
-		"halted-on-root-deletion":    "halted, as a synced folder was deleted",
-		"halted-on-root-emptied":     "halted, as a synced folder was emptied",
-		"halted-on-root-type-change": "halted, as a synced folder changed type",
+		"halted-on-root-deletion":    "halted, because a synced folder was deleted",
+		"halted-on-root-emptied":     "halted, because a synced folder was emptied",
+		"halted-on-root-type-change": "halted, because a synced folder changed type",
 	}
 	if w, ok := words[status]; ok {
 		return w

@@ -26,7 +26,7 @@ func (m *Manager) Shell(envFlag string, cmd []string, dashed, force bool, stdin 
 	terminal := ui.IsTerminal(stdin) && ui.IsTerminal(m.p.Out) && ui.IsTerminal(m.p.Err)
 	switch {
 	case len(cmd) > 0 && !dashed:
-		return exitcode.Usage("`tamp shell` takes its command after `--`",
+		return exitcode.Usage("`tamp shell` takes its command only after `--`",
 			"run "+shellLine(envFlag, force, shellWords(cmd)))
 	case len(cmd) == 0 && !terminal:
 		return exitcode.Usage("`tamp shell` without a command needs a terminal",
@@ -45,6 +45,9 @@ func (m *Manager) Shell(envFlag string, cmd []string, dashed, force bool, stdin 
 	container := frappeContainer(t.name)
 	c, err := m.docker.Inspect(ctx, container)
 	if err != nil && !errors.Is(err, docker.ErrNoContainer) {
+		return err
+	}
+	if err := checkNotPaused(c, "run a command in it"); err != nil {
 		return err
 	}
 	if !c.Running {
@@ -78,11 +81,11 @@ func refuse(t target, cmd []string) error {
 	switch benchCommand(cmd) {
 	case "start":
 		return exitcode.New(exitcode.CodeFailed,
-			"`bench start` would run a second copy of the processes the frappe container already runs",
-			"see their output with "+t.command("logs -f")+anyway)
+			"`bench start` would run a second copy of the processes that the frappe container runs",
+			"read their output with "+t.command("logs -f")+anyway)
 	case "update":
 		return exitcode.New(exitcode.CodeFailed,
-			"`bench update` would pull every app inside the container, where git has none of the host's credentials",
+			"`bench update` would pull each app inside the container, where git has none of your credentials",
 			"pull with git on the host in "+filepath.Join(t.dir, AppsDir, "<app>")+", then run "+
 				shellLine(t.flag, false, "bench --site all migrate")+anyway)
 	}
@@ -110,10 +113,10 @@ func benchCommand(cmd []string) string {
 func (m *Manager) warnShell(t target, cmd []string) {
 	switch {
 	case benchCommand(cmd) == "new-site":
-		m.p.Warn("a site made by `bench new-site` is not in the recipe, and the router does not serve it: add sites with " +
+		m.p.Warn("a site from `bench new-site` is not in the recipe, so the router does not serve it: add a site with " +
 			t.command("site add <host>"))
 	case len(cmd) >= 1 && cmd[0] == "git":
-		m.p.Warn("git in the container has none of the host's credentials: run git on the host, in " +
+		m.p.Warn("git in the container has none of your credentials: run git on the host, in " +
 			filepath.Join(t.dir, AppsDir, "<app>"))
 	}
 }
@@ -156,19 +159,19 @@ func (m *Manager) Logs(envFlag, service string, follow bool, tail string) error 
 	}
 	if !slices.Contains(services, service) {
 		return exitcode.Usage(fmt.Sprintf("unknown service %q", service),
-			"name one of "+strings.Join(services, ", "))
+			"name one of: "+strings.Join(services, ", "))
 	}
 	if tail != "" {
 		n, err := strconv.Atoi(tail)
 		if err != nil || n < 0 {
-			return exitcode.Usage(fmt.Sprintf("--tail %s is not a line count", tail),
-				"give --tail a whole number of lines, such as `--tail 100`")
+			return exitcode.Usage(fmt.Sprintf("`--tail %s` is not a number of lines", tail),
+				"give `--tail` a whole number, such as `--tail 100`")
 		}
 		tail = strconv.Itoa(n)
 	}
 	ctx := context.Background()
 	container, missing := router.Container, "the router has no container"
-	fix := "run `tamp start` in an environment's directory"
+	fix := "run `tamp start` in an environment's directory, which starts the router"
 	// The router is the machine's, so its logs need no environment.
 	if service != "router" {
 		t, err := m.locate(ctx, envFlag)

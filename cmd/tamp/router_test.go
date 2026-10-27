@@ -240,7 +240,7 @@ func TestAHostnameTwoEnvironmentsListGoesToTheFirstByNameWithAWarning(t *testing
 	r := c.run(t, "start", "--quiet")
 
 	r.assertCode(t, exitcode.CodeOK)
-	if want := "warning: alpha and zeta both list shop.localhost, so the router sends it to alpha\n"; r.stderr != want {
+	if want := "warning: both alpha and zeta list shop.localhost, and the router sends it to alpha, whose name sorts first\n"; r.stderr != want {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
 	caddyfile := c.caddyfile(t)
@@ -266,7 +266,7 @@ func TestPort80TakenExits1WithAFixAndNoFallbackPort(t *testing.T) {
 	r := c.run(t, "start", "--quiet")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, "port 80 is taken", "stop what listens on port 80", "then run `tamp start`")
+	r.assertOneLineError(t, "port 80 is taken", "find what listens on port 80", "then run `tamp start`")
 	ups := c.docker.UpsOf("tamp-router")[before:]
 	if len(ups) != 1 {
 		t.Fatalf("router compose ups = %d, want exactly 1", len(ups))
@@ -351,7 +351,7 @@ func TestTheRouterSkipsAMovedEnvironmentWithAFixThatWorks(t *testing.T) {
 
 	r.assertCode(t, exitcode.CodeOK)
 	want := "warning: the router skips other: no recipe in " + other +
-		": run `tamp start` in the directory the environment moved to, or remove it with `tamp remove -e other --yes`\n"
+		": run `tamp start` in the directory that the environment moved to, or delete the environment with `tamp remove -e other --yes`\n"
 	if r.stderr != want {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
@@ -380,7 +380,7 @@ func TestStartKeepsThePortMessageWhenDockerCannotListWhatPublishesPort80(t *test
 	r := c.run(t, "start", "--quiet")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, "port 80 is taken", "cannot list Docker containers: EOF", "stop what listens on port 80", "then run `tamp start`")
+	r.assertOneLineError(t, "port 80 is taken", "cannot list Docker containers: EOF", "find what listens on port 80", "then run `tamp start`")
 }
 
 func TestAHostnameNoRunningEnvironmentServesGets404NamingTampList(t *testing.T) {

@@ -141,14 +141,14 @@ if ((Native 'docker' @('info', '--format', '{{.ServerVersion}}')).Code -ne 0) {
     $refusal = 'docker info failed: start Docker Desktop, and run the script again'
 } elseif ((Native 'docker' @('ps', '--all', '--quiet', '--filter', 'name=^tamp-router$') -Quiet).Out) {
     $refusal = 'a tamp-router container exists, which the script would share: remove it with `docker rm --force tamp-router`, ' +
-    'and run the script again; your next `tamp start` creates it again'
+    'and run the script again. Your next `tamp start` creates it again'
 } elseif ((Native 'docker' @('ps', '--quiet', '--filter', 'label=tamp.env') -Quiet).Out) {
     $refusal = 'a tamp environment is running, which the router would serve too: find it with `docker ps --filter label=tamp.env`, ' +
     'stop it with `tamp stop -e <name>`, and run the script again'
 } elseif ($leftEnv = @('tamp-accept', 'tamp-accept2') |
         Where-Object { (Native 'docker' @('ps', '--all', '--quiet', '--filter', "label=tamp.env=$_") -Quiet).Out } | Select-Object -First 1) {
     $refusal = "the environment $leftEnv exists, which the cleanup would remove: remove it with ``tamp remove -e $leftEnv --yes``, and run the script again"
-} elseif ($leftVolumes = @((Native 'docker' @('volume', 'ls', '--quiet', '--filter', 'name=^tamp-accept2?_(db|bench)$') -Quiet).Out -split "`n" |
+} elseif ($leftVolumes = @((Native 'docker' @('volume', 'ls', '--quiet', '--filter', 'name=^tamp-accept2?-(db|bench)$') -Quiet).Out -split "`n" |
             Where-Object { $_ }) -join ' ') {
     # tamp remove finds an environment by its containers, so it cannot remove volumes a failed tamp new left alone.
     $refusal = "the volumes $leftVolumes, which this run would adopt and its cleanup remove, are left from a failed tamp new: " +
@@ -202,7 +202,7 @@ try {
         Fail 'tamp new found the bench image cached, so -FirstEnvironment measured nothing: remove the image with `docker rmi`, and run again'
     } else {
         Target 'new environment, image cached' 480 $watch
-        $timings.Add('- first environment on the machine (image built): not measured, as the image was cached; run with -FirstEnvironment')
+        $timings.Add('- first environment on the machine (image built): not measured, because the image was cached. Run with -FirstEnvironment')
     }
 
     if ($built) {
@@ -258,8 +258,8 @@ try {
 
     if ($Agent) {
         Say 'the agent test: an agent given only "run tamp context" makes a change, tests it, and checks it'
-        $prompt = 'Run `tamp context`. Then make this change in the app acme: add a whitelisted method ' +
-        'acme.api.greet that returns the text Hello from tamp, add a test for it and run that test, then check the change in the browser.'
+        $prompt = 'Run `tamp context`. Then make this change in the app acme: add a whitelisted method acme.api.greet that returns ' +
+        'the text Hello from tamp. Add a test for it, and run the test. Then check the change in the browser.'
         $transcript = Join-Path $work 'agent.jsonl'
         # The agent keeps the user's Claude Code sign-in, but none of its MCP servers.
         $env:CLAUDE_CONFIG_DIR = Join-Path $realHome '.claude'

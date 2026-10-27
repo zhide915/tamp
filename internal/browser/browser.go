@@ -24,7 +24,7 @@ func Open(_ context.Context, url string) error {
 	if err := exec.Command(name, args...).Start(); err != nil {
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot open %s: %v", url, err),
-			"open the URL above in your browser yourself")
+			"open "+url+" in your browser")
 	}
 	return nil
 }

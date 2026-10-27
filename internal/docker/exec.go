@@ -96,7 +96,7 @@ func (d *Daemon) ReadFile(ctx context.Context, container, path string) ([]byte, 
 	if err != nil {
 		return nil, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot read %s in %s: %v", path, container, rootCause(err)),
-			"check that the container is running with `docker ps`")
+			"check with `docker ps` that the container is running")
 	}
 	defer func() { _ = res.Content.Close() }()
 
@@ -120,7 +120,7 @@ func (d *Daemon) WriteFile(ctx context.Context, container, path string, data []b
 func execError(e Exec, err error) error {
 	return exitcode.New(exitcode.CodeFailed,
 		fmt.Sprintf("cannot run %s in %s: %v", commandLine(e.Cmd), e.Container, rootCause(err)),
-		"check that the container is running with `docker ps`")
+		"check with `docker ps` that the container is running")
 }
 
 // commandLine renders argv for an error message, keeping the words that fit

@@ -110,7 +110,7 @@ func (d *Daemon) attach(ctx context.Context, grace time.Duration, stdin io.Reade
 		return code, interrupted, nil
 	case errors.Is(err, exec.ErrNotFound):
 		return 0, false, exitcode.New(exitcode.CodeDockerUnavailable, "the docker command is not on PATH",
-			"install Docker Desktop, or add the docker CLI to PATH")
+			"install Docker Desktop, or add the docker command to PATH")
 	}
 	return 0, interrupted, err
 }

@@ -188,7 +188,7 @@ func (d *Daemon) connect() (Address, *client.Client, error) {
 		if d.err != nil {
 			d.err = exitcode.New(exitcode.CodeDockerUnavailable,
 				fmt.Sprintf("cannot use the Docker endpoint %s: %v", d.addr, d.err),
-				"check that DOCKER_HOST or `docker context ls` names an endpoint tamp can reach")
+				"check that DOCKER_HOST, or the active context in `docker context ls`, names an endpoint that tamp can reach")
 		}
 	})
 	return d.addr, d.api, d.err
@@ -202,7 +202,7 @@ func (d *Daemon) Ping(ctx context.Context) error {
 	if _, err := api.ServerVersion(ctx, client.ServerVersionOptions{}); err != nil {
 		fix := "start Docker"
 		if addr.Source == SourceEnv {
-			fix = "start Docker, or correct or unset DOCKER_HOST"
+			fix = "start Docker, or correct DOCKER_HOST, or unset it"
 		}
 		return exitcode.New(exitcode.CodeDockerUnavailable,
 			fmt.Sprintf("Docker is not answering at %s: %v", addr, rootCause(err)), fix)

@@ -108,7 +108,7 @@ func TestNewWithoutFrappeExits2NamingTheFlagAndTheSupportedBranchesAndWritesNoth
 	r := c.run(t, "new", "erp-dev")
 
 	r.assertCode(t, exitcode.CodeUsage)
-	r.assertOneLineError(t, "missing the --frappe flag", "version-15, version-16, develop")
+	r.assertOneLineError(t, "missing `--frappe`", "version-15, version-16, develop")
 	assertNotExist(t, filepath.Join(c.dir, "erp-dev"))
 }
 
@@ -246,4 +246,16 @@ func TestNewDotWithoutFrappeInADirectoryHoldingARecipeExits2WithTheFixTampStart(
 
 	r.assertCode(t, exitcode.CodeUsage)
 	r.assertOneLineError(t, "recipe", "`tamp start`")
+}
+
+func TestNewNamedLikeTheRouterExits2AndWritesNothing(t *testing.T) {
+	c := sandbox(t)
+
+	r := c.run(t, "new", "tamp-router", "--frappe", "version-15")
+
+	r.assertCode(t, exitcode.CodeUsage)
+	r.assertOneLineError(t, "the name of tamp's router", "run `tamp new` with another name")
+	if _, err := os.Stat(filepath.Join(c.dir, "tamp-router")); !os.IsNotExist(err) {
+		t.Errorf("tamp-router exists: %v", err)
+	}
 }

@@ -100,7 +100,7 @@ func TestShellRefusesBenchStartAndUpdateAndForceRunsThem(t *testing.T) {
 	update := c.run(t, "shell", "--", "bench", "update")
 
 	start.assertCode(t, exitcode.CodeFailed)
-	start.assertOneLineError(t, "already runs", "`tamp shell --force -- bench start`")
+	start.assertOneLineError(t, "a second copy of the processes", "`tamp shell --force -- bench start`")
 	update.assertCode(t, exitcode.CodeFailed)
 	update.assertOneLineError(t, "credentials", "then run `tamp shell -- bench --site all migrate`", "`tamp shell --force -- bench update`")
 	assertShells(t, c)
@@ -274,5 +274,16 @@ func TestShellWithStderrRedirectedGetsNoTTYAndABareShellExits2(t *testing.T) {
 
 	if len(c.docker.Shells) != 1 || c.docker.Shells[0].TTY {
 		t.Errorf("shells = %+v, want one without a TTY", c.docker.Shells)
+	}
+}
+
+func TestLogsHelpNamesFrappeAsTheDefaultService(t *testing.T) {
+	c := sandbox(t)
+
+	r := c.run(t, "logs", "--help")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if !strings.Contains(r.stdout, "Without a service, logs shows frappe's logs.") {
+		t.Errorf("logs --help = %q, want the default service named", r.stdout)
 	}
 }

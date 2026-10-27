@@ -25,9 +25,9 @@ func newRootCommand(p *ui.Printer, dc docker.Client, sc syncer.Client, openURL f
 
 	root := &cobra.Command{
 		Use:   "tamp",
-		Short: "tamp: environment manager for Frappe Framework",
-		Long: "tamp builds each Frappe bench in Docker from its recipe, tamp.toml,\n" +
-			"and serves every site by hostname.",
+		Short: "Manage Frappe Framework environments in Docker",
+		Long: "tamp builds each Frappe bench in Docker from its recipe, tamp.toml, and\n" +
+			"serves each site at its own hostname.",
 		Example: "  tamp new erp-dev --frappe version-15 --site shop.localhost\n" +
 			"  tamp status -e erp-dev",
 		// tamp prints its own one-line errors; cobra would add usage text.
@@ -54,8 +54,8 @@ func newRootCommand(p *ui.Printer, dc docker.Client, sc syncer.Client, openURL f
 	root.CompletionOptions.DisableDefaultCmd = true
 
 	flags := root.PersistentFlags()
-	flags.StringVarP(&g.env, "env", "e", "", "the environment to act on, by name")
-	flags.BoolVar(&g.quiet, "quiet", false, "print only results, warnings and errors")
+	flags.StringVarP(&g.env, "env", "e", "", "name of the environment to act on")
+	flags.BoolVar(&g.quiet, "quiet", false, "print only results, warnings, and errors")
 	// run applies --no-color from the raw arguments.
 	flags.Bool("no-color", false, "print without color")
 
@@ -101,7 +101,7 @@ Examples:
 func newHelpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [command]",
-		Short: "Help about any command",
+		Short: "Show the help of a command",
 		Example: "  tamp help new\n" +
 			"  tamp help site add",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -128,7 +128,7 @@ func noArgs(cmd *cobra.Command, args []string) error {
 }
 
 func usageFix(cmd *cobra.Command) string {
-	return fmt.Sprintf("run `%s --help` for usage", cmd.CommandPath())
+	return fmt.Sprintf("run `%s --help` to see the usage", cmd.CommandPath())
 }
 
 // oneArg takes exactly one argument, which what names.
@@ -142,4 +142,13 @@ func oneArg(what string) cobra.PositionalArgs {
 		}
 		return nil
 	}
+}
+
+// envSuffix is the -e of a fix's command line, so the command works from
+// where the user ran this one.
+func envSuffix(g *globals) string {
+	if g.env == "" {
+		return ""
+	}
+	return " -e " + g.env
 }

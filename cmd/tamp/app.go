@@ -11,7 +11,7 @@ import (
 func newAppCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "app",
-		Short: "Add, list and remove the environment's apps",
+		Short: "Add, list, and remove the environment's apps",
 		Example: "  tamp app add payments#version-15\n" +
 			"  tamp app list -e erp-dev",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -23,7 +23,8 @@ func newAppCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 			if err := cmd.Help(); err != nil {
 				return err
 			}
-			return exitcode.Usage("missing an app command", "run `tamp app add`, `tamp app list` or `tamp app remove`")
+			e := envSuffix(g)
+			return exitcode.Usage("missing an app command", "run `tamp app add <url|name>[#branch]"+e+"`, `tamp app list"+e+"`, or `tamp app remove <name> --yes"+e+"`")
 		},
 	}
 	cmd.AddCommand(newAppAddCommand(manager, g))
@@ -35,7 +36,7 @@ func newAppCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 func newAppAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return rewritesRecipe("", &cobra.Command{
 		Use:   "add <url|name>[#branch]",
-		Short: "Clone an app, or adopt the one in apps/, record it in the recipe, and install it on every site",
+		Short: "Clone an app, or adopt its folder in apps/, add it to the recipe, and install it on every site",
 		Example: "  tamp app add payments#version-15\n" +
 			"  tamp app add -e erp-dev https://github.com/frappe/payments#version-15",
 		Args: oneArg("the app's URL or name"),
@@ -48,7 +49,7 @@ func newAppAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 func newAppListCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
-		Short: "List Frappe and the environment's apps with their branches",
+		Short: "List Frappe and the environment's apps, with their branches and URLs",
 		Example: "  tamp app list\n" +
 			"  tamp app list -e erp-dev",
 		Args: noArgs,

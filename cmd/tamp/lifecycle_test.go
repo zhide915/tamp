@@ -165,7 +165,7 @@ func TestNoEOutsideAnEnvironmentDirectoryExits2WithTheFixUseE(t *testing.T) {
 			r := c.run(t, args...)
 
 			r.assertCode(t, exitcode.CodeUsage)
-			r.assertOneLineError(t, "use `-e <name>`")
+			r.assertOneLineError(t, "name the environment with `-e <name>`")
 			if len(c.callsSince(calls)) > 0 {
 				t.Errorf("Docker calls = %v, want none", c.callsSince(calls))
 			}
@@ -216,7 +216,7 @@ func TestASameNamedEnvironmentAtAnotherPathThatStillHasARecipeMakesStartExit1(t 
 	r := c.run(t, "start")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, filepath.Join(c.dir, "a", "erp-dev"), "rename the directory")
+	r.assertOneLineError(t, filepath.Join(c.dir, "a", "erp-dev"), "rename this directory")
 	assertOnlyReads(t, c.callsSince(calls))
 }
 
@@ -273,7 +273,7 @@ func TestAVersionLabelMismatchExits1WithTheFixAndBuildsNothing(t *testing.T) {
 	}
 }
 
-const versionFix = "run `tamp stop`, fetch and check out version-16 with `git -C apps/frappe remote set-branches --add upstream version-16`, `git -C apps/frappe fetch --depth 1 upstream version-16` and `git -C apps/frappe checkout version-16`"
+const versionFix = "run `tamp stop`, then fetch and check out version-16 with `git -C apps/frappe remote set-branches --add upstream version-16`, `git -C apps/frappe fetch --depth 1 upstream version-16`, and `git -C apps/frappe checkout version-16`"
 
 func TestFollowingTheVersionMismatchFixOnTampsShallowCloneBuildsTheRecipesBranch(t *testing.T) {
 	c := sandbox(t)
@@ -446,7 +446,7 @@ func TestEveryCommandFromADirectoryRefusesASameNamedEnvironmentAtAnotherPathThat
 			r := c.run(t, args...)
 
 			r.assertCode(t, exitcode.CodeFailed)
-			r.assertOneLineError(t, filepath.Join(c.dir, "a", "erp-dev"), "rename the directory")
+			r.assertOneLineError(t, filepath.Join(c.dir, "a", "erp-dev"), "rename this directory")
 			assertOnlyReads(t, c.callsSince(calls))
 			if len(c.opened) > 0 {
 				t.Errorf("opened = %q, want nothing", c.opened)
@@ -501,7 +501,7 @@ func TestNewWithANameAnotherEnvironmentHoldsExits1AndWritesNothing(t *testing.T)
 	r := c.run(t, "new", filepath.Join("b", "erp-dev"), "--frappe", "version-15")
 
 	r.assertCode(t, exitcode.CodeFailed)
-	r.assertOneLineError(t, filepath.Join(c.dir, "a", "erp-dev"), "rename the directory")
+	r.assertOneLineError(t, filepath.Join(c.dir, "a", "erp-dev"), "rename this directory")
 	if strings.Contains(r.stderr, "tamp start") {
 		t.Errorf("stderr = %q, want no `tamp start` in the fix: nothing was written", r.stderr)
 	}
@@ -550,7 +550,7 @@ func TestAContainerDeletedByHandReadsAsPartlyRunningInListStatusContextAndDoctor
 	if !regexp.MustCompile(`(?m)^  erp-dev-frappe-1 +missing$`).MatchString(status.stdout) {
 		t.Errorf("status stdout = %q, want erp-dev-frappe-1 missing", status.stdout)
 	}
-	ctx.assertContains(t, "The environment is partly running: erp-dev-frappe-1 is missing. Start the rest with `tamp start -e erp-dev`")
+	ctx.assertContains(t, "The environment is partly running: erp-dev-frappe-1 is missing. Its sites can fail until all of it runs, so start the rest with `tamp start -e erp-dev`")
 	doctor.assertContains(t, "the environment erp-dev is partly running: run `tamp start`")
 }
 
@@ -563,7 +563,7 @@ func TestStatusReadsACrashLoopingBenchAsSuchAndNamesTheLogsCommand(t *testing.T)
 
 	r.assertCode(t, exitcode.CodeOK)
 	r.assertContains(t, "environment erp-dev: crash looping\n")
-	if want := "warning: " + crashMsg + ": see why with `tamp logs frappe`\n"; !strings.Contains(r.stderr, want) {
+	if want := "warning: " + crashMsg + ": find out why with `tamp logs frappe`\n"; !strings.Contains(r.stderr, want) {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
 }
@@ -600,7 +600,7 @@ func TestListShowsACrashLoopingEnvironmentWithTheLogsFixByE(t *testing.T) {
 	if !regexp.MustCompile(`(?m)^other +stopped +` + regexp.QuoteMeta(other) + `$`).MatchString(r.stdout) {
 		t.Errorf("stdout = %q, want the stopped other as before", r.stdout)
 	}
-	if want := "warning: " + crashMsg + ": see why with `tamp logs frappe -e erp-dev`\n"; r.stderr != want {
+	if want := "warning: " + crashMsg + ": find out why with `tamp logs frappe -e erp-dev`\n"; r.stderr != want {
 		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
 	for _, e := range c.docker.Execs[execs:] {
@@ -665,4 +665,108 @@ func TestListShowsAnEnvironmentWithAPausedContainerAsPausedWithTheUnpauseFix(t *
 	if r.stderr != pausedWarning {
 		t.Errorf("stderr = %q, want %q", r.stderr, pausedWarning)
 	}
+}
+
+const unpause = "`docker unpause erp-dev-frappe-1`"
+
+func TestEachCommandThatNeedsAPausedContainerExits1WithTheUnpauseFix(t *testing.T) {
+	for _, args := range [][]string{
+		{"start"},
+		{"site", "add", "blog.localhost"},
+		{"site", "remove", "shop.localhost", "--yes"},
+		{"app", "add", acmeURL},
+		{"app", "remove", "acme", "--yes"},
+		{"shell", "--", "ls"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			c := sandbox(t)
+			flags := []string{"--frappe", "version-15", "--site", "shop.localhost"}
+			if args[0] == "app" && args[1] == "remove" {
+				flags = append(flags, "--app", acmeURL)
+			}
+			dir := c.newEnvironment(t, flags...)
+			recipe := readFile(t, filepath.Join(dir, "tamp.toml"))
+			c.docker.Pause(frappeContainer)
+
+			r := c.run(t, args...)
+
+			r.assertCode(t, exitcode.CodeFailed)
+			r.assertOneLineError(t, "erp-dev-frappe-1 is paused", unpause)
+			if got := readFile(t, filepath.Join(dir, "tamp.toml")); got != recipe {
+				t.Errorf("tamp.toml = %q, want it unchanged", got)
+			}
+		})
+	}
+}
+
+func TestStopStopsAPausedContainerToo(t *testing.T) {
+	c := sandbox(t)
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+
+	r := c.run(t, "stop")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if !slices.Contains(c.docker.Stopped, frappeContainer) {
+		t.Errorf("stopped = %v, want %s among them", c.docker.Stopped, frappeContainer)
+	}
+	if r := c.run(t, "status"); !strings.Contains(r.stdout, "environment erp-dev: stopped\n") {
+		t.Errorf("status = %q, want erp-dev stopped", r.stdout)
+	}
+}
+
+func TestStopStopsAPausedFrappeContainerBeforeItPausesTheSyncWhichWouldHangOnIt(t *testing.T) {
+	c := sandbox(t)
+	s := c.mutagen()
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+	var frozen []string
+	s.OnCall = func(call string) {
+		if fc, err := c.docker.Inspect(t.Context(), frappeContainer); err == nil && fc.Paused && !strings.HasPrefix(call, "Session ") && call != "Installed" {
+			frozen = append(frozen, call)
+		}
+	}
+
+	r := c.run(t, "stop")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if len(frozen) > 0 {
+		t.Errorf("Mutagen calls while the frappe container was paused = %v, want none", frozen)
+	}
+	if !slices.Contains(s.Calls, "Pause "+session) {
+		t.Errorf("Mutagen calls = %v, want the session paused after the stop", s.Calls)
+	}
+}
+
+func TestRemoveOfAPausedFrappeContainerWithASyncSessionExits1WithTheUnpauseFixAndRemovesNothing(t *testing.T) {
+	c := sandbox(t)
+	s := c.mutagen()
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+	calls := len(s.Calls)
+
+	r := c.run(t, "remove", "--yes")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertOneLineError(t, "erp-dev-frappe-1 is paused", unpause, "then run `tamp remove --yes`")
+	if len(c.docker.Removed) > 0 {
+		t.Errorf("removed = %v, want nothing", c.docker.Removed)
+	}
+	for _, call := range s.Calls[calls:] {
+		if strings.HasPrefix(call, "Terminate") {
+			t.Errorf("Mutagen calls = %v, want no terminate", s.Calls[calls:])
+		}
+	}
+}
+
+func TestRemoveOfAPausedFrappeContainerWithoutYesExits5AsEverywhereElse(t *testing.T) {
+	c := sandbox(t)
+	c.mutagen()
+	c.newEnvironment(t, "--frappe", "version-15", "--site", "shop.localhost")
+	c.docker.Pause(frappeContainer)
+
+	r := c.run(t, "remove")
+
+	r.assertCode(t, exitcode.CodeNeedsYes)
+	r.assertOneLineError(t, "`tamp remove --yes`")
 }

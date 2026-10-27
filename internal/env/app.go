@@ -57,8 +57,8 @@ func (m *Manager) resolveApp(ctx context.Context, dir, url, branch, retry string
 	if err != nil || isDir(filepath.Join(apps, app.Name)) {
 		// The temp clone is tamp's own; nothing else refers to it yet.
 		if rmErr := os.RemoveAll(tmp); rmErr != nil {
-			return App{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot remove the temp clone %s: %v", tmp, rmErr),
-				"delete the folder")
+			return App{}, exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot remove the temporary clone %s: %v", tmp, rmErr),
+				"delete the folder yourself")
 		}
 		if err != nil {
 			return App{}, err
@@ -68,7 +68,7 @@ func (m *Manager) resolveApp(ctx context.Context, dir, url, branch, retry string
 	if err := os.Rename(tmp, filepath.Join(apps, app.Name)); err != nil {
 		return App{}, exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("cannot move the clone of %s to %s: %v", url, filepath.Join(apps, app.Name), err),
-			"check that nothing holds files open in "+apps)
+			"close each program that holds files open in "+apps+", such as an editor or a terminal")
 	}
 	return app, nil
 }
@@ -98,7 +98,7 @@ func adoptApp(dir, folder, url, branch, retry string) (App, error) {
 	}
 	if name != folder {
 		return App{}, exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("%s holds the app %s, but bench needs the folder named after the app", clone, name),
+			fmt.Sprintf("%s holds the app %s, and bench needs an app's folder to have the app's name", clone, name),
 			"rename the folder to "+filepath.Join(dir, AppsDir, name)+retry)
 	}
 	if branch == "" {
@@ -108,7 +108,7 @@ func adoptApp(dir, folder, url, branch, retry string) (App, error) {
 	}
 	if branch == "" {
 		return App{}, exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("%s is not on a branch, so tamp cannot record one", clone),
+			fmt.Sprintf("%s is not on a branch, so tamp has no branch to record", clone),
 			"check out a branch in "+clone)
 	}
 	return App{Name: name, URL: url, Branch: branch}, nil
@@ -118,13 +118,13 @@ func appNameOf(clone, url string) (string, error) {
 	name, err := packageName(clone)
 	if err != nil {
 		return "", exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("cannot read the app's name from %s: %v", url, err),
-			"check that the repository holds a Frappe app")
+			fmt.Sprintf("cannot read the app's name at %s: %v", url, err),
+			"check that the repository holds a Frappe app, with its package at the root")
 	}
 	if !appName.MatchString(name) || name == "frappe" {
 		return "", exitcode.New(exitcode.CodeFailed,
-			fmt.Sprintf("the package of %s is named %q, which is not a Frappe app name", url, name),
-			"check that the repository holds a Frappe app")
+			fmt.Sprintf("the package at %s is named %q, which is not a Frappe app name", url, name),
+			"check that the repository holds a Frappe app, with its package at the root")
 	}
 	return name, nil
 }
@@ -162,6 +162,9 @@ func (m *Manager) AppAdd(envFlag, spec string) error {
 	if _, err := m.owner(ctx, t); err != nil {
 		return err
 	}
+	if err := m.checkUnpaused(ctx, t); err != nil {
+		return t.again(err, "app add "+spec)
+	}
 	app, err := m.resolveApp(ctx, t.dir, url, branch, ", then run "+t.command("app add "+spec))
 	var failed cloneFailed
 	if errors.As(err, &failed) {
@@ -194,7 +197,8 @@ func (m *Manager) AppAdd(envFlag, spec string) error {
 	if err := writeRecipe(t.dir, r); err != nil {
 		return err
 	}
-	m.p.OK(fmt.Sprintf("added the app %s at %s to the recipe", app.Name, app.Branch))
+	m.p.OK(fmt.Sprintf("added the app %s, at %s, to the recipe", app.Name, app.Branch))
+	t.done = fmt.Sprintf("installed the app %s on every site in %s", app.Name, t.name)
 	return m.build(t, r)
 }
 
@@ -263,7 +267,7 @@ func (m *Manager) AppRemove(envFlag, name string, yes bool) error {
 		return err
 	}
 	if name == "frappe" {
-		return exitcode.New(exitcode.CodeFailed, "Frappe is the bench itself, not an app tamp can remove",
+		return exitcode.New(exitcode.CodeFailed, "Frappe is the bench itself, so tamp cannot remove it as an app",
 			"remove the whole environment with "+t.command("remove --yes"))
 	}
 	r, err := readRecipe(t.dir)
@@ -282,6 +286,8 @@ func (m *Manager) AppRemove(envFlag, name string, yes bool) error {
 	case errors.Is(err, docker.ErrNoContainer):
 	case err != nil:
 		return err
+	case c.Paused:
+		return checkNotPaused(c, "uninstall the app "+name+" from its sites")
 	case !c.Running:
 		return exitcode.New(exitcode.CodeFailed,
 			fmt.Sprintf("%s is stopped, so tamp cannot uninstall the app %s from its sites", t.name, name),
@@ -387,7 +393,7 @@ func (b bench) installApps(dir string, r Recipe, running bool) (changed, paused 
 	if running && len(plans) > 0 {
 		// A running process keeps files open in node_modules, and a fresh
 		// clone's yarn install then fails on Docker Desktop's bind mount.
-		b.m.p.Step("pausing the bench's processes")
+		b.m.p.Step("pausing the bench processes")
 		if err := b.m.docker.WriteFile(b.ctx, b.container, frappe.Paused, nil); err != nil {
 			return false, false, err
 		}
@@ -566,7 +572,7 @@ func (m *Manager) warnClones(t target, r Recipe) error {
 			if got == "" {
 				on = "is not on a branch"
 			}
-			m.p.Warn(fmt.Sprintf("%s %s, but the recipe names %s: check out %s there, or change its branch in %s",
+			m.p.Warn(fmt.Sprintf("%s %s, but the recipe names %s: check out %s there, or set its branch in %s",
 				clone, on, want[name], want[name], filepath.Join(t.dir, RecipeFile)))
 		}
 	}
@@ -581,7 +587,7 @@ func (m *Manager) warnClones(t target, r Recipe) error {
 		}
 		folder := filepath.Join(apps, e.Name())
 		if tempClone.MatchString(e.Name()) {
-			m.p.Warn(fmt.Sprintf("%s is a clone tamp did not finish: delete the folder", folder))
+			m.p.Warn(fmt.Sprintf("%s is a clone that tamp did not finish: delete the folder", folder))
 			continue
 		}
 		// A dot folder holds no app, and the sync skips it.
@@ -619,9 +625,9 @@ func checkRequired(t target, r Recipe) error {
 			// adding the repository again would not help.
 			if i := slices.IndexFunc(r.Apps, func(o App) bool { return repoName(o.URL) == need }); i >= 0 {
 				return exitcode.New(exitcode.CodeFailed,
-					fmt.Sprintf("the app %s requires %s, whose package is named %s, and Frappe looks for an app named %s",
+					fmt.Sprintf("the app %s requires %s, whose package is named %s, but Frappe looks for an app named %s",
 						a.Name, entry, r.Apps[i].Name, need),
-					fmt.Sprintf("name it %q in required_apps in %s", r.Apps[i].Name,
+					fmt.Sprintf("name it %q in the required_apps of %s", r.Apps[i].Name,
 						filepath.Join(t.dir, AppsDir, a.Name, a.Name, "hooks.py")))
 			}
 			return exitcode.New(exitcode.CodeFailed,
@@ -659,7 +665,7 @@ func (m *Manager) cloneApps(ctx context.Context, t target, r Recipe) error {
 		for _, o := range r.Apps {
 			if o.Name == got.Name && o.URL != got.URL {
 				return exitcode.New(exitcode.CodeFailed,
-					fmt.Sprintf("%s and %s both hold the app %s", o.URL, got.URL, got.Name),
+					fmt.Sprintf("both %s and %s hold the app %s", o.URL, got.URL, got.Name),
 					"remove one of them from "+filepath.Join(t.dir, RecipeFile))
 			}
 		}
