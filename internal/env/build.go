@@ -136,7 +136,7 @@ func (m *Manager) steps(ctx context.Context, t target, r Recipe) error {
 		}
 	}
 
-	if err := cloneApp(ctx, dir, "frappe", FrappeURL, r.Frappe, out); err != nil {
+	if err := m.cloneApp(ctx, dir, "frappe", FrappeURL, r.Frappe); err != nil {
 		return err
 	}
 	if err := m.cloneApps(ctx, t, r); err != nil {

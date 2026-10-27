@@ -216,8 +216,8 @@ func TestAnUnreadableRecipeIsSkippedWithAWarningAndTheOthersStillReload(t *testi
 
 	r.assertCode(t, exitcode.CodeOK)
 	if !strings.Contains(r.stderr, "warning: the router skips other: ") ||
-		!strings.Contains(r.stderr, filepath.Join(other, "tamp.toml")) {
-		t.Errorf("stderr = %q, want a warning that the router skips other, naming its recipe", r.stderr)
+		!strings.Contains(r.stderr, "fix the TOML in "+filepath.Join(other, "tamp.toml")) {
+		t.Errorf("stderr = %q, want a warning that the router skips other, naming its recipe and the fix", r.stderr)
 	}
 	caddyfile := c.caddyfile(t)
 	if _, ok := siteBlocks(caddyfile)["blog.localhost"]; ok {
@@ -335,5 +335,24 @@ func TestOpenWithAHostTheRecipeDoesNotListExits3(t *testing.T) {
 	r.assertOneLineError(t, "blog.localhost", "shop.localhost")
 	if len(c.opened) > 0 {
 		t.Errorf("opened = %q, want nothing", c.opened)
+	}
+}
+
+func TestTheRouterSkipsAMovedEnvironmentWithAFixThatWorks(t *testing.T) {
+	c := sandbox(t)
+	other := c.newIn(t, "other", "--site", "blog.localhost")
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	// The directory moved away: its recipe is gone from where the labels point.
+	if err := os.Remove(filepath.Join(other, "tamp.toml")); err != nil {
+		t.Fatal(err)
+	}
+
+	r := c.run(t, "start", "--quiet")
+
+	r.assertCode(t, exitcode.CodeOK)
+	want := "warning: the router skips other: no recipe in " + other +
+		": run `tamp start` in the directory the environment moved to, or remove it with `tamp remove -e other --yes`\n"
+	if r.stderr != want {
+		t.Errorf("stderr = %q, want %q", r.stderr, want)
 	}
 }

@@ -97,15 +97,16 @@ func shouldColor(w io.Writer, lookupEnv func(string) (string, bool)) bool {
 	if v, ok := lookupEnv("NO_COLOR"); ok && v != "" {
 		return false
 	}
-	return isTerminal(w)
+	return IsTerminal(w)
 }
 
-func isTerminal(w io.Writer) bool {
+// IsTerminal reports whether a stream, input or output, is a terminal.
+func IsTerminal(stream any) bool {
 	// Tests claim a terminal through this method, without a pty.
-	if tw, ok := w.(interface{ IsTerminal() bool }); ok {
+	if tw, ok := stream.(interface{ IsTerminal() bool }); ok {
 		return tw.IsTerminal()
 	}
-	f, ok := w.(*os.File)
+	f, ok := stream.(*os.File)
 	if !ok {
 		return false
 	}

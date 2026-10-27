@@ -57,7 +57,7 @@ func (m *Manager) routes(ctx context.Context, except string) (router.Router, []r
 	for _, name := range names {
 		r, err := readRecipe(paths[name])
 		if err != nil {
-			m.p.Warn(fmt.Sprintf("the router skips %s: %s", name, reason(err)))
+			m.p.Warn(fmt.Sprintf("the router skips %s: %v", name, err))
 			continue
 		}
 		e := router.Env{Name: name, Network: network(name), Upstream: frappeContainer(name)}

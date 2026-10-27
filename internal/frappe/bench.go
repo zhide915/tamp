@@ -11,6 +11,8 @@ import (
 
 // The bench lives in the bench volume, with apps/ synced from the host.
 const (
+	// User is the bench user, whom the image runs as.
+	User     = "frappe"
 	Home     = "/home/frappe"
 	BenchDir = Home + "/frappe-bench"
 	AppsDir  = BenchDir + "/apps"

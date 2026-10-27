@@ -27,7 +27,10 @@ const (
 )
 
 // frappeContainer is compose's name for the environment's frappe container.
-func frappeContainer(name string) string { return name + "-frappe-1" }
+func frappeContainer(name string) string { return serviceContainer(name, "frappe") }
+
+// serviceContainer is compose's name for one service's container.
+func serviceContainer(name, service string) string { return name + "-" + service + "-1" }
 
 // network is compose's default network for the environment, which the
 // router joins.

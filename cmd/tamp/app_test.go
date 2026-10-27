@@ -4,7 +4,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -223,6 +225,13 @@ func TestAnAppGivenAsAWindowsStylePathIsClonedAndNamedFromItsPackage(t *testing.
 
 	if got := readFile(t, filepath.Join(dir, "tamp.toml")); !strings.Contains(got, `name = "acme"`) {
 		t.Errorf("tamp.toml = %q, want the app acme", got)
+	}
+	clone := filepath.Join(dir, "apps", "acme")
+	if got := git(t, clone, "rev-parse", "--is-shallow-repository"); got != "true" {
+		t.Errorf("the clone of a local path is not shallow: is-shallow-repository = %s", got)
+	}
+	if got := git(t, clone, "config", "--get", "remote.upstream.url"); got != path {
+		t.Errorf("upstream = %q, want the path as given, %q", got, path)
 	}
 }
 
@@ -772,5 +781,86 @@ func TestAPauseLeftByAFailedStartIsLiftedEvenWhenNothingIsLeftToBuild(t *testing
 	}
 	if _, ok := c.docker.File(frappeContainer, frappe.Paused); ok {
 		t.Error("the bench is still paused")
+	}
+}
+
+func TestStartNamesEachRecipeAppItClones(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--app", "erpnext")
+	if err := os.RemoveAll(filepath.Join(dir, "apps", "erpnext")); err != nil {
+		t.Fatal(err)
+	}
+
+	r := c.run(t, "start")
+
+	r.assertCode(t, exitcode.CodeOK)
+	if !strings.Contains(r.stderr, "cloning https://github.com/frappe/erpnext\n") {
+		t.Errorf("stderr = %q, want a step naming the clone", r.stderr)
+	}
+}
+
+// copyRemote clones a bare remote to a new bare repository at path.
+func copyRemote(t *testing.T, from, path string) {
+	t.Helper()
+	if out, err := exec.Command("git", "clone", "--quiet", "--bare", from, path).CombinedOutput(); err != nil {
+		t.Fatalf("git clone: %v\n%s", err, out)
+	}
+}
+
+func TestARelativeAppPathFromTheParentDirectoryIsClonedShallowAndRecordedAbsolute(t *testing.T) {
+	c := sandbox(t)
+	repo := filepath.Join(c.dir, "src", "acme-erp.git")
+	copyRemote(t, filepath.Join(remotes, "acme", "acme-erp.git"), repo)
+	specs := []string{"./src/acme-erp.git"}
+	if runtime.GOOS == "windows" {
+		specs = append(specs, `.\src\acme-erp.git`)
+	}
+	for i, spec := range specs {
+		t.Run(spec, func(t *testing.T) {
+			t.Chdir(c.dir)
+			name := "erp" + strconv.Itoa(i)
+			c.run(t, "new", name, "--frappe", "version-15", "--app", spec).assertCode(t, exitcode.CodeOK)
+
+			dir := filepath.Join(c.dir, name)
+			if got := readFile(t, filepath.Join(dir, "tamp.toml")); !strings.Contains(got, "url = "+strconv.Quote(repo)) {
+				t.Errorf("tamp.toml = %q, want the url %q", got, repo)
+			}
+			if got := git(t, filepath.Join(dir, "apps", "acme"), "rev-parse", "--is-shallow-repository"); got != "true" {
+				t.Errorf("is-shallow-repository = %s, want a shallow clone", got)
+			}
+		})
+	}
+}
+
+func TestAppAddOfAParentRelativePathResolvesAgainstTheWorkingDirectory(t *testing.T) {
+	c := sandbox(t)
+	repo := filepath.Join(c.dir, "acme-erp.git")
+	copyRemote(t, filepath.Join(remotes, "acme", "acme-erp.git"), repo)
+	dir := c.newIn(t, "erp-dev")
+	spec := "../acme-erp.git"
+	if runtime.GOOS == "windows" {
+		spec = `..\acme-erp.git`
+	}
+
+	c.run(t, "app", "add", spec).assertCode(t, exitcode.CodeOK)
+
+	if got := readFile(t, filepath.Join(dir, "tamp.toml")); !strings.Contains(got, "url = "+strconv.Quote(repo)) {
+		t.Errorf("tamp.toml = %q, want the url %q", got, repo)
+	}
+	if got := git(t, filepath.Join(dir, "apps", "acme"), "rev-parse", "--is-shallow-repository"); got != "true" {
+		t.Errorf("is-shallow-repository = %s, want a shallow clone", got)
+	}
+}
+
+func TestALocalPathHoldingPercentAndSpaceIsCloned(t *testing.T) {
+	c := sandbox(t)
+	repo := filepath.Join(c.dir, "my 100%20 repos", "acme-erp.git")
+	copyRemote(t, filepath.Join(remotes, "acme", "acme-erp.git"), repo)
+	dir := c.newIn(t, "erp-dev")
+
+	c.run(t, "app", "add", repo).assertCode(t, exitcode.CodeOK)
+
+	if got := git(t, filepath.Join(dir, "apps", "acme"), "config", "--get", "remote.upstream.url"); got != repo {
+		t.Errorf("upstream = %q, want %q", got, repo)
 	}
 }

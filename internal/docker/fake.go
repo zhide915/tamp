@@ -37,6 +37,9 @@ type Fake struct {
 	// ExecOutput writes its value to the stderr of each exec whose command
 	// line contains its key, as the command's own log.
 	ExecOutput map[string]string
+	// ShellCodes is the exit code of each shell whose command line contains
+	// a key; any other exits 0.
+	ShellCodes map[string]int
 	// UpFails fails the compose up of each project named by a key, with its
 	// error, and starts none of its containers.
 	UpFails map[string]error
@@ -55,6 +58,9 @@ type Fake struct {
 	Execs       []Exec
 	Connects    []Network
 	Disconnects []Network
+	// Shells and Logged record each shell and logs request.
+	Shells []Shell
+	Logged []Logs
 	// Stopped, Removed, RemovedNetworks and RemovedVolumes name what each
 	// stop and removal asked for.
 	Stopped, Removed, RemovedNetworks, RemovedVolumes []string
@@ -281,6 +287,28 @@ func (f *Fake) setSiteConfig(container, host, key, value string) error {
 		return err
 	}
 	f.put(container, path, string(body))
+	return nil
+}
+
+func (f *Fake) Shell(_ context.Context, s Shell) (int, error) {
+	f.Calls = append(f.Calls, "Shell")
+	f.Shells = append(f.Shells, s)
+	line := strings.Join(s.Cmd, " ")
+	for fragment, code := range f.ShellCodes {
+		if strings.Contains(line, fragment) {
+			return code, nil
+		}
+	}
+	return 0, nil
+}
+
+// Logs writes one line that names the container, as its log.
+func (f *Fake) Logs(_ context.Context, l Logs) error {
+	f.Calls = append(f.Calls, "Logs")
+	f.Logged = append(f.Logged, l)
+	if l.Stdout != nil {
+		fmt.Fprintln(l.Stdout, "log of "+l.Container)
+	}
 	return nil
 }
 

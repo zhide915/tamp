@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	neturl "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,7 +30,7 @@ const AppsDir = "apps"
 
 // cloneApp clones url at branch into apps/<name> with host git, as bench
 // get-app clones, unless the folder exists: tamp never touches a clone.
-func cloneApp(ctx context.Context, dir, name, url, branch string, out io.Writer) error {
+func (m *Manager) cloneApp(ctx context.Context, dir, name, url, branch string) error {
 	target := filepath.Join(dir, AppsDir, name)
 	if _, err := os.Stat(target); err == nil {
 		return nil
@@ -41,7 +42,8 @@ func cloneApp(ctx context.Context, dir, name, url, branch string, out io.Writer)
 		return exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot create %s: %v", filepath.Dir(target), err),
 			"check that you can write to the directory")
 	}
-	return gitClone(ctx, url, branch, target, out)
+	m.p.Step("cloning " + url)
+	return gitClone(ctx, url, branch, target, m.p.Progress())
 }
 
 // gitClone clones url into target, which may be an empty folder. Without a
@@ -56,10 +58,24 @@ func gitClone(ctx context.Context, url, branch, target string, out io.Writer) er
 		// the Linux container on every later checkout too.
 		args = append(args, "--config", "core.autocrlf=false")
 	}
-	args = append(args, "--", url, target)
+	source := url
+	if filepath.IsAbs(url) {
+		// git ignores --depth on a plain local path.
+		source = fileURL(url)
+	}
+	args = append(args, "--", source, target)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Stdout, cmd.Stderr = out, out
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err == nil && source != url {
+		// The remote keeps the path as given, which adoption compares with.
+		if said, err := exec.CommandContext(ctx, "git", "-C", target, "remote", "set-url", "upstream", url).CombinedOutput(); err != nil {
+			return exitcode.New(exitcode.CodeFailed,
+				fmt.Sprintf("cannot set the upstream of %s to %s: %s", target, url, strings.TrimSpace(string(said))),
+				"run the command again")
+		}
+	}
+	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			return exitcode.New(exitcode.CodeFailed, "git is not on PATH",
 				"install git")
@@ -73,6 +89,36 @@ func gitClone(ctx context.Context, url, branch, target string, out io.Writer) er
 			"fix what git says above")}
 	}
 	return nil
+}
+
+// fileURL is the file:// URL of an absolute local path, a Windows one too,
+// percent-encoded, since git decodes it.
+func fileURL(path string) string {
+	slashed := filepath.ToSlash(path)
+	if rest, ok := strings.CutPrefix(slashed, "//"); ok {
+		// A UNC path names its server first.
+		host, p, _ := strings.Cut(rest, "/")
+		return (&neturl.URL{Scheme: "file", Host: host, Path: "/" + p}).String()
+	}
+	return (&neturl.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(slashed, "/")}).String()
+}
+
+// localPath reports whether an app spec is a path on this machine: absolute,
+// or relative with a leading `.`, as in `../acme`.
+func localPath(spec string) bool {
+	if filepath.IsAbs(spec) || spec == "." || spec == ".." {
+		return true
+	}
+	prefixes := []string{"./", "../"}
+	if filepath.Separator == '\\' {
+		prefixes = append(prefixes, `.\`, `..\`)
+	}
+	for _, p := range prefixes {
+		if strings.HasPrefix(spec, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // cloneFailed is a failed git clone, whose fix depends on where the url came
@@ -147,7 +193,15 @@ func parseAppSpec(spec string) (url, branch string, err error) {
 	case strings.HasPrefix(url, "-"):
 		return "", "", exitcode.Usage(fmt.Sprintf("%q is not an app URL or name", spec), fix)
 	}
-	if !strings.ContainsAny(url, "/:") {
+	switch {
+	case localPath(url):
+		// Absolute, so the recipe names the same repository from any directory.
+		abs, err := filepath.Abs(url)
+		if err != nil {
+			return "", "", err
+		}
+		url = abs
+	case !strings.ContainsAny(url, "/:"):
 		if !bareName.MatchString(url) {
 			return "", "", exitcode.Usage(fmt.Sprintf("%q is not an app URL or name", spec), fix)
 		}

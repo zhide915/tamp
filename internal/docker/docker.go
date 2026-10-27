@@ -41,6 +41,11 @@ type Client interface {
 	ReadFile(ctx context.Context, container, path string) ([]byte, error)
 	// WriteFile replaces a file in a container, owned by the image's user.
 	WriteFile(ctx context.Context, container, path string, data []byte) error
+	// Shell runs a command in a running container on the caller's streams,
+	// and returns the command's exit code.
+	Shell(ctx context.Context, s Shell) (int, error)
+	// Logs writes a container's logs, running or not, to the caller's streams.
+	Logs(ctx context.Context, l Logs) error
 
 	// Containers lists the running containers that carry the label.
 	Containers(ctx context.Context, label string) ([]Container, error)
@@ -123,6 +128,25 @@ type Exec struct {
 	// Cmd is argv; no shell runs it.
 	Cmd []string
 	// Stdout and Stderr receive the command's streams; nil discards.
+	Stdout, Stderr io.Writer
+}
+
+// Shell is one command run in a container on the caller's own streams.
+type Shell struct {
+	Container, User, Dir string
+	Cmd                  []string
+	// TTY gives the command a terminal, which Stdin must then be.
+	TTY            bool
+	Stdin          io.Reader
+	Stdout, Stderr io.Writer
+}
+
+// Logs asks for one container's logs.
+type Logs struct {
+	Container string
+	Follow    bool
+	// Tail is the number of lines to show from the end; empty shows all.
+	Tail           string
 	Stdout, Stderr io.Writer
 }
 

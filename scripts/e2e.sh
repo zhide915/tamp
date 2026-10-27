@@ -291,6 +291,42 @@ sleep 3
 [ "$(docker inspect --format '{{ .State.Running }}' "$FRAPPE")" = true ] || fail "the frappe container exited with honcho"
 pongs shop.localhost || fail "shop.localhost did not come back after honcho exited"
 
+say "tamp shell runs one command as the bench user in the bench directory, and exits with its code"
+[ "$("$TAMP" shell -- whoami </dev/null)" = frappe ] || fail "tamp shell does not run as frappe"
+[ "$("$TAMP" shell -- pwd </dev/null)" = /home/frappe/frappe-bench ] || fail "tamp shell does not run in the bench directory"
+code=0
+"$TAMP" shell -- bash -c 'exit 7' </dev/null || code=$?
+[ "$code" = 7 ] || fail "exit code $code, want the command's 7"
+
+say "tamp shell passes stdin through, so bench mariadb reaches the database"
+out=$(echo 'select 41 + 1;' | "$TAMP" shell -- bench --site shop.localhost mariadb)
+echo "$out"
+grep -qx 42 <<<"$out" || fail "bench mariadb did not answer through tamp shell"
+
+say "tamp shell needs --, refuses bench start, and without a terminal a bare shell exits 2"
+code=0
+"$TAMP" shell bench --version </dev/null || code=$?
+[ "$code" = 2 ] || fail "exit code $code without --, want 2"
+code=0
+"$TAMP" shell -- bench start </dev/null || code=$?
+[ "$code" = 1 ] || fail "exit code $code for bench start, want 1"
+code=0
+timeout 30 "$TAMP" shell </dev/null || code=$?
+[ "$code" = 2 ] || fail "exit code $code for a bare shell without a terminal, want 2"
+
+say "tamp logs shows each service's logs, with --tail and -f"
+for service in frappe mariadb redis-cache redis-queue router; do
+  out=$("$TAMP" logs "$service" --tail 3 2>&1)
+  lines=$(wc -l <<<"$out")
+  [ -n "$out" ] && [ "$lines" -le 3 ] || fail "tamp logs $service --tail 3 printed $lines lines: $out"
+done
+code=0
+timeout 5 "$TAMP" logs -f --tail 1 >/dev/null || code=$?
+[ "$code" = 124 ] || fail "tamp logs -f ended by itself with $code, want it still following"
+code=0
+"$TAMP" logs web || code=$?
+[ "$code" = 2 ] || fail "exit code $code for an unknown service, want 2"
+
 say "tamp stop stops the containers and takes the sites off the router"
 "$TAMP" stop
 for service in frappe mariadb redis-cache redis-queue; do

@@ -621,7 +621,7 @@ func (m *Manager) cloneApps(ctx context.Context, t target, r Recipe) error {
 		if a.Name == "" {
 			got, err = m.resolveApp(ctx, t.dir, a.URL, a.Branch, "")
 		} else {
-			err = cloneApp(ctx, t.dir, a.Name, a.URL, a.Branch, m.p.Progress())
+			err = m.cloneApp(ctx, t.dir, a.Name, a.URL, a.Branch)
 			if err == nil && a.Branch == "" {
 				got.Branch, err = currentBranch(filepath.Join(t.dir, AppsDir, a.Name))
 			}

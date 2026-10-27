@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,9 +22,13 @@ type cli struct {
 	docker    *docker.Fake
 	// opened records each URL handed to the browser, which no test opens.
 	opened []string
-	// terminal makes stdout and stderr claim to be a terminal, for the
-	// color rules.
+	// terminal makes stdin, stdout and stderr claim to be a terminal, for
+	// the color rules and shell's TTY.
 	terminal bool
+	// terminalIn makes only stdin a terminal, as with stdout redirected.
+	terminalIn bool
+	// plainErr keeps stderr off the terminal that terminal sets, as with 2>file.
+	plainErr bool
 }
 
 func sandbox(t *testing.T) *cli {
@@ -62,12 +67,23 @@ func (*terminalBuffer) IsTerminal() bool { return true }
 func (c *cli) run(t *testing.T, args ...string) result {
 	t.Helper()
 	if c.terminal {
-		var stdout, stderr terminalBuffer
-		code := run(args, &stdout, &stderr, os.LookupEnv, c.docker, c.openURL)
+		var stdin, stdout terminalBuffer
+		var stderr interface {
+			io.Writer
+			String() string
+		} = &terminalBuffer{}
+		if c.plainErr {
+			stderr = &bytes.Buffer{}
+		}
+		code := run(args, &stdin, &stdout, stderr, os.LookupEnv, c.docker, c.openURL)
 		return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 	}
+	var stdin io.Reader = &bytes.Buffer{}
+	if c.terminalIn {
+		stdin = &terminalBuffer{}
+	}
 	var stdout, stderr bytes.Buffer
-	code := run(args, &stdout, &stderr, os.LookupEnv, c.docker, c.openURL)
+	code := run(args, stdin, &stdout, &stderr, os.LookupEnv, c.docker, c.openURL)
 	return result{code: code, stdout: stdout.String(), stderr: stderr.String()}
 }
 

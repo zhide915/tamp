@@ -1,9 +1,13 @@
 // Package exitcode holds tamp's exit codes and the error that carries one.
 // Scripts and agents branch on the numbers, so a code never changes its
-// number or takes a new meaning.
+// number or takes a new meaning. `tamp shell -- <command>` alone exits with
+// the command's own code instead.
 package exitcode
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // Code is a tamp process exit code.
 type Code int
@@ -52,8 +56,14 @@ func (e *Error) Error() string {
 	return e.Msg + ": " + e.Fix
 }
 
+// Exit is the non-zero exit of a command that `tamp shell` ran. tamp exits
+// with the command's own code, outside this contract, and prints nothing.
+type Exit struct{ Code Code }
+
+func (e *Exit) Error() string { return fmt.Sprintf("the command exited %d", e.Code) }
+
 // Of maps err to its exit code: CodeOK for nil, the code of a wrapped
-// *Error, and CodeFailed for any other error.
+// *Error or *Exit, and CodeFailed for any other error.
 func Of(err error) Code {
 	if err == nil {
 		return CodeOK
@@ -61,6 +71,10 @@ func Of(err error) Code {
 	var e *Error
 	if errors.As(err, &e) {
 		return e.Code
+	}
+	var exit *Exit
+	if errors.As(err, &exit) {
+		return exit.Code
 	}
 	return CodeFailed
 }
