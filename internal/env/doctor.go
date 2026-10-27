@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -192,12 +195,24 @@ func (m *Manager) checkEnv(ctx context.Context, r *report, t target) {
 			r.warn(fmt.Sprintf("%s moved from %s to %s", t.name, moved, t.dir), start("recreates its containers for the new directory"))
 		}
 	}
+	// Only a recipe on disk is read: a moved environment's old directory has none.
+	path := filepath.Join(t.dir, RecipeFile)
+	if _, err := os.Stat(path); err == nil {
+		if _, err := readRecipe(t.dir); err != nil {
+			r.fail(err)
+		} else {
+			r.pass("the recipe of " + t.name + " reads")
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		r.fail(exitcode.New(exitcode.CodeFailed, fmt.Sprintf("cannot read %s: %v", path, err),
+			"check that you can read "+t.dir))
+	}
 	containers, err := m.envContainers(ctx, t.name)
 	if err != nil {
 		r.fail(err)
 		return
 	}
-	st := state(containers)
+	st := state(t.name, containers)
 	switch st {
 	case stateNotBuilt:
 		r.warn("the environment "+t.name+" is not built", start("builds it"))

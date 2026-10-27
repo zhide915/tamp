@@ -486,3 +486,26 @@ func TestCaddysReloadLogReachesStderrOnlyWhenTheReloadFails(t *testing.T) {
 		t.Errorf("stderr = %q, want the Caddy log above the error", failed.stderr)
 	}
 }
+
+func TestAContainerDeletedByHandReadsAsPartlyRunningInListStatusContextAndDoctor(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	if err := c.docker.RemoveContainer(context.Background(), "erp-dev-frappe-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	list := c.run(t, "list")
+	status := c.run(t, "status")
+	ctx := c.run(t, "context")
+	doctor := c.run(t, "doctor")
+
+	if !regexp.MustCompile(`(?m)^erp-dev +partly running `).MatchString(list.stdout) {
+		t.Errorf("list stdout = %q, want erp-dev partly running", list.stdout)
+	}
+	status.assertContains(t, "environment erp-dev: partly running\n")
+	if !regexp.MustCompile(`(?m)^  erp-dev-frappe-1 +missing$`).MatchString(status.stdout) {
+		t.Errorf("status stdout = %q, want erp-dev-frappe-1 missing", status.stdout)
+	}
+	ctx.assertContains(t, "The environment is partly running: erp-dev-frappe-1 is missing. Start the rest with `tamp start -e erp-dev`")
+	doctor.assertContains(t, "the environment erp-dev is partly running: run `tamp start`")
+}

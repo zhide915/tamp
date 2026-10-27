@@ -374,3 +374,17 @@ func TestInADirectoryWhoseNameAnotherEnvironmentHoldsTheRouterWarningStartsThatE
 
 	r.assertLine(t, "! the router is not running, so no site of erp-dev answers: run `tamp start -e erp-dev`, which starts it")
 }
+
+func TestDoctorFailsARecipeItCannotReadWithTheFix(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	recipe := filepath.Join(dir, "tamp.toml")
+	if err := os.WriteFile(recipe, []byte(readFile(t, recipe)+"colour = \"red\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := c.run(t, "doctor")
+
+	r.assertCode(t, exitcode.CodeFailed)
+	r.assertContains(t, `holds the unknown key "sites.colour": remove it from `+recipe)
+}

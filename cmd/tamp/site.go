@@ -12,6 +12,8 @@ func newSiteCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "site",
 		Short: "Add, list and remove the environment's sites",
+		Example: "  tamp site add blog.localhost\n" +
+			"  tamp site list -e erp-dev",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return exitcode.Usage(fmt.Sprintf("unknown command %q for `tamp site`", args[0]), usageFix(cmd))
@@ -34,7 +36,9 @@ func newSiteAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "add <host>",
 		Short: "Add a *.localhost site to the recipe, create it with every app, and route it",
-		Args:  oneArg("the site's hostname"),
+		Example: "  tamp site add blog.localhost\n" +
+			"  tamp site add -e erp-dev docs.localhost",
+		Args: oneArg("the site's hostname"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().SiteAdd(g.env, args[0])
 		},
@@ -45,7 +49,9 @@ func newSiteListCommand(manager func() *env.Manager, g *globals) *cobra.Command 
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List the environment's sites with their URLs",
-		Args:  noArgs,
+		Example: "  tamp site list\n" +
+			"  tamp site list -e erp-dev",
+		Args: noArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return manager().SiteList(g.env)
 		},
@@ -57,7 +63,9 @@ func newSiteRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Comman
 	cmd := &cobra.Command{
 		Use:   "remove <host> --yes",
 		Short: "Drop a site and its database, remove it from the recipe, and take it off the router",
-		Args:  oneArg("the site's hostname"),
+		Example: "  tamp site remove blog.localhost --yes\n" +
+			"  tamp site remove -e erp-dev docs.localhost --yes",
+		Args: oneArg("the site's hostname"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().SiteRemove(g.env, args[0], yes)
 		},

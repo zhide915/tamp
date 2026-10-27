@@ -12,6 +12,8 @@ func newAppCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "app",
 		Short: "Add, list and remove the environment's apps",
+		Example: "  tamp app add payments#version-15\n" +
+			"  tamp app list -e erp-dev",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				return exitcode.Usage(fmt.Sprintf("unknown command %q for `tamp app`", args[0]), usageFix(cmd))
@@ -34,7 +36,9 @@ func newAppAddCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "add <url|name>[#branch]",
 		Short: "Clone an app, or adopt the one in apps/, record it in the recipe, and install it on every site",
-		Args:  oneArg("the app's URL or name"),
+		Example: "  tamp app add payments#version-15\n" +
+			"  tamp app add -e erp-dev https://github.com/frappe/payments#version-15",
+		Args: oneArg("the app's URL or name"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().AppAdd(g.env, args[0])
 		},
@@ -45,7 +49,9 @@ func newAppListCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "List Frappe and the environment's apps with their branches",
-		Args:  noArgs,
+		Example: "  tamp app list\n" +
+			"  tamp app list -e erp-dev",
+		Args: noArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return manager().AppList(g.env)
 		},
@@ -57,7 +63,9 @@ func newAppRemoveCommand(manager func() *env.Manager, g *globals) *cobra.Command
 	cmd := &cobra.Command{
 		Use:   "remove <name> --yes",
 		Short: "Uninstall an app from every site and the bench, remove it from the recipe, and keep its clone",
-		Args:  oneArg("the app's name"),
+		Example: "  tamp app remove payments --yes\n" +
+			"  tamp app remove -e erp-dev payments --yes",
+		Args: oneArg("the app's name"),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return manager().AppRemove(g.env, args[0], yes)
 		},

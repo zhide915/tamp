@@ -18,10 +18,11 @@ import (
 	"github.com/zhide915/tamp/internal/frappe"
 )
 
-// testSite is where the block runs tests: one per environment, as only one
-// may list a hostname. No hostname holds `_`, so it becomes `-`.
+// testSite is where the block runs tests, one per environment. A hostname
+// label holds no `_` and at most 63 characters.
 func testSite(name string) string {
-	return strings.ReplaceAll(name, "_", "-") + "-test.localhost"
+	label := strings.ReplaceAll(name, "_", "-")
+	return label[:min(len(label), 58)] + "-test.localhost"
 }
 
 // ReadTimeout bounds each version read, so a hung container never hangs
@@ -61,7 +62,7 @@ func (m *Manager) Context(envFlag string) error {
 		}
 	}
 	slices.Sort(down)
-	st := state(containers)
+	st := state(t.name, containers)
 	byE := target{name: t.name, dir: t.dir, flag: t.name}
 	here := target{name: t.name, dir: t.dir}
 	e := "-e " + t.name
@@ -81,11 +82,20 @@ func (m *Manager) Context(envFlag string) error {
 	case st == stateStopped:
 		line("The environment is stopped, so its sites do not answer. Start it with %s.", byE.command("start"))
 	default:
-		verb := "is"
-		if len(down) > 1 {
-			verb = "are"
+		var parts []string
+		for _, p := range []struct {
+			names []string
+			what  string
+		}{{down, "stopped"}, {missingContainers(t.name, containers), "missing"}} {
+			switch len(p.names) {
+			case 0:
+			case 1:
+				parts = append(parts, p.names[0]+" is "+p.what)
+			default:
+				parts = append(parts, strings.Join(p.names, ", ")+" are "+p.what)
+			}
 		}
-		line("The environment is partly running: %s %s stopped. Start the rest with %s, as its sites may fail until it runs.", strings.Join(down, ", "), verb, byE.command("start"))
+		line("The environment is partly running: %s. Start the rest with %s, as its sites may fail until it runs.", strings.Join(parts, ", and "), byE.command("start"))
 	}
 	recipe := "Its recipe is " + filepath.Join(t.dir, RecipeFile) + "."
 	switch {
@@ -114,6 +124,8 @@ func (m *Manager) Context(envFlag string) error {
 		switch {
 		case a.Name == "":
 			line("- %s: not cloned yet", a.URL)
+		case !isDir(filepath.Join(apps, a.Name)):
+			line("- %s: %s, not cloned yet", a.Name, filepath.Join(apps, a.Name))
 		case a.Branch == "":
 			line("- %s: %s", a.Name, filepath.Join(apps, a.Name))
 		default:
@@ -143,8 +155,9 @@ func (m *Manager) Context(envFlag string) error {
 		}
 	}
 	app := "frappe"
+	// A teammate's fresh clone of the recipe names apps that apps/ does not hold yet.
 	for _, a := range slices.Backward(r.Apps) {
-		if a.Name != "" {
+		if a.Name != "" && isDir(filepath.Join(apps, a.Name)) {
 			app = a.Name
 			break
 		}
@@ -199,13 +212,26 @@ func (m *Manager) Context(envFlag string) error {
 	if r.Frappe == "version-15" {
 		line("- `CI=1` makes `run-tests` exit non-zero when a test fails, which version-15 does only with it. It also skips the `allow_tests` check, so give it only %s.", testHost)
 	}
-	line("- Run one module, not a whole app: an app's suite is long. The example names the first test module found, so put the one you work on in its place: `--module` takes its dotted path, such as `%s.<module>.test_<name>`.", app)
-	if !own && app != "frappe" {
-		line("- %s has no test module yet, so the example runs one of Frappe's.", app)
-	}
-	line("- Put an app's tests in a module folder of its package, such as %s, not at the package's root.", filepath.Join(apps, app, app, "<module>", "test_<name>.py"))
-	if r.Frappe == "version-15" {
-		line("  A whole-app run imports a root `test_*.py` as the package itself, and runs none of it.")
+	line("- Run one module, not a whole app: an app's suite is long.")
+	// Frappe's own code is never the agent's to change, so no line points into it.
+	switch {
+	case len(r.Apps) == 0:
+		line("- The recipe lists no app, so the example runs one of Frappe's tests. Frappe's own code is not yours to change: before you write a test, add an app with `tamp app add %s <url|name>[#branch]`, and put the test in its package.", e)
+	case app == "frappe":
+		start := byE.command("start")
+		if !reachable {
+			start = here.command("start") + " in " + t.dir
+		}
+		line("- The recipe's apps are not cloned yet, so the example runs one of Frappe's tests. Frappe's own code is not yours to change: run %s, which clones them, and put the test in an app's package.", start)
+	default:
+		line("- The example names the first test module found, so put the one you work on in its place: `--module` takes its dotted path, such as `%s.<module>.test_<name>`.", app)
+		if !own {
+			line("- %s has no test module yet, so the example runs one of Frappe's.", app)
+		}
+		line("- Put an app's tests in a module folder of its package, such as %s, not at the package's root.", filepath.Join(apps, app, app, "<module>", "test_<name>.py"))
+		if r.Frappe == "version-15" {
+			line("  A whole-app run imports a root `test_*.py` as the package itself, and runs none of it.")
+		}
 	}
 
 	line("")
@@ -237,11 +263,13 @@ func (m *Manager) Context(envFlag string) error {
 		line("")
 		line("A method that needs a login takes one more URL: the login, then the call after `--next`, in one curl. `-b` with a file that does not exist turns on curl's cookie engine, which carries the login's cookie to the call, and writes no file:")
 		line("")
-		resolve := fmt.Sprintf("--resolve %s:80:127.0.0.1 -b no-file", host)
+		resolve := fmt.Sprintf("--resolve %s:80:127.0.0.1 -b no-such-cookie-file", host)
 		line("```sh")
 		line("%s -sS %s -d usr=Administrator -d pwd=%s http://%s/api/method/login --next %s http://%s/api/method/frappe.auth.get_logged_user",
 			curl, resolve, frappe.AdminPassword, host, resolve, host)
 		line("```")
+		line("")
+		line("A whitelisted method takes its arguments in the query string, such as 'http://%s/api/method/frappe.client.get_count?doctype=User'. Quote any URL that holds a query string: zsh, for one, fails on an unquoted `?`.", host)
 	}
 
 	line("")

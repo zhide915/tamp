@@ -9,7 +9,9 @@ func newDoctorCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
 		Short: "Check Docker, git, Mutagen, port 80, the router and the environment, and repair nothing",
-		Args:  noArgs,
+		Example: "  tamp doctor\n" +
+			"  tamp doctor -e erp-dev",
+		Args: noArgs,
 		RunE: func(*cobra.Command, []string) error {
 			return manager().Doctor(g.env)
 		},

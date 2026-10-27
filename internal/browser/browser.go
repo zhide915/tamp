@@ -1,6 +1,6 @@
 // Package browser hands a URL to the machine's default browser. It is a
-// process boundary like the hosts file, not a service tamp models: tamp only
-// asks the operating system to open something and reports what it said.
+// process boundary, not a service tamp models: tamp only asks the operating
+// system to open something and reports what it said.
 package browser
 
 import (

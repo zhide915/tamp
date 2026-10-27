@@ -432,3 +432,84 @@ func TestHungContainersCostOneReadTimeoutNotOneEachRead(t *testing.T) {
 		t.Errorf("context took %s with three hung reads, want about one ReadTimeout of %s", took, env.ReadTimeout)
 	}
 }
+
+func TestALongNamesTestSiteLabelFitsIn63(t *testing.T) {
+	c := sandbox(t)
+	name := strings.Repeat("a", 59)
+	c.newIn(t, name, "--site", "shop.localhost")
+
+	r := c.run(t, "context")
+
+	add := ""
+	for _, line := range examples(r.stdout) {
+		if strings.HasPrefix(line, "tamp site add ") {
+			add = line
+		}
+	}
+	host := strings.Repeat("a", 58) + "-test.localhost"
+	if add != "tamp site add -e "+name+" "+host {
+		t.Fatalf("examples = %q, want the site add of %s", examples(r.stdout), host)
+	}
+	c.run(t, strings.Fields(add)[1:]...).assertCode(t, exitcode.CodeOK)
+}
+
+func TestWithNoAppTheTestsSectionSaysToAddAnAppAndNeverToEditFrappe(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--site", "shop.localhost")
+
+	r := c.run(t, "context")
+
+	r.assertContains(t, "add an app with `tamp app add -e erp-dev <url|name>[#branch]`")
+	r.assertLacks(t, filepath.Join(dir, "apps", "frappe", "frappe", "<module>"), "`frappe.<module>", "A whole-app run")
+}
+
+func TestTheLoggedInCurlNamesACookieFileThatIsNotMeantToExistAndShowsQueryArguments(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+
+	r := c.run(t, "context")
+
+	r.assertContains(t, "-b no-such-cookie-file ",
+		"'http://shop.localhost/api/method/frappe.client.get_count?doctype=User'", "Quote any URL that holds a query string")
+}
+
+func TestWithTheRecipesAppsNotClonedTheTestsSectionSaysToStartAndNeverToAddThem(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	recipe := filepath.Join(dir, "tamp.toml")
+	body := readFile(t, recipe) + "\n[[apps]]\n  url = \"" + acmeURL + "\"\n"
+	if err := os.WriteFile(recipe, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := c.run(t, "context")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertContains(t, "The recipe's apps are not cloned yet", "run `tamp start -e erp-dev`, which clones them")
+	r.assertLacks(t, "tamp app add", "The recipe lists no app", "`frappe.<module>", "A whole-app run",
+		filepath.Join(dir, "apps", "frappe", "frappe", "<module>"))
+}
+
+func TestATeammatesFreshCloneOfARecipeWithANamedAppSaysToStartNotThatTheAppHasNoTests(t *testing.T) {
+	c := sandbox(t)
+	dir := c.newIn(t, "erp-dev", "--app", acmeURL, "--site", "shop.localhost")
+	mate := filepath.Join(c.dir, "crm-dev")
+	if err := os.MkdirAll(mate, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	recipe := readFile(t, filepath.Join(dir, "tamp.toml"))
+	if !strings.Contains(recipe, `name = "acme"`) {
+		t.Fatalf("recipe = %q, want it to name acme", recipe)
+	}
+	if err := os.WriteFile(filepath.Join(mate, "tamp.toml"), []byte(recipe), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(mate)
+
+	r := c.run(t, "context")
+
+	r.assertCode(t, exitcode.CodeOK)
+	r.assertContains(t, "- acme: "+filepath.Join(mate, "apps", "acme")+", not cloned yet\n",
+		"The recipe's apps are not cloned yet", "which clones them")
+	r.assertLacks(t, "acme has no test module yet", "bench build --app acme", "`acme.<module>")
+}

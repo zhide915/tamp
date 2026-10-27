@@ -453,3 +453,15 @@ func TestDuringNewThePartlyCreatedSiteFixNamesTheDirectory(t *testing.T) {
 		t.Errorf("stderr = %q, want its last line to end in %q", r.stderr, want)
 	}
 }
+
+func TestSiteAddWithALabelOver63CharactersExits2WithTheLimitInTheFix(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev")
+	host := strings.Repeat("a", 64) + ".localhost"
+
+	r := c.run(t, "site", "add", host)
+
+	r.assertCode(t, exitcode.CodeUsage)
+	r.assertOneLineError(t, host, "63 characters")
+	c.run(t, "site", "add", strings.Repeat("a", 63)+".localhost").assertCode(t, exitcode.CodeOK)
+}

@@ -146,7 +146,7 @@ func shellWords(cmd []string) string {
 
 // services are what `tamp logs` reads: the environment's containers by
 // compose service, and the machine's router.
-var services = []string{"frappe", dbService, redisCacheService, redisQueueService, "router"}
+var services = append(slices.Clone(envServices), "router")
 
 // Logs writes a service's logs to the Printer's streams: the frappe
 // container's when service is empty. tail is a line count, or empty for all.

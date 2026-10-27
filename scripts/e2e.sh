@@ -216,6 +216,13 @@ if grep -q 'blog.localhost' tamp.toml; then fail "the recipe still lists blog.lo
 if grep -q 'blog.localhost' "$CADDYFILE"; then fail "the Caddyfile still routes blog.localhost"; fi
 pongs shop.localhost || fail "shop.localhost stopped answering after the remove"
 
+say "a hostname no environment serves gets a 404 that names tamp list, and shop.localhost still answers"
+code=$(curl -s --max-time 10 --resolve blog.localhost:80:127.0.0.1 -o "$WORK/gone.body" -w '%{http_code}' http://blog.localhost/) || true
+echo "$code $(cat "$WORK/gone.body")"
+[ "$code" = 404 ] || fail "the removed blog.localhost answered $code, want 404"
+grep -qF '`tamp list`' "$WORK/gone.body" || fail "the 404 body does not name tamp list"
+pongs shop.localhost || fail "the catch-all shadows shop.localhost"
+
 # site_has_app checks that bench lists app on a site.
 site_has_app() {
   docker exec "$FRAPPE" bench --site "$1" list-apps --format json | grep -q "\"$2\""

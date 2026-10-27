@@ -12,6 +12,8 @@ func newOpenCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 	return &cobra.Command{
 		Use:   "open [host]",
 		Short: "Open a site in the default browser: the host given, or the only site",
+		Example: "  tamp open\n" +
+			"  tamp open -e erp-dev shop.localhost",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 1 {
 				return exitcode.Usage(fmt.Sprintf("unexpected argument %q", args[1]), usageFix(cmd))

@@ -102,8 +102,14 @@ http://%s {
 `, h, e.Upstream, frappe.SocketIOPort, e.Upstream, frappe.WebPort)
 		}
 	}
+	// Caddy answers a host no block names with an empty 200; this says why.
+	// Every site block names its host, so it outranks this one.
+	b.WriteString("\nhttp:// {\n\trespond \"" + NotFoundBody + "\" 404\n}\n")
 	return b.Bytes()
 }
+
+// NotFoundBody is the router's answer to a hostname no running environment serves.
+const NotFoundBody = "No running tamp environment serves this hostname. Run `tamp list` to see the sites."
 
 // Router is the machine's router, reached through Docker.
 type Router struct {

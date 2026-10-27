@@ -121,7 +121,7 @@ func (m *Manager) List() error {
 	for _, name := range names {
 		containers := byName[name]
 		dir := containers[0].Labels[LabelPath]
-		m.p.Print(fmt.Sprintf("%-*s  %-14s  %s", width, name, state(containers), dir))
+		m.p.Print(fmt.Sprintf("%-*s  %-14s  %s", width, name, state(name, containers), dir))
 		for _, url := range m.siteURLs(name, dir) {
 			m.p.Print("  " + url)
 		}
@@ -140,7 +140,7 @@ func (m *Manager) Status(envFlag string) error {
 	if err != nil {
 		return err
 	}
-	m.p.Print(fmt.Sprintf("environment %s: %s", t.name, state(containers)))
+	m.p.Print(fmt.Sprintf("environment %s: %s", t.name, state(t.name, containers)))
 	m.p.Print("directory: " + t.dir)
 	m.p.Print("containers:")
 	if len(containers) == 0 {
@@ -156,6 +156,11 @@ func (m *Manager) Status(envFlag string) error {
 			running = "running"
 		}
 		m.p.Print(fmt.Sprintf("  %-*s  %s", width, c.Name, running))
+	}
+	if len(containers) > 0 {
+		for _, name := range missingContainers(t.name, containers) {
+			m.p.Print(fmt.Sprintf("  %-*s  missing", width, name))
+		}
 	}
 	m.p.Print("sync: " + m.syncState(ctx, t))
 	m.p.Print("sites:")
@@ -199,7 +204,9 @@ func (s runState) String() string {
 	return [...]string{"not built", "running", "stopped", "partly running"}[s]
 }
 
-func state(containers []docker.Container) runState {
+// state counts the environment's services, so a container deleted by hand
+// reads as partly running.
+func state(name string, containers []docker.Container) runState {
 	up := 0
 	for _, c := range containers {
 		if c.Running {
@@ -209,10 +216,22 @@ func state(containers []docker.Container) runState {
 	switch {
 	case len(containers) == 0:
 		return stateNotBuilt
-	case up == len(containers):
-		return stateRunning
 	case up == 0:
 		return stateStopped
+	case up == len(containers) && len(missingContainers(name, containers)) == 0:
+		return stateRunning
 	}
 	return statePartly
+}
+
+// missingContainers is the containers of name's services that do not exist.
+func missingContainers(name string, containers []docker.Container) []string {
+	var out []string
+	for _, s := range envServices {
+		want := serviceContainer(name, s)
+		if !slices.ContainsFunc(containers, func(c docker.Container) bool { return c.Name == want }) {
+			out = append(out, want)
+		}
+	}
+	return out
 }

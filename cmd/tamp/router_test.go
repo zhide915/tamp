@@ -382,3 +382,16 @@ func TestStartKeepsThePortMessageWhenDockerCannotListWhatPublishesPort80(t *test
 	r.assertCode(t, exitcode.CodeFailed)
 	r.assertOneLineError(t, "port 80 is taken", "cannot list Docker containers: EOF", "stop what listens on port 80", "then run `tamp start`")
 }
+
+func TestAHostnameNoRunningEnvironmentServesGets404NamingTampList(t *testing.T) {
+	c := sandbox(t)
+	c.newIn(t, "erp-dev", "--site", "shop.localhost")
+	c.run(t, "remove", "--yes").assertCode(t, exitcode.CodeOK)
+
+	caddyfile := c.caddyfile(t)
+
+	want := "\nhttp:// {\n\trespond \"" + router.NotFoundBody + "\" 404\n}\n"
+	if !strings.Contains(caddyfile, want) || !strings.Contains(router.NotFoundBody, "`tamp list`") {
+		t.Errorf("the Caddyfile lacks the catch-all 404 block:\n%s", caddyfile)
+	}
+}

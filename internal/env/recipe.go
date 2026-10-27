@@ -58,10 +58,10 @@ var matrix = map[string]toolchain{
 }
 
 // localhostName is a hostname under .localhost, which resolves to this
-// machine with no hosts file.
-var localhostName = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+localhost$`)
+// machine with no hosts file. DNS caps each label at 63 characters.
+var localhostName = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+localhost$`)
 
-const siteHostFix = "name the site with lowercase letters, digits and `-`, ending in `.localhost`, such as `shop.localhost`"
+const siteHostFix = "name the site with lowercase letters, digits and `-`, at most 63 characters between dots, ending in `.localhost`, such as `shop.localhost`"
 
 // readRecipe reads the recipe in dir. A recipe that names an unsupported
 // branch or a bad hostname is a conflict with the file, not the command line.

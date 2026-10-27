@@ -17,7 +17,7 @@ func newShellCommand(manager func() *env.Manager, g *globals) *cobra.Command {
 			"With a command after `--`, it runs that command and exits with its code.\n" +
 			"It refuses `bench start` and `bench update`, and warns on `bench new-site` and git.",
 		Example: "  tamp shell -- bench --site shop.localhost migrate\n" +
-			"  tamp shell -e erp-dev -- bench build --app acme",
+			"  tamp shell -e erp-dev -- bench build --app frappe",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return manager().Shell(g.env, args, cmd.ArgsLenAtDash() == 0, force, cmd.InOrStdin())

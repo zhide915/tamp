@@ -1,248 +1,628 @@
 # tamp
 
-tamp is a command-line environment manager for [Frappe Framework](https://frappeframework.com). It runs each Frappe bench in its own set of Docker containers, with the Python, Node, and MariaDB versions that its Frappe release requires, and serves every site by hostname, such as `http://shop.localhost`, with no ports to remember. The app source code lives in a normal folder on your machine, so you and your editor or coding agent work on it at native speed on Windows, macOS, or Linux.
+tamp is an environment manager for [Frappe Framework](https://frappeframework.com). It builds a Frappe bench in Docker from one file, its recipe, and serves every site by hostname, such as `http://shop.localhost`. You, your editor, and your coding agent edit the app code in a folder on your machine.
 
-You need tamp and Docker. tamp downloads everything else it uses, pinned and checksum-verified.
+An environment is one directory. Its recipe, `tamp.toml`, lists the Frappe branch, the apps, and the sites. A team commits the recipe, and each teammate builds the same environment from it with `tamp start`.
 
 ## Install
 
-1. Install [Docker Desktop](https://docs.docker.com/desktop/) (or Docker Engine with the Compose v2 plugin on Linux) and start it.
-2. Install tamp:
+You need:
 
-   ```sh
-   go install github.com/zhide915/tamp/cmd/tamp@latest
-   ```
+- Docker: Docker Desktop on Windows and macOS, or Docker Engine with the Compose plugin on Linux. Start it before you run tamp.
+- git on the host. tamp clones every app with it.
+- Port 80 free for tamp's router.
+- Go 1.26.4 or later, to install tamp.
 
-3. Check the setup:
+Install tamp:
 
-   ```sh
-   tamp doctor
-   ```
+```sh
+go install github.com/zhide915/tamp/cmd/tamp@latest
+```
 
-   Every check prints pass, warn, or fail, and each failure names its fix.
+`go install` puts `tamp` in the `bin` folder of your Go path, which `go env GOPATH` prints. Add that folder to your `PATH` if it is not there.
+
+Check the machine:
+
+```sh
+tamp doctor
+```
+
+Each check prints a line, and each failure names its fix.
 
 ## Create an environment
 
-```sh
-tamp create erp15 --frappe version-15 --apps erpnext:version-15
-```
+1. Create an environment with one site:
 
-This creates the folder `./erp15`, writes `tamp.toml`, starts the containers (bench, MariaDB, two Redis instances, and [Mailpit](https://mailpit.axllent.org) for mail), installs the pinned toolchain, initializes the bench, and fetches the apps you listed. When it finishes, the development server is running.
+   ```sh
+   tamp new erp-dev --frappe version-15 --site shop.localhost
+   ```
 
-Supported Frappe versions:
+   tamp writes `erp-dev/tamp.toml` and `erp-dev/.gitignore`, clones Frappe into `erp-dev/apps/`, starts the containers, runs `bench init`, and creates the site. The first environment of a Frappe version also builds its image, which takes the longest.
 
-| `--frappe`   | Python | Node | MariaDB |
-| ------------ | ------ | ---- | ------- |
-| `version-15` | 3.11   | 18   | 10.11   |
-| `version-16` | 3.14   | 24   | 11.8    |
-| `develop`    | latest supported set |||
+   `--frappe` takes `version-15`, `version-16` or `develop`.
 
-The first environment of a Frappe version pays for `bench init` in full. tamp caches that initialized bench machine-wide, so later creates of the same version unpack it in seconds. Templates expire after 14 days, because release branches move. Use `--no-cache` to build a fresh bench and leave the stored template alone.
+2. Go to the environment's directory and open the site:
 
-Emptying the cache is safe. It costs the next create its full price and nothing else:
+   ```sh
+   cd erp-dev
+   tamp open
+   ```
 
-```sh
-docker run --rm -v tamp-templates:/store alpine sh -c 'rm -f /store/*'
-```
+   Log in as `Administrator` with the password `password`.
 
-Always pin an app's branch (`erpnext:version-15`). A bare name fetches the repository's default branch (usually `develop`, which doesn't run on a release bench), and tamp tells you it did rather than guessing a branch for you.
+3. Add an app. A bare name means the app of that name in the `frappe` GitHub organization, and `#` picks the branch:
 
-`tamp init` does the same for a directory you already have: run it inside an empty folder and the environment takes the folder's name.
+   ```sh
+   tamp app add payments#version-15
+   ```
 
-## Private app repositories
+   tamp clones the app into `apps/payments`, records it in the recipe, and installs it on every site.
 
-Give a private repository's https URL like any other app. When the fetch needs credentials, tamp asks the credential system your own git uses. Its usual sign-in prompt may appear, at most once per git host in a run. The credential serves that one fetch and is never stored. The clone in `apps/` keeps a clean URL, so host git pushes and pulls normally afterwards.
+4. Run a bench command inside the environment:
 
-tamp checks every app source right after the containers start, so a typo, a deleted repository, or a missing sign-in fails in seconds instead of after the bench build. Two spellings are refused up front: ssh URLs (use the https form) and URLs with an embedded token (drop it; tamp asks your credential system instead). Only private fetches need git installed on the host. `tamp doctor` reports whether it was found.
+   ```sh
+   tamp shell -- bench --site shop.localhost migrate
+   ```
 
-## Add a site
+5. Stop the environment when you are done, and start it again later:
 
-```sh
-tamp site new erp15 shop.localhost --apps erpnext
-```
+   ```sh
+   tamp stop
+   tamp start
+   ```
 
-Open `http://shop.localhost` in a browser. The site's generated Administrator password is printed once; store it. Each site gets its own database, and mail the site sends appears at `http://mail.erp15.localhost`.
+Edit the code in `apps/` on the host. Run git on the host too, in each app's folder: the container has none of your credentials. On Linux, the container uses `apps/` directly. On Windows and macOS, tamp syncs `apps/` with the container through [Mutagen](https://mutagen.io), which it downloads itself.
 
-A site can only install apps that are already on the bench. To add one later:
+Run a command from the environment's directory, or name the environment with `-e` from anywhere else, such as `tamp status -e erp-dev`.
 
-```sh
-tamp exec erp15 -- bench get-app hrms --branch version-15
-```
-
-Hostnames are unique across the whole machine, because one router serves them all.
-
-## Fast sites
-
-Installing ERPNext onto a site takes minutes. tamp pays that once: the first site of a Frappe version and app set is backed up into a machine-wide seed store, and `--seed` restores that backup instead of installing the apps again.
+To delete the environment's containers, network, volumes and sync session, run the following command. It keeps the directory, so `tamp start` builds the environment again.
 
 ```sh
-tamp site new erp15 shop.localhost --apps erpnext            # installs, and caches the result
-tamp site new erp15 second.localhost --apps erpnext --seed   # restores it, in seconds
+tamp remove --yes
 ```
 
-A seed never expires: tamp migrates the restored site, which absorbs whatever the apps' schemas did since. Seeds don't cross versions or app sets (a `version-16` bench never restores a `version-15` seed), and `--seed` with no matching seed exits 3, naming the combination, having created nothing.
+To delete the environment fully, run `tamp remove --yes`, then delete its directory, which holds the recipe and the app clones in `apps/`. The `tamp-cache` volume stays, because every environment shares its pip and yarn caches.
 
-`--seed` goes with `--apps`. A seed stands in for the app installs and nothing else, so a site with no apps neither fills the store nor reads it.
-
-A seed is keyed by each app's source and branch, not just its name: two environments carrying a same-named app from different repositories or branches never share a seed.
-
-Emptying the store is safe. It costs the next site its install and nothing else:
+tamp keeps its own state in `~/.tamp`: the router's Caddyfile and compose file in `~/.tamp/router`, and on Windows and macOS, Mutagen in `~/.tamp/bin` and its sync data in `~/.tamp/mutagen`. The router keeps running after you remove the last environment. To remove it, run:
 
 ```sh
-docker run --rm -v tamp-seeds:/store alpine sh -c 'rm -f /store/*'
+docker rm -f tamp-router
+docker network rm tamp-router_default
 ```
 
-## Custom domains
+The next `tamp start` brings the router back.
 
-`*.localhost` names resolve in browsers with no setup. Any other name, such as `abc.xyz.com`, needs a line in your operating system's hosts file. `tamp hosts sync` writes it:
+## Share an environment with your team
 
-```sh
-tamp site new erp15 abc.xyz.com   # created and routed; its hosts entry is pending
-tamp hosts sync                   # writes the entry; open http://abc.xyz.com
-```
+The recipe holds no name, password, port or data, so it works on any machine. The `.gitignore` that `tamp new` writes keeps `apps/` and the generated `compose.yaml` out of the repository.
 
-tamp keeps every custom domain, from every environment, between two markers:
+1. In the environment's directory, commit the recipe, and push it to an empty repository of your team:
 
-```
-# --- tamp managed block ---
-# Generated by tamp. 'tamp hosts sync' rewrites everything between these
-# two markers; keep your own entries outside them.
-127.0.0.1  abc.xyz.com
-# --- end tamp block ---
-```
+   ```sh
+   git init
+   git add tamp.toml .gitignore
+   git commit -m "Add the erp-dev environment"
+   git remote add origin <repository-url>
+   git push -u origin HEAD
+   ```
 
-tamp never writes outside the markers. Remove a site and its line disappears on the next sync. `tamp site list` shows each site's hosts-entry state, and `tamp doctor` reports whether the block is in sync.
+2. A teammate clones the repository and builds it:
 
-The hosts file belongs to the operating system, so the write asks for elevated rights: a UAC prompt on Windows, `sudo` elsewhere. No other tamp command elevates. The sync reads hostnames tamp already recorded, so it works with every environment stopped.
+   ```sh
+   git clone <repository-url> erp-dev
+   cd erp-dev
+   tamp start
+   ```
 
-## Work on the code
+The environment's name is its directory's name, so the teammate picks it in `git clone`.
 
-Each environment's apps live in `<envdir>/apps/`. Edit them there; the development server hot-reloads.
-
-- On Linux, the folder is bind-mounted into the container.
-- On Windows and macOS, the code lives in a container volume and [Mutagen](https://mutagen.io) mirrors it to `apps/` both ways, host side winning conflicts. tamp downloads and manages the Mutagen binary itself. Override with `--sync bind|mutagen|off`.
-
-Run git on the host, in `<envdir>/apps/<app>`, never inside the container. Two-way sync of a live `.git` is only safe with one writer. For the same reason tamp refuses `bench update`; pull on the host, then:
-
-```sh
-tamp exec erp15 -- bash -c "bench setup requirements && bench build && bench migrate"
-```
-
-`tamp sync` reports on and repairs the session:
-
-```sh
-tamp sync status erp15   # endpoints, ignore list, and Mutagen's own account
-tamp sync flush erp15    # force a full pass and wait for it
-tamp sync reset erp15    # rebuild the session after a big host-side change
-tamp sync stop           # stop the Mutagen daemon tamp runs
-```
-
-`reset` is the recovery when a large host-side change (a branch checkout, say) leaves the session with more to reconcile than it settles. On Linux every subcommand reports `mode: bind (sync not applicable)` and exits 0.
-
-Keep environments out of OneDrive, Dropbox, and Google Drive folders, and out of paths with spaces. tamp warns when you create one there.
-
-## Everyday commands
-
-```sh
-tamp list                    # every environment, its versions, state, and URLs
-tamp open erp15              # open its first site in the browser; 'mail' opens Mailpit
-tamp stop erp15              # stop containers; data always survives
-tamp start erp15             # start again, regenerating files from tamp.toml
-tamp logs erp15 web -f       # follow one service: web, socketio, watch,
-                             # schedule, worker, mariadb, redis-*, mailpit, router
-tamp db erp15                # host, port, and credentials for a database GUI
-tamp exec erp15 -- bench --version   # run anything inside the bench
-tamp clean erp15             # explain the storage layers; destroy nothing
-tamp rebuild erp15           # reinstall dependencies and rebuild assets
-tamp snapshot erp15          # back every site up, database and files
-tamp hosts sync              # write tamp's block in the OS hosts file
-```
-
-`tamp.toml` is the source of truth: `start` regenerates the generated files from it, so hand-edits to `compose.yaml` don't survive.
-
-## Storage layers
-
-An environment stores four things, and tamp wipes them one at a time. Run `tamp clean` with no flag to print this table in your terminal:
-
-| Layer    | Holds                                       | Wiped by                  | Restored by             |
-| -------- | ------------------------------------------- | ------------------------- | ----------------------- |
-| `source` | `apps/`, your code                          | nothing tamp does         | it is yours             |
-| `deps`   | the virtualenv, `node_modules`, `__pycache__` | `tamp clean --deps`     | `tamp rebuild`          |
-| `assets` | the built JS and CSS                        | `tamp clean --assets`     | `tamp rebuild`          |
-| `data`   | every site's database, files and config     | `tamp clean --data --yes` | `tamp site new <host>`, or `tamp snapshot restore` |
-
-```sh
-tamp clean erp15 --deps      # wipe broken dependencies
-tamp rebuild erp15           # reinstall from the shared caches, rebuild assets
-tamp clean erp15 --data      # print what would die, exit 5
-tamp clean erp15 --all --yes # wipe every layer but source
-```
-
-`--deps` and `--assets` need no confirmation. `--data` destroys every site's database and files, so it exits 5 without `--yes`, printing what it would take. Both commands need the environment running, and neither deletes code you wrote.
-
-## Snapshots
-
-A snapshot backs up the data layer (every site's database and files) into the environment's own `.tamp/snapshots/` folder. Take one before anything risky:
-
-```sh
-tamp snapshot erp15                          # named after the moment
-tamp snapshot create erp15 --name pre-v16    # or named by you
-tamp snapshot list erp15                     # name, created, size, site count
-tamp snapshot restore erp15                  # the newest, or --name
-```
-
-A restore recreates sites the environment no longer has, then restores and migrates each one, so a snapshot from an older checkout still works. Nothing changes until the pre-flight passes:
-
-- Every app the snapshot's sites had installed is on the bench. A missing app exits 1, names the app, and prints the `bench get-app` line that fetches it.
-- No hostname in the snapshot belongs to another environment.
-- Writing over site data that exists today needs `--yes`.
-
-tamp takes a snapshot only when you ask, and never schedules, prunes, or expires one. Copy, move, or delete the files as you like.
-
-## Machine settings
-
-`~/.tamp/config.toml` is optional, and tamp never writes it. It holds one setting today:
+A recipe looks like this:
 
 ```toml
-[cache]
-# How long a cached bench template is trusted. 0 turns the cache off.
-template_ttl_days = 14
+frappe = "version-15"
+
+[[apps]]
+  name = "payments"
+  url = "https://github.com/frappe/payments"
+  branch = "version-15"
+
+[[sites]]
+  host = "shop.localhost"
 ```
 
-## Remove an environment
+After you edit the recipe by hand, run `tamp start`. It builds what the recipe lists and is missing, and never deletes anything. Apps install in the order the recipe lists them, so list an app's dependencies first.
 
-```sh
-tamp rm erp15 --yes
+A private app works like any other: give its URL, such as `tamp app add git@github.com:<owner>/<repo>.git#<branch>`. Host git clones it with your own keys or credential manager.
+
+## Work with an AI coding agent
+
+`tamp context` prints what an agent needs to work in the environment: the versions, where to edit code, how to run bench commands and tests, the sites with their login, and where to look when something fails. Add this line to the agent's instruction file, such as `AGENTS.md` or `CLAUDE.md`, in the environment's directory:
+
+```text
+Run `tamp context` at the start of each session.
 ```
 
-This removes the containers, network, routes, and registry entry. It keeps the data volumes and never touches the directory. To bring the environment back later, run `tamp init` inside it: the volumes reattach and every site returns with its data.
+An agent that starts in an app's folder, such as `apps/acme`, needs the environment's name, because tamp looks for the recipe only in the working directory:
 
-Snapshots live in the environment directory, so they survive `tamp rm` and return with `tamp init`.
-
-For a complete deletion, remove the volumes too, then delete the folder:
-
-```sh
-tamp rm erp15 --volumes --yes
-rm -rf erp15
-```
-
-## The router
-
-A single Caddy container serves every environment on the machine. It binds port 80, or 8080 when 80 is taken, and tamp then prints every URL with the port in it. Browsers resolve `*.localhost` with no configuration. `curl` may not; point it at the router directly:
-
-```sh
-curl --resolve shop.localhost:80:127.0.0.1 http://shop.localhost
+```text
+Run `tamp context -e erp-dev` at the start of each session.
 ```
 
 ## Exit codes
 
 | Code | Meaning |
 | ---- | ------- |
-| 0 | success |
-| 1 | operation failed |
-| 2 | usage error |
-| 3 | environment, site, snapshot or seed not found |
-| 4 | Docker unavailable |
-| 5 | confirmation required (add `--yes`) |
+| 0 | The command did what was asked. |
+| 1 | The command failed, including a conflict with the current state. |
+| 2 | The command line is wrong. |
+| 3 | The environment, site, or app does not exist. |
+| 4 | tamp cannot reach Docker. |
+| 5 | The command removes data and needs `--yes`. |
 
-Output respects `--quiet`, `--no-color`, and the `NO_COLOR` environment variable.
+`tamp shell -- <command>` exits with the command's own code.
+
+## Known limits
+
+The recipe and apps:
+
+- The recipe pins branches, not commits, so two teammates who build on different days can get different code.
+- tamp rewrites `tamp.toml` when a command changes it, and drops its comments.
+- A recipe key that tamp does not know makes `start`, `open`, `context`, `doctor`, and the `site` and `app` commands exit 1, so that tamp never drops the key when it rewrites the recipe. `list` and `status` warn and show no sites, and the router skips the environment with a warning.
+- tamp reads an app's name from `pyproject.toml`, or else from a literal `name="..."` in `setup.py`. It does not read `setup.cfg`.
+- tamp does not check an app `name` you edit by hand in the recipe against the app's package.
+- The check for missing required apps reads only a literal `required_apps = [...]` in the app's `hooks.py`.
+- A team fork of Frappe cannot be used.
+- Credentials stay on the host, so a pip or yarn dependency from a private git URL fails inside the container. List such a dependency in the recipe as an app.
+- Host git may open a sign-in window, such as Git Credential Manager's, even when an agent runs `tamp start`.
+- The node install writes `yarn.lock`, and the build writes `public/dist`, into each clone. An app without a `.gitignore` shows them as untracked.
+- Two environments that install apps at the same time share the yarn cache.
+
+Finding an environment:
+
+- tamp looks for the recipe only in the working directory, so a command run from a subfolder, such as `apps/acme`, does not find it. Use `-e`.
+- `-e` finds an environment by its containers, so an environment that never started is reachable only from its directory.
+- `tamp site add` cannot see the recipe of an environment that never started, so it cannot refuse a hostname that such a recipe lists.
+- If you delete an environment's directory without `tamp remove`, and create an environment of the same name, tamp treats it as a move: the new environment takes the old volumes, and `tamp start` warns about the old sites. `tamp new` over the leftover volumes adopts them the same way.
+
+Sites and the router:
+
+- `tamp start` does not wait for the web server. On a test machine, a site answered about 2 seconds after `tamp start` returned on a stopped environment, and at once after `tamp new`.
+- Outside a browser, `*.localhost` may not resolve. Point a command-line tool at the router, such as `curl --resolve shop.localhost:80:127.0.0.1 http://shop.localhost`. In PowerShell, type `curl.exe`.
+- A site that fetches its own URL from inside the container may fail.
+- The router keeps running after you remove the last environment.
+- Routes for containers that you delete by hand, not through tamp, stay in the router until the next tamp command rebuilds its config.
+- The bench runs without `DEV_SERVER`, because with it the browser opens socket.io on port 9000, which the router does not publish. So routes from the `website_route_rules` hook, and those of DocTypes with `has_web_view`, stay cached until `bench clear-website-cache`. Deprecation warnings are not printed, and the default log level stays at ERROR. Template, page and Python edits still reload.
+- `tamp context` runs tests on the site `<env>-test.localhost`. Environment names that differ only in `_` and `-`, or that share their first 58 characters, share that site's hostname.
+
+Sync on Windows and macOS:
+
+- The first build on the machine, by `tamp new` or `tamp start`, downloads Mutagen, about 100 MB, into `~/.tamp/bin`.
+- `apps/` syncs both ways, so a deletion inside the container, such as `rm -rf apps` through `tamp shell`, reaches the host before Mutagen halts. Push your work, so that the remote can restore what is lost.
+- CI never runs Mutagen against real Docker, only its fake.
+
+`tamp shell`:
+
+- `shell` refuses `bench start` and `bench update` by the first words of the command only, so `bash -c "bench update"` passes.
+
+## Commands
+
+This section is each command's `--help`. Every command also takes the global flags that `tamp --help` lists: `-e/--env`, `--quiet` and `--no-color`.
+
+<!-- commands:begin: generated from --help by `go test ./cmd/tamp -run TestTheREADMECommandSectionIsTheHelpOfEveryCommand -update-readme` -->
+
+### `tamp`
+
+```text
+tamp builds each Frappe bench in Docker from its recipe, tamp.toml,
+and serves every site by hostname.
+
+Usage:
+  tamp [flags]
+  tamp [command]
+
+Available Commands:
+  app         Add, list and remove the environment's apps
+  context     Print, as markdown, what an AI coding agent needs to work in the environment
+  doctor      Check Docker, git, Mutagen, port 80, the router and the environment, and repair nothing
+  help        Help about any command
+  list        List every environment that has containers, with its sites
+  logs        Show a service's logs: frappe, mariadb, redis-cache, redis-queue or router
+  new         Create an environment at a new or empty directory, and build it
+  open        Open a site in the default browser: the host given, or the only site
+  remove      Delete the environment's sync session, containers, network and volumes, and keep its directory
+  shell       Open a shell as the bench user in the bench directory, or run one command there
+  site        Add, list and remove the environment's sites
+  start       Build whatever the recipe lists that is missing, and start the environment
+  status      Show the environment's containers, sync state and site URLs
+  stop        Stop the environment's containers
+  version     Print the tamp version, commit, and build date
+
+Flags:
+  -e, --env string   the environment to act on, by name
+  -h, --help         help for tamp
+      --no-color     print without color
+      --quiet        print only results, warnings and errors
+
+Use "tamp [command] --help" for more information about a command.
+
+Examples:
+  tamp new erp-dev --frappe version-15 --site shop.localhost
+  tamp status -e erp-dev
+```
+
+### `tamp app`
+
+```text
+Add, list and remove the environment's apps
+
+Usage:
+  tamp app [flags]
+  tamp app [command]
+
+Available Commands:
+  add         Clone an app, or adopt the one in apps/, record it in the recipe, and install it on every site
+  list        List Frappe and the environment's apps with their branches
+  remove      Uninstall an app from every site and the bench, remove it from the recipe, and keep its clone
+
+Flags:
+  -h, --help   help for app
+
+Use "tamp app [command] --help" for more information about a command.
+
+Examples:
+  tamp app add payments#version-15
+  tamp app list -e erp-dev
+```
+
+### `tamp app add`
+
+```text
+Clone an app, or adopt the one in apps/, record it in the recipe, and install it on every site
+
+Usage:
+  tamp app add <url|name>[#branch] [flags]
+
+Flags:
+  -h, --help   help for add
+
+Examples:
+  tamp app add payments#version-15
+  tamp app add -e erp-dev https://github.com/frappe/payments#version-15
+```
+
+### `tamp app list`
+
+```text
+List Frappe and the environment's apps with their branches
+
+Usage:
+  tamp app list [flags]
+
+Flags:
+  -h, --help   help for list
+
+Examples:
+  tamp app list
+  tamp app list -e erp-dev
+```
+
+### `tamp app remove`
+
+```text
+Uninstall an app from every site and the bench, remove it from the recipe, and keep its clone
+
+Usage:
+  tamp app remove <name> --yes [flags]
+
+Flags:
+  -h, --help   help for remove
+      --yes    confirm deleting the app's data from every site
+
+Examples:
+  tamp app remove payments --yes
+  tamp app remove -e erp-dev payments --yes
+```
+
+### `tamp context`
+
+```text
+context prints the versions, where to edit code, how to run bench commands, the sites
+with their login, and where to look when something fails. It reads the recipe and the
+containers each time, works on a stopped environment, and changes nothing.
+
+Add one line to the agent's instruction file, such as AGENTS.md or CLAUDE.md:
+
+  Run `tamp context` at the start of each session.
+
+That line works in the environment's directory. In any other directory, a subfolder
+such as apps/<app> included, name the environment. For an agent that starts in an
+app's folder, write:
+
+  Run `tamp context -e <name>` at the start of each session.
+
+Usage:
+  tamp context [flags]
+
+Flags:
+  -h, --help   help for context
+
+Examples:
+  tamp context
+  tamp context -e erp-dev
+```
+
+### `tamp doctor`
+
+```text
+Check Docker, git, Mutagen, port 80, the router and the environment, and repair nothing
+
+Usage:
+  tamp doctor [flags]
+
+Flags:
+  -h, --help   help for doctor
+
+Examples:
+  tamp doctor
+  tamp doctor -e erp-dev
+```
+
+### `tamp help`
+
+```text
+Help about any command
+
+Usage:
+  tamp help [command] [flags]
+
+Flags:
+  -h, --help   help for help
+
+Examples:
+  tamp help new
+  tamp help site add
+```
+
+### `tamp list`
+
+```text
+List every environment that has containers, with its sites
+
+Usage:
+  tamp list [flags]
+
+Flags:
+  -h, --help   help for list
+
+Examples:
+  tamp list
+  tamp list --no-color
+```
+
+### `tamp logs`
+
+```text
+Show a service's logs: frappe, mariadb, redis-cache, redis-queue or router
+
+Usage:
+  tamp logs [service] [-f] [--tail n] [flags]
+
+Flags:
+  -f, --follow   keep printing new lines until Ctrl-C
+  -h, --help     help for logs
+      --tail n   show only the last n lines
+
+Examples:
+  tamp logs -f
+  tamp logs mariadb --tail 50
+```
+
+### `tamp new`
+
+```text
+Create an environment at a new or empty directory, and build it
+
+Usage:
+  tamp new <path> --frappe <branch> [--app <url|name>[#branch]]... [--site <host>]... [flags]
+
+Flags:
+      --app stringArray    an app to clone and install, as a URL or a frappe app name, with an optional #branch: repeat the flag for more
+      --frappe string      the Frappe branch: version-15, version-16, develop
+  -h, --help               help for new
+      --site stringArray   a *.localhost site to create: repeat the flag for more
+
+Examples:
+  tamp new erp-dev --frappe version-15 --site shop.localhost
+  tamp new . --frappe version-15 --app payments#version-15 --site pay.localhost
+```
+
+### `tamp open`
+
+```text
+Open a site in the default browser: the host given, or the only site
+
+Usage:
+  tamp open [host] [flags]
+
+Flags:
+  -h, --help   help for open
+
+Examples:
+  tamp open
+  tamp open -e erp-dev shop.localhost
+```
+
+### `tamp remove`
+
+```text
+Delete the environment's sync session, containers, network and volumes, and keep its directory
+
+Usage:
+  tamp remove --yes [flags]
+
+Flags:
+  -h, --help   help for remove
+      --yes    confirm deleting the containers, network and volumes, with every site's database
+
+Examples:
+  tamp remove --yes
+  tamp remove -e erp-dev --yes
+```
+
+### `tamp shell`
+
+```text
+Without a command, shell opens bash in the frappe container, and needs a terminal.
+With a command after `--`, it runs that command and exits with its code.
+It refuses `bench start` and `bench update`, and warns on `bench new-site` and git.
+
+Usage:
+  tamp shell [--force] [-- <command>...] [flags]
+
+Flags:
+      --force   skip the checks on bench start, bench update, bench new-site and git
+  -h, --help    help for shell
+
+Examples:
+  tamp shell -- bench --site shop.localhost migrate
+  tamp shell -e erp-dev -- bench build --app frappe
+```
+
+### `tamp site`
+
+```text
+Add, list and remove the environment's sites
+
+Usage:
+  tamp site [flags]
+  tamp site [command]
+
+Available Commands:
+  add         Add a *.localhost site to the recipe, create it with every app, and route it
+  list        List the environment's sites with their URLs
+  remove      Drop a site and its database, remove it from the recipe, and take it off the router
+
+Flags:
+  -h, --help   help for site
+
+Use "tamp site [command] --help" for more information about a command.
+
+Examples:
+  tamp site add blog.localhost
+  tamp site list -e erp-dev
+```
+
+### `tamp site add`
+
+```text
+Add a *.localhost site to the recipe, create it with every app, and route it
+
+Usage:
+  tamp site add <host> [flags]
+
+Flags:
+  -h, --help   help for add
+
+Examples:
+  tamp site add blog.localhost
+  tamp site add -e erp-dev docs.localhost
+```
+
+### `tamp site list`
+
+```text
+List the environment's sites with their URLs
+
+Usage:
+  tamp site list [flags]
+
+Flags:
+  -h, --help   help for list
+
+Examples:
+  tamp site list
+  tamp site list -e erp-dev
+```
+
+### `tamp site remove`
+
+```text
+Drop a site and its database, remove it from the recipe, and take it off the router
+
+Usage:
+  tamp site remove <host> --yes [flags]
+
+Flags:
+  -h, --help   help for remove
+      --yes    confirm dropping the site's database
+
+Examples:
+  tamp site remove blog.localhost --yes
+  tamp site remove -e erp-dev docs.localhost --yes
+```
+
+### `tamp start`
+
+```text
+Build whatever the recipe lists that is missing, and start the environment
+
+Usage:
+  tamp start [flags]
+
+Flags:
+  -h, --help   help for start
+
+Examples:
+  tamp start
+  tamp start -e erp-dev
+```
+
+### `tamp status`
+
+```text
+Show the environment's containers, sync state and site URLs
+
+Usage:
+  tamp status [flags]
+
+Flags:
+  -h, --help   help for status
+
+Examples:
+  tamp status
+  tamp status -e erp-dev
+```
+
+### `tamp stop`
+
+```text
+Stop the environment's containers
+
+Usage:
+  tamp stop [flags]
+
+Flags:
+  -h, --help   help for stop
+
+Examples:
+  tamp stop
+  tamp stop -e erp-dev
+```
+
+### `tamp version`
+
+```text
+Print the tamp version, commit, and build date
+
+Usage:
+  tamp version [flags]
+
+Flags:
+  -h, --help   help for version
+
+Examples:
+  tamp version
+  tamp version --no-color
+```
+
+<!-- commands:end -->

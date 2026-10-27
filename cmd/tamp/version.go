@@ -9,7 +9,9 @@ func newVersionCommand(p *ui.Printer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the tamp version, commit, and build date",
-		Args:  noArgs,
+		Example: "  tamp version\n" +
+			"  tamp version --no-color",
+		Args: noArgs,
 		RunE: func(*cobra.Command, []string) error {
 			p.Print("tamp " + version)
 			p.Print("commit: " + commit)

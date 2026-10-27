@@ -28,6 +28,8 @@ func newRootCommand(p *ui.Printer, dc docker.Client, sc syncer.Client, openURL f
 		Short: "tamp: environment manager for Frappe Framework",
 		Long: "tamp builds each Frappe bench in Docker from its recipe, tamp.toml,\n" +
 			"and serves every site by hostname.",
+		Example: "  tamp new erp-dev --frappe version-15 --site shop.localhost\n" +
+			"  tamp status -e erp-dev",
 		// tamp prints its own one-line errors; cobra would add usage text.
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -47,6 +49,7 @@ func newRootCommand(p *ui.Printer, dc docker.Client, sc syncer.Client, openURL f
 		return exitcode.Usage(err.Error(), usageFix(cmd))
 	})
 	root.SetHelpCommand(newHelpCommand())
+	root.SetUsageTemplate(usageTemplate)
 	// Cobra's completion command is not part of tamp's command tree.
 	root.CompletionOptions.DisableDefaultCmd = true
 
@@ -73,11 +76,34 @@ func newRootCommand(p *ui.Printer, dc docker.Client, sc syncer.Client, openURL f
 	return root
 }
 
+// usageTemplate is cobra's with the examples last, and without aliases and
+// groups, which tamp has none of.
+const usageTemplate = `Usage:{{if .Runnable}}
+  {{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]
+
+Available Commands:{{range .Commands}}{{if (or .IsAvailableCommand (eq .Name "help"))}}
+  {{rpad .Name .NamePadding }} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableInheritedFlags}}
+
+Global Flags:
+{{.InheritedFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}{{if .HasExample}}
+
+Examples:
+{{.Example}}{{end}}
+`
+
 // newHelpCommand replaces cobra's help, which exits 0 on an unknown topic.
 func newHelpCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "help [command]",
 		Short: "Help about any command",
+		Example: "  tamp help new\n" +
+			"  tamp help site add",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target, rest, err := cmd.Root().Find(args)
 			if err != nil || target == nil || len(rest) > 0 {

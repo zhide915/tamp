@@ -43,6 +43,9 @@ const (
 	redisQueueService = "redis-queue"
 )
 
+// envServices are the compose services of every environment.
+var envServices = []string{"frappe", dbService, redisCacheService, redisQueueService}
+
 type composeData struct {
 	QuotedName                       string
 	BenchImage, MariaDBImage, Redis  string
